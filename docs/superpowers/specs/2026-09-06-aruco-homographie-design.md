@@ -342,7 +342,7 @@ Alles, was nicht Nutzbild ist, lebt in **einem** Streifen unter dem Bild — lin
 Maßstab und Text nie um denselben Platz streiten:
 
 ```
-strip_h = STRIP_H_MM          wenn Maßstab oder Fußzeile aktiv, sonst 0
+strip_h = STRIP_H_MM          immer - der Streifen traegt das Markenzeichen (§4.6)
 m       = page_margin_mm      Standard PAGE_MARGIN_MM_DEFAULT, bei 0 randlos
 page_w  = crop_w + 2m
 page_h  = crop_h + 2m + strip_h
@@ -350,7 +350,9 @@ Bildrechteck (von unten links) = (m, m + strip_h, crop_w, crop_h)
 ```
 
 Maßstab und Fußzeile liegen damit **außerhalb** des Nutzbildes und beschneiden die Schablone
-nicht. Mit `m = 0` und ohne Maßstab/Fußzeile ist die Seite exakt das Objekt.
+nicht. Der Streifen ist auch dann vorhanden, wenn beide abgeschaltet sind: er trägt Logo und
+Herkunftszeile, und die gehören auf jedes Blatt. Eine Seite ist dadurch nie exakt so groß wie
+das Objekt — die Invariante aus §4.1 betrifft das **Bild**, und die bleibt unberührt.
 
 ### 4.3 Kachelung
 
@@ -394,6 +396,30 @@ Alle vier standardmäßig aktiv (so vom Nutzer entschieden), einzeln abschaltbar
 Das entzerrte Raster wird als JPEG (`JPEG_QUALITY`) bzw. bei Bildern mit Alpha als PNG
 zwischengespeichert und mit `drawImage` auf das exakte mm-Rechteck gesetzt. Kein
 `preserveAspectRatio`-Automatismus — die Rechteckgröße ist gesetzt, nicht abgeleitet.
+
+### 4.6 Marke
+
+Jedes Blatt trägt rechts im Streifen das Logo (11 mm), links daneben rechtsbündig den Namen
+und die Herkunftszeile „Made with Bischof Snowboards Software". Der gesamte Block ist per
+`linkURL` auf `BRAND_URL` verlinkt. Betroffen sind Einzelseite, **jede** Kachel, das
+Klebeplan-Blatt und das Markerblatt.
+
+Das Logo wird als **Vektor** eingebettet: `svglib` liest dieselbe SVG, die auch die Website
+benutzt (`logo-dark.svg`, Tinte #334155), und liefert eine ReportLab-Zeichnung. Damit gibt es
+nur eine Quelle für das Logo, und es bleibt bei jeder Druckgröße scharf. Das Parsen ist
+gecacht, weil es spürbar dauert.
+
+Ist die Seite schmaler als `block_width_mm() + 70 mm`, entfällt die Textzeile und nur das Logo
+bleibt — lieber ein Blatt ohne Schriftzug als eines mit überlappendem Text.
+
+Auf dem Markerblatt sitzt der Block bei y = 5…16 mm. Das ist bewusst tief: zum untersten
+Marker bleiben so gut 13 mm weiß, mehr als das eine Markermodul (11,2 mm), auf das die
+Erkennung als Ruhezone angewiesen ist.
+
+**Farben.** Die Marken-Tokens stammen aus `snow-service-free/src/main.css` (dort oklch) und
+stehen in `config.py` als sRGB, weil PDF und CSS beide Hex brauchen. Gegenprobe der
+Umrechnung: `--foreground oklch(0.3717 0.0392 257.29)` ergibt `#334155` — genau die Tinte, die
+`logo-dark.svg` im eigenen Dateikommentar nennt.
 
 ---
 
@@ -514,8 +540,18 @@ TILE_OVERLAP_MM_DEFAULT  = 10.0
 TILE_OVERVIEW_DEFAULT    = True
 STRIP_H_MM               = 18.0                    # Maßstab links, Metadaten rechts (§4.2)
 GRID_STEP_MM             = 50.0
-GRID_GRAY                = 0.75
+GRID_INK                 = BRAND_INK               # Kernlinie
+GRID_LINE_PT             = 0.5
+GRID_HALO_PT             = 1.5                     # weisser Saum darunter (§4.4)
+GRID_LABEL_PT            = 6.5
 SCALEBAR_MM              = 100.0
+
+BRAND_NAME, BRAND_CLAIM, BRAND_URL                 # Herkunftszeile und Ziel (§4.6)
+BRAND_INK                = "#334155"               # --foreground
+BRAND_PRIMARY            = "#379992"               # --primary
+BRAND_ACTION             = "#ffbf00"               # --action
+BRAND_DARK               = "#25242b"               # --action-foreground
+LOGO_INK_SVG, LOGO_MM    = static/brand/logo-dark.svg, 11.0
 CONTOUR_LINE_MM          = 0.25
 CONTOUR_EPS_MM           = 0.5
 CONTOUR_MIN_AREA_FRAC    = 0.05

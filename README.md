@@ -81,15 +81,37 @@ Einzelseite in exakter Objektgröße (für den Plotter) oder Kachelung auf A4/A3
 Schnitt- und Klebemarken und vorangestelltem Klebeplan. Aufdrucke: 100-mm-Maßstab,
 Metadaten-Fußzeile, 50-mm-Raster, optional der erkannte Umriss als Vektor-Schnittlinie.
 
+Das **50-mm-Raster** wird doppelt gezogen — breiter weißer Saum, darüber die Kernlinie in
+Markentinte. Auf einem hellen Foto verschwindet der Saum, auf einem dunklen trägt er die Linie;
+so bleibt das Raster auf jedem Untergrund lesbar, ohne das Bild zuzudecken.
+
+## Marke
+
+Jedes Blatt trägt unten das Bischof-Snowboards-Logo und „Made with Bischof Snowboards Software" —
+die Einzelseite, *jede* Kachel, der Klebeplan und das Markerblatt. Der Block ist im PDF auf
+[bischof-snowboards.com](https://bischof-snowboards.com) verlinkt.
+
+Das Logo kommt als **Vektor** aus derselben SVG, die auch die Website benutzt, und ist damit bei
+jeder Druckgröße scharf. Farben und Schrift (Montserrat) stammen aus den Marken-Tokens von
+`snow-service-free`; in `app/config.py` stehen sie als sRGB, weil PDF und CSS Hex brauchen.
+
+Weil der Streifen die Marke trägt, ist er **immer** da — auch mit abgeschaltetem Maßstab und
+abgeschalteter Fußzeile. Die Seite ist dadurch um 18 mm höher als das Objekt. Das *Bild* belegt
+davon unberührt weiterhin exakt seine Millimeter, und nur das war je die Zusage.
+
 ## Aufbau
 
 ```
 app/vision/    Erkennung, Homographie, Kamerapose, Dickenkorrektur, Entzerrung, Kontur
-app/pdf/       Seitengeometrie, Aufdrucke, PDF-Bau, Markerblatt
+app/pdf/       Seitengeometrie, Aufdrucke, Marke, PDF-Bau, Markerblatt
+app/static/    Oberfläche; brand/ trägt Logo und Schrift
 app/           config (SSOT aller Konstanten), pipeline (Orchestrierung), main (Routen)
 tests/         synthetische Szenen mit bekannter Grundwahrheit
 docs/          Spezifikation
 ```
+
+Wer hier mit einem KI-Agenten arbeitet: [AGENTS.md](AGENTS.md) nennt die Invarianten, die nicht
+gebrochen werden dürfen. [CHANGELOG.md](CHANGELOG.md) hält fest, was sich wann geändert hat.
 
 `app/config.py` ist die einzige Stelle für Konstanten — auch `dev.ps1` liest den Port von dort.
 
