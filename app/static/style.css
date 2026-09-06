@@ -1,13 +1,30 @@
+/* Bischof-Snowboards-Oberflaeche.
+
+   Die Farben sind die Marken-Tokens aus snow-service-free/src/main.css, dort in
+   oklch notiert, hier als sRGB. Der dunkle Grund entspricht dem .dark-Theme des
+   Webprojekts, damit beide Werkzeuge nebeneinander wie ein Haus wirken. */
+
+@font-face {
+  font-family: "Montserrat";
+  src: url("/brand/fonts/Montserrat-VariableFont_wght.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
-  --bg: #14161a;
-  --panel: #1c1f26;
-  --line: #2d323d;
-  --text: #e7eaf0;
-  --muted: #99a2b3;
-  --accent: #4da3ff;
-  --ok: #4ec97a;
-  --warn: #f0b429;
-  --bad: #f0654a;
+  --bg: #25242b;          /* --action-foreground / dark background */
+  --panel: #2d2c34;
+  --raised: #36353c;      /* --accent im dark theme */
+  --line: #43424c;
+  --text: #f1f5f9;        /* --primary-foreground */
+  --muted: #9d9daa;
+  --ink: #334155;         /* --foreground, die Logo-Tinte */
+  --primary: #379992;     /* --primary, Marken-Petrol */
+  --primary-strong: #47b3aa;
+  --action: #ffbf00;      /* --action, Bernstein */
+  --ok: #379992;
+  --warn: #ffbf00;
+  --bad: #e7000b;         /* --destructive */
 }
 
 * { box-sizing: border-box; }
@@ -16,40 +33,72 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+  font: 15px/1.55 "Montserrat", "Segoe UI", system-ui, sans-serif;
+  font-variation-settings: "wght" 400;
 }
+
+/* --- Kopf ------------------------------------------------------------------ */
 
 header {
-  padding: 24px 28px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 28px 18px;
   border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #2b2a33 0%, var(--bg) 100%);
 }
-h1 { margin: 0; font-size: 21px; letter-spacing: .2px; }
-.sub { margin: 4px 0 12px; color: var(--muted); }
+header img.mark { width: 44px; height: 44px; display: block; }
+header .titles { flex: 1 1 auto; min-width: 0; }
+
+/* Alles Markenhafte fuehrt auf bischof-snowboards.com. */
+a.brandlink { display: inline-block; color: inherit; text-decoration: none; }
+a.brandlink:hover { opacity: .75; }
+a.brandlink.brandline { display: block; }
+h1 {
+  margin: 0;
+  font-size: 19px;
+  font-variation-settings: "wght" 700;
+  letter-spacing: .2px;
+}
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.brandline {
+  margin: 3px 0 0;
+  color: var(--primary);
+  font-size: 11px;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  font-variation-settings: "wght" 600;
+}
 
 main { padding: 22px 28px 80px; max-width: 1100px; }
+
+/* --- Abschnitte ------------------------------------------------------------ */
 
 section {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 18px 20px;
   margin-bottom: 18px;
 }
-/* !important, weil ID-Regeln wie #busy sonst die Spezifitaet gewinnen und das
-   Element trotz .hidden sichtbar bleibt. */
 .hidden { display: none !important; }
 
-h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+h2 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-variation-settings: "wght" 600;
+}
 .num {
   display: inline-block;
   width: 22px; height: 22px;
-  margin-right: 8px;
+  margin-right: 9px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #06121f;
+  background: var(--primary);
+  color: #08201f;
   text-align: center;
   font-size: 12px;
   line-height: 22px;
+  font-variation-settings: "wght" 700;
 }
 
 .grid {
@@ -60,77 +109,112 @@ h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
 .grid.four { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-top: 12px; }
 
 label { display: block; font-size: 13px; color: var(--muted); }
-label small { display: block; margin-top: 4px; font-size: 11px; color: #6f7789; }
-label.check { color: var(--text); margin: 6px 0; font-size: 13px; }
+label small { display: block; margin-top: 4px; font-size: 11px; color: #7c7c8a; }
+label.check { color: var(--text); margin: 7px 0; font-size: 13px; }
 
 input, select {
   width: 100%;
   margin-top: 5px;
-  padding: 8px 10px;
-  background: #12141a;
+  padding: 9px 11px;
+  background: var(--raised);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text);
   font: inherit;
 }
-input[type=checkbox] { width: auto; margin: 0 8px 0 0; }
-input[type=file] { padding: 14px; border-style: dashed; }
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(55, 153, 146, .28);
+}
+input[type=checkbox] { width: auto; margin: 0 8px 0 0; accent-color: var(--primary); }
+input[type=file] { padding: 15px; border-style: dashed; }
 
 button {
-  margin-top: 14px;
-  padding: 10px 22px;
-  background: var(--accent);
+  margin-top: 15px;
+  padding: 11px 24px;
+  background: var(--primary);
   border: 0;
-  border-radius: 6px;
-  color: #06121f;
-  font: 600 14px/1 inherit;
+  border-radius: 8px;
+  color: #06201f;
+  font: inherit;
+  font-variation-settings: "wght" 700;
   cursor: pointer;
 }
+button:hover { background: var(--primary-strong); }
 button:disabled { opacity: .45; cursor: default; }
 
 a.ghost {
   display: inline-block;
-  padding: 7px 14px;
+  padding: 8px 15px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text);
   text-decoration: none;
   font-size: 13px;
+  white-space: nowrap;
 }
+a.ghost:hover { border-color: var(--primary); color: var(--primary); }
 
-fieldset { margin: 16px 0 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+fieldset { margin: 16px 0 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
 legend { color: var(--muted); font-size: 12px; padding: 0 6px; }
 
 .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
 .info { margin-top: 12px; font-size: 13px; color: var(--muted); }
 .info b { color: var(--text); }
 
+/* --- Qualitaetsbericht ------------------------------------------------------ */
+
 .report { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
-.card { background: #12141a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
-.card .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
-.card .v { font-size: 16px; margin-top: 3px; }
+.card {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.card .k {
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  font-variation-settings: "wght" 600;
+}
+.card .v { font-size: 16px; margin-top: 3px; font-variation-settings: "wght" 600; }
 .card.good .v { color: var(--ok); }
 .card.warn .v { color: var(--warn); }
 .card.bad  .v { color: var(--bad); }
 
 .note {
-  margin-top: 10px; padding: 9px 12px; border-radius: 7px;
-  border-left: 3px solid var(--warn); background: #241f13; font-size: 13px;
+  margin-top: 10px; padding: 9px 12px; border-radius: 8px;
+  border-left: 3px solid var(--warn); background: #332c17; font-size: 13px;
 }
-.note.info { border-color: var(--accent); background: #141d28; }
+.note.info { border-color: var(--primary); background: #1d2f2e; }
+
+/* --- Zuschnitt -------------------------------------------------------------- */
 
 #stage { position: relative; display: inline-block; max-width: 100%; margin-top: 10px; }
-#preview { display: block; max-width: 100%; border-radius: 6px; }
+#preview { display: block; max-width: 100%; border-radius: 8px; }
 #overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+
+/* --- Fuss und Warten -------------------------------------------------------- */
+
+footer.brand {
+  padding: 18px 28px 30px;
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+footer.brand a.brandlink { display: flex; align-items: center; gap: 10px; }
+footer.brand img { width: 22px; height: 22px; opacity: .85; }
 
 #busy {
   position: fixed; inset: 0; display: flex; gap: 14px;
   align-items: center; justify-content: center;
-  background: rgba(10, 12, 16, .72); z-index: 20;
+  background: rgba(15, 14, 19, .78); z-index: 20;
 }
 .spinner {
   width: 26px; height: 26px; border-radius: 50%;
-  border: 3px solid var(--line); border-top-color: var(--accent);
+  border: 3px solid var(--line); border-top-color: var(--primary);
   animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }

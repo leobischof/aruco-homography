@@ -4,13 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ArUco-Homographie</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%2314161a'/><rect x='3' y='3' width='10' height='10' fill='%23e7eaf0'/><rect x='5' y='5' width='3' height='3' fill='%2314161a'/><rect x='8' y='8' width='3' height='3' fill='%2314161a'/></svg>">
+  <!-- Das Original-Favicon aus snow-service-free, unveraendert uebernommen. -->
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header>
-  <h1>ArUco-Homographie</h1>
-  <p class="sub">Handyfoto entzerren und als masshaltiges PDF in Originalgroesse drucken.</p>
+  <a class="brandlink" href="https://bischof-snowboards.com" target="_blank" rel="noopener"
+     title="bischof-snowboards.com">
+    <img class="mark" src="/brand/logo-light.svg" alt="Bischof Snowboards">
+  </a>
+  <div class="titles">
+    <a class="brandlink brandline" href="https://bischof-snowboards.com" target="_blank" rel="noopener">
+      Bischof Snowboards
+    </a>
+    <h1>ArUco-Homographie</h1>
+    <p class="sub">Handyfoto entzerren und als masshaltiges PDF in Originalgroesse drucken.</p>
+  </div>
   <a class="ghost" id="sheet-link" href="/api/markersheet" target="_blank" rel="noopener">Markerblatt drucken (A4)</a>
 </header>
 
@@ -119,6 +132,13 @@
     <div id="export-info" class="info"></div>
   </section>
 </main>
+
+<footer class="brand">
+  <a class="brandlink" href="https://bischof-snowboards.com" target="_blank" rel="noopener">
+    <img src="/brand/logo-light.svg" alt="Bischof Snowboards">
+    <span>Made with Bischof Snowboards Software</span>
+  </a>
+</footer>
 
 <div id="busy" class="hidden"><div class="spinner"></div><span id="busy-text">Rechne…</span></div>
 <script src="/app.js"></script>
