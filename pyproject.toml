@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Projektwurzel auf den Importpfad, damit "import app" und "tests.conftest" ohne
+# Installation funktionieren.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

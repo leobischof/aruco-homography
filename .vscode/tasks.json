@@ -1,0 +1,44 @@
+{
+  // VS Code tasks for this repo. Each task ONLY invokes ./dev.ps1 <command>.
+  // dev.ps1 is the single source of truth for command logic - never duplicate it here.
+  // Occasional commands (clean-all, kill-servers) stay in dev.ps1 only.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start server",
+      "detail": "Webserver lokal starten (installiert Abhaengigkeiten bei Bedarf) - der Alltagsbefehl",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "start-server"],
+      "isBackground": true,
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Install dependencies",
+      "detail": "venv anlegen und requirements.txt installieren",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "install-deps"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build marker sheet",
+      "detail": "A4-Markerblatt als PDF nach out/ schreiben",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "build-markersheet"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run tests",
+      "detail": "Testsuite ausfuehren",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "run-tests"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}

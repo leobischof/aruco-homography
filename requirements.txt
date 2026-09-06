@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+opencv-python>=5.0
+numpy
+scipy
+Pillow
+pillow-heif
+reportlab
+qrcode
+pytest
+pypdf
+httpx
