@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArUco-Homographie</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%2314161a'/><rect x='3' y='3' width='10' height='10' fill='%23e7eaf0'/><rect x='5' y='5' width='3' height='3' fill='%2314161a'/><rect x='8' y='8' width='3' height='3' fill='%2314161a'/></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>ArUco-Homographie</h1>
+  <p class="sub">Handyfoto entzerren und als masshaltiges PDF in Originalgroesse drucken.</p>
+  <a class="ghost" id="sheet-link" href="/api/markersheet" target="_blank" rel="noopener">Markerblatt drucken (A4)</a>
+</header>
+
+<main>
+  <!-- 1 - Foto -->
+  <section id="step-upload">
+    <h2><span class="num">1</span> Foto</h2>
+    <input type="file" id="file" accept="image/*,.heic,.heif">
+    <p class="hint">
+      Tipp fuers Ergebnis: Tele (1x oder 2x), grosser Abstand, Objekt mittig. Weitwinkel
+      biegt die Raender und diese Verzeichnung wird nicht korrigiert.
+    </p>
+    <div id="upload-info" class="info hidden"></div>
+  </section>
+
+  <!-- 2 - Parameter -->
+  <section id="step-params" class="hidden">
+    <h2><span class="num">2</span> Massstab</h2>
+    <div class="grid">
+      <label>Markergroesse (mm)
+        <input type="number" id="marker-mm" value="67" step="0.1" min="1">
+        <small>Am Ausdruck gemessene Kantenlaenge inkl. schwarzem Rand.</small>
+      </label>
+      <label>Modus
+        <select id="mode">
+          <option value="sheet">Markerblatt (IDs 0-3, bekanntes Layout)</option>
+          <option value="free">Frei platzierte Marker</option>
+        </select>
+        <small>Das Markerblatt ist genauer, weil die Abstaende bekannt sind.</small>
+      </label>
+      <label class="sheet-only">Mittelpunktabstand waagerecht (mm)
+        <input type="number" id="spacing-x" value="121" step="0.1" min="1">
+        <small>Abstand der beiden nebeneinanderliegenden Marker.</small>
+      </label>
+      <label class="sheet-only">Mittelpunktabstand senkrecht (mm)
+        <input type="number" id="spacing-y" value="171" step="0.1" min="1">
+        <small>Abstand der beiden untereinanderliegenden Marker.</small>
+      </label>
+      <label>Objektdicke (mm)
+        <input type="number" id="thickness" value="0" step="0.5" min="0">
+        <small>0, wenn das Blatt auf der Objektoberflaeche liegt.</small>
+      </label>
+      <label>Kameraabstand (mm, optional)
+        <input type="number" id="camera-height" placeholder="aus EXIF" step="10" min="1">
+        <small>Nur noetig, wenn EXIF keine Brennweite hat und die Dicke &gt; 0 ist.</small>
+      </label>
+    </div>
+    <button id="solve">Entzerren</button>
+  </section>
+
+  <!-- 3 - Bericht -->
+  <section id="step-report" class="hidden">
+    <h2><span class="num">3</span> Qualitaet</h2>
+    <div id="report" class="report"></div>
+    <div id="warnings"></div>
+  </section>
+
+  <!-- 4 - Zuschnitt -->
+  <section id="step-crop" class="hidden">
+    <h2><span class="num">4</span> Zuschnitt</h2>
+    <p class="hint">Rechteck im Bild aufziehen. Die gruene Flaeche ist die Marker-Huelle -
+      alles weit ausserhalb wird extrapoliert und damit unsicher.</p>
+    <div id="stage">
+      <img id="preview" alt="Entzerrte Vorschau">
+      <canvas id="overlay"></canvas>
+    </div>
+    <div class="grid four">
+      <label>x0 (mm)<input type="number" id="x0" step="1"></label>
+      <label>y0 (mm)<input type="number" id="y0" step="1"></label>
+      <label>x1 (mm)<input type="number" id="x1" step="1"></label>
+      <label>y1 (mm)<input type="number" id="y1" step="1"></label>
+    </div>
+    <div id="crop-info" class="info"></div>
+  </section>
+
+  <!-- 5 - Druck -->
+  <section id="step-export" class="hidden">
+    <h2><span class="num">5</span> Druck</h2>
+    <div class="grid">
+      <label>Aufloesung
+        <select id="dpi"></select>
+      </label>
+      <label>Layout
+        <select id="layout">
+          <option value="single">Eine Seite in Objektgroesse</option>
+          <option value="tiles">Kachelung auf Normalformat</option>
+        </select>
+      </label>
+      <label>Papierformat (Kachelung)
+        <select id="page-format"><option value="A4">A4</option><option value="A3">A3</option></select>
+      </label>
+      <label>Ueberlappung (mm)
+        <input type="number" id="overlap" value="10" step="1" min="0">
+      </label>
+    </div>
+    <fieldset>
+      <legend>Aufdrucke</legend>
+      <label class="check"><input type="checkbox" id="ov-scalebar" checked> 100-mm-Kontrollmassstab</label>
+      <label class="check"><input type="checkbox" id="ov-footer" checked> Metadaten-Fusszeile</label>
+      <label class="check"><input type="checkbox" id="ov-grid" checked> 50-mm-Raster</label>
+      <label class="check"><input type="checkbox" id="ov-marks" checked> Schnitt-/Klebemarken</label>
+      <label class="check"><input type="checkbox" id="ov-overview" checked> Klebeplan als erstes Blatt</label>
+      <label class="check"><input type="checkbox" id="ov-contour"> Umriss als Schnittlinie</label>
+    </fieldset>
+    <button id="export">PDF erzeugen</button>
+    <div id="export-info" class="info"></div>
+  </section>
+</main>
+
+<div id="busy" class="hidden"><div class="spinner"></div><span id="busy-text">Rechne…</span></div>
+<script src="/app.js"></script>
+</body>
+</html>
