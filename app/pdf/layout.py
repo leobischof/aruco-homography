@@ -77,9 +77,16 @@ class TileLayout:
         return len(self.tiles)
 
 
-def strip_height(show_scalebar: bool, show_footer: bool) -> float:
-    """Hoehe des Streifens unter dem Bild - 0, wenn er nichts zu zeigen hat."""
-    return config.STRIP_H_MM if (show_scalebar or show_footer) else 0.0
+def strip_height() -> float:
+    """Hoehe des Streifens unter dem Bild.
+
+    Der Streifen ist IMMER da, auch wenn Massstab und Fusszeile abgeschaltet sind:
+    er traegt das Markenzeichen, und das gehoert auf jedes Blatt. Die Schalter
+    steuern nur, was ausser der Marke darin steht. Der Preis dafuer ist, dass eine
+    Seite nie exakt die Objektgroesse hat - die Invariante aus 4.1 betrifft das
+    BILD, und die bleibt unberuehrt.
+    """
+    return config.STRIP_H_MM
 
 
 def single_page(crop_w: float, crop_h: float, margin_mm: float, strip_h: float) -> PageLayout:

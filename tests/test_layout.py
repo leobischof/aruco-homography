@@ -12,19 +12,24 @@ from app.pdf.layout import single_page, strip_height, tile_layout
 
 
 def test_seite_ist_objekt_plus_rand_plus_streifen():
-    strip = strip_height(show_scalebar=True, show_footer=True)
-    page = single_page(400.0, 250.0, 5.0, strip)
+    page = single_page(400.0, 250.0, 5.0, strip_height())
 
     assert page.page_w == pytest.approx(410.0)
     assert page.page_h == pytest.approx(250.0 + 10.0 + config.STRIP_H_MM)
     assert page.image.as_tuple() == pytest.approx((5.0, 5.0 + config.STRIP_H_MM, 400.0, 250.0))
 
 
-def test_ohne_aufdrucke_ist_die_seite_exakt_das_objekt():
-    page = single_page(400.0, 250.0, 0.0, strip_height(False, False))
+def test_streifen_ist_immer_da():
+    """Er traegt das Markenzeichen, und das gehoert auf jedes Blatt."""
+    assert strip_height() == config.STRIP_H_MM
 
-    assert (page.page_w, page.page_h) == pytest.approx((400.0, 250.0))
-    assert page.image.as_tuple() == pytest.approx((0.0, 0.0, 400.0, 250.0))
+
+def test_randlos_belegt_das_bild_trotzdem_exakt_den_zuschnitt():
+    """Der Streifen vergroessert die SEITE, nie das Bild - die Invariante bleibt."""
+    page = single_page(400.0, 250.0, 0.0, strip_height())
+
+    assert page.image.as_tuple() == pytest.approx((0.0, config.STRIP_H_MM, 400.0, 250.0))
+    assert (page.page_w, page.page_h) == pytest.approx((400.0, 250.0 + config.STRIP_H_MM))
 
 
 def test_leerer_zuschnitt_wird_abgelehnt():
@@ -34,7 +39,7 @@ def test_leerer_zuschnitt_wird_abgelehnt():
 
 
 def test_kachelzahl_folgt_der_formel():
-    strip = strip_height(True, True)
+    strip = strip_height()
     plan = tile_layout(700.0, 500.0, "A4", "portrait", 5.0, 10.0, strip)
 
     usable_w = 210.0 - 10.0
@@ -47,7 +52,7 @@ def test_kachelzahl_folgt_der_formel():
 def test_kacheln_decken_den_ganzen_zuschnitt_ab():
     """Jeder Millimeter des Zuschnitts muss auf mindestens einem Blatt liegen."""
     crop_w, crop_h = 700.0, 500.0
-    plan = tile_layout(crop_w, crop_h, "A4", "portrait", 5.0, 10.0, strip_height(True, True))
+    plan = tile_layout(crop_w, crop_h, "A4", "portrait", 5.0, 10.0, strip_height())
 
     for position in [0.0, 123.4, 349.9, crop_w - 0.01]:
         assert any(t.crop_x <= position <= t.crop_x + t.src_w for t in plan.tiles), position

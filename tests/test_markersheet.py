@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import io
 
+import cv2
 import pytest
 from pypdf import PdfReader
 
 from app import config
 from app.pdf.markersheet import build_markersheet, sheet_layout
+from app.vision.detect import detect_markers
 
 QUIET_ZONE_MIN_MM = 8.0
 
@@ -65,6 +67,36 @@ def test_standardlayout_hat_die_gemessenen_masse():
     sheet_w, sheet_h = config.SHEET_MM
     assert config.MARKER_MM_NOMINAL + config.SHEET_SPACING_MM[0] <= sheet_w
     assert config.MARKER_MM_NOMINAL + config.SHEET_SPACING_MM[1] <= sheet_h
+
+
+def test_gedrucktes_blatt_ist_wieder_erkennbar():
+    """Der Beweis, dass das Vektor-Zeichnen stimmt.
+
+    Ein vertauschtes oder gespiegeltes Modulraster saehe auf dem Bildschirm wie ein
+    voellig normaler Marker aus und wuerde erst am realen Foto auffallen. Deshalb
+    wird das erzeugte PDF hier gerastert und durch den echten Detektor geschickt:
+    IDs, Kantenlaenge und beide Mittelpunktabstaende muessen zurueckkommen.
+    """
+    import numpy as np
+    import pymupdf
+
+    dpi = 300
+    document = pymupdf.open(stream=build_markersheet(), filetype="pdf")
+    pixmap = document[0].get_pixmap(dpi=dpi)
+    rgb = np.frombuffer(pixmap.samples, np.uint8).reshape(pixmap.height, pixmap.width, pixmap.n)
+    bgr = cv2.cvtColor(rgb[:, :, :3], cv2.COLOR_RGB2BGR)
+
+    markers = detect_markers(bgr)
+    assert [m.marker_id for m in markers] == list(config.SHEET_MARKER_IDS)
+
+    px_per_mm = dpi / config.MM_PER_INCH
+    centres = {m.marker_id: m.center_px / px_per_mm for m in markers}
+    for marker in markers:
+        side = float(np.linalg.norm(marker.corners_px[1] - marker.corners_px[0])) / px_per_mm
+        assert abs(side - config.MARKER_MM_NOMINAL) < 0.15, f"ID {marker.marker_id}: {side:.2f} mm"
+
+    assert abs((centres[1] - centres[0])[0] - config.SHEET_SPACING_MM[0]) < 0.15
+    assert abs((centres[2] - centres[0])[1] - config.SHEET_SPACING_MM[1]) < 0.15
 
 
 def test_pdf_ist_a4_und_enthaelt_eine_seite():

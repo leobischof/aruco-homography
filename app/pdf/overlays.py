@@ -2,14 +2,22 @@
 
 Alle Funktionen rechnen in Millimetern und rechnen erst beim Zeichnen in Punkte um.
 Der Bezugspunkt ist immer die linke UNTERE Ecke der Seite.
+
+Das Raster wird doppelt gezogen - breiter weisser Saum, darueber die Kernlinie in
+Markentinte. Der Grund: die Schablone liegt mal auf einem hellen, mal auf einem
+dunklen Foto. Eine einzelne graue Linie verschwindet auf dem einen oder dem
+anderen; die Kombination ist auf beidem lesbar, ohne dass das Bild darunter
+zugedeckt wird.
 """
 
 from __future__ import annotations
 
 import numpy as np
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 
 from app import config
+from app.pdf import branding
 from app.pdf.layout import Rect
 
 # Innenaufteilung des Streifens, von seiner Unterkante aus (Summe <= STRIP_H_MM).
@@ -19,6 +27,7 @@ _SCALEBAR_BASE_MM = 10.0
 _SCALEBAR_HEIGHT_MM = 3.0
 _SCALEBAR_LABEL_MM = 14.2
 _TEXT_SIZE_PT = 6.0
+_GAP_MM = 2.5
 
 
 def crop_to_page(
@@ -37,32 +46,59 @@ def draw_strip(
     strip: Rect,
     show_scalebar: bool,
     footer_lines: list[str],
+    tile_label: str | None = None,
 ) -> None:
-    """Den Streifen unter dem Bild fuellen: Massstab oben, Metadaten unten."""
+    """Den Streifen unter dem Bild fuellen: Massstab, Metadaten, Blattnummer, Marke."""
+    # Die Marke sitzt immer rechts aussen und bekommt ihren Platz zuerst; alles
+    # andere richtet sich danach, damit nie etwas unter dem Logo verschwindet.
+    with_claim = strip.width > branding.block_width_mm() + 70.0
+    brand_left = branding.draw_brand_block(
+        canvas, strip.x + strip.width, strip.y, strip.height, with_claim=with_claim
+    )
+    available = max(10.0, brand_left - _GAP_MM - strip.x)
+
     if show_scalebar:
-        _draw_scalebar(canvas, strip)
+        _draw_scalebar(canvas, strip, available)
+
+    canvas.setFillColor(branding.ink(config.BRAND_INK))
     for index, line in enumerate(footer_lines[:2]):
         offset = _TEXT_LINE_2_MM if index == 1 else _TEXT_LINE_1_MM
         canvas.setFont("Helvetica", _TEXT_SIZE_PT)
-        canvas.setFillGray(0.25)
-        canvas.drawString(_pt(strip.x), _pt(strip.y + offset), line)
+        canvas.drawString(
+            _pt(strip.x), _pt(strip.y + offset), _fit(line, "Helvetica", _TEXT_SIZE_PT, available)
+        )
+
+    if tile_label:
+        canvas.setFont("Helvetica-Bold", _TEXT_SIZE_PT + 1.0)
+        canvas.drawRightString(
+            _pt(strip.x + available),
+            _pt(strip.y + _SCALEBAR_BASE_MM + 0.6),
+            tile_label,
+        )
 
 
-def _draw_scalebar(canvas: Canvas, strip: Rect) -> None:
+def _fit(text: str, font: str, size_pt: float, width_mm: float) -> str:
+    """Kuerzt Text mit Auslassungszeichen, statt ihn unter das Logo laufen zu lassen."""
+    if stringWidth(text, font, size_pt) / config.PT_PER_MM <= width_mm:
+        return text
+    while text and stringWidth(text + "...", font, size_pt) / config.PT_PER_MM > width_mm:
+        text = text[:-1]
+    return text + "..."
+
+
+def _draw_scalebar(canvas: Canvas, strip: Rect, available_mm: float) -> None:
     """100-mm-Balken mit 10-mm-Teilung. Nachmessen beweist die Skalierung."""
-    length = min(config.SCALEBAR_MM, strip.width)
+    length = min(config.SCALEBAR_MM, available_mm)
     base_y = strip.y + _SCALEBAR_BASE_MM
 
     canvas.setLineWidth(0.4)
-    canvas.setStrokeGray(0.0)
-    canvas.setFillGray(0.0)
+    canvas.setStrokeColor(branding.ink(config.BRAND_INK))
+    canvas.setFillColor(branding.ink(config.BRAND_INK))
 
     # Wechselnd gefuellte 10-mm-Felder: auch aus der Entfernung eindeutig ablesbar.
-    step = 10.0
-    position = 0.0
-    filled = True
+    position, filled = 0.0, True
     while position < length - 1e-9:
-        segment = min(step, length - position)
+        segment = min(10.0, length - position)
         if filled:
             canvas.rect(
                 _pt(strip.x + position),
@@ -90,25 +126,64 @@ def draw_grid(
     crop_origin: tuple[float, float],
     step_mm: float = config.GRID_STEP_MM,
 ) -> None:
-    """Duennes Hilfsraster ueber dem Bild, ausgerichtet am absoluten Zuschnittraster."""
+    """Hilfsraster ueber dem Bild, ausgerichtet am absoluten Zuschnittraster.
+
+    Zwei Durchgaenge: erst alle weissen Saeume, dann alle Kernlinien. So legt sich
+    kein Saum ueber eine bereits gezogene Kernlinie einer Kreuzung.
+    """
     crop_x, crop_y = crop_origin
+    vertical = [
+        image_rect.x + (offset - crop_x)
+        for offset in _grid_offsets(crop_x, image_rect.width, step_mm)
+    ]
+    horizontal = [
+        image_rect.y + image_rect.height - (offset - crop_y)
+        for offset in _grid_offsets(crop_y, image_rect.height, step_mm)
+    ]
+
     canvas.saveState()
-    canvas.setStrokeGray(config.GRID_GRAY)
-    canvas.setLineWidth(0.15)
-    canvas.setFont("Helvetica", 5.0)
-    canvas.setFillGray(config.GRID_GRAY * 0.6)
+    for width_pt, colour in (
+        (config.GRID_HALO_PT, (1.0, 1.0, 1.0)),
+        (config.GRID_LINE_PT, None),
+    ):
+        canvas.setLineWidth(width_pt)
+        if colour is None:
+            canvas.setStrokeColor(branding.ink(config.GRID_INK))
+        else:
+            canvas.setStrokeColorRGB(*colour)
+        for x in vertical:
+            canvas.line(_pt(x), _pt(image_rect.y), _pt(x), _pt(image_rect.y + image_rect.height))
+        for y in horizontal:
+            canvas.line(_pt(image_rect.x), _pt(y), _pt(image_rect.x + image_rect.width), _pt(y))
 
-    for offset in _grid_offsets(crop_x, image_rect.width, step_mm):
-        x = image_rect.x + (offset - crop_x)
-        canvas.line(_pt(x), _pt(image_rect.y), _pt(x), _pt(image_rect.y + image_rect.height))
-        canvas.drawString(_pt(x + 0.6), _pt(image_rect.y + 0.6), f"{offset:.0f}")
-
-    for offset in _grid_offsets(crop_y, image_rect.height, step_mm):
-        y = image_rect.y + image_rect.height - (offset - crop_y)
-        canvas.line(_pt(image_rect.x), _pt(y), _pt(image_rect.x + image_rect.width), _pt(y))
-        canvas.drawString(_pt(image_rect.x + 0.6), _pt(y + 0.6), f"{offset:.0f}")
-
+    for offset, x in zip(_grid_offsets(crop_x, image_rect.width, step_mm), vertical):
+        _grid_label(canvas, image_rect, x + 0.7, image_rect.y + 0.8, f"{offset:.0f}")
+    for offset, y in zip(_grid_offsets(crop_y, image_rect.height, step_mm), horizontal):
+        _grid_label(canvas, image_rect, image_rect.x + 0.7, y + 0.8, f"{offset:.0f}")
     canvas.restoreState()
+
+
+def _grid_label(canvas: Canvas, image_rect: Rect, x: float, y: float, text: str) -> None:
+    """Rasterbeschriftung auf weissem Traeger - lesbar auch auf dunklem Foto.
+
+    Die Beschriftung wird in den Bildbereich hineingeklemmt. Ohne das rutscht die
+    Null-Linie oben aus dem Bild in den Rand, und die aeusserste rechte Beschriftung
+    haengt ueber die Bildkante hinaus.
+    """
+    size = config.GRID_LABEL_PT
+    width = stringWidth(text, "Helvetica-Bold", size) / config.PT_PER_MM
+    height = size / config.PT_PER_MM
+
+    x = min(max(x, image_rect.x + 0.5), image_rect.x + image_rect.width - width - 0.5)
+    y = min(max(y, image_rect.y + 0.5), image_rect.y + image_rect.height - height - 0.5)
+
+    canvas.setFillColorRGB(1.0, 1.0, 1.0)
+    canvas.rect(
+        _pt(x - 0.4), _pt(y - 0.4), _pt(width + 0.8), _pt(height * 0.95), stroke=0, fill=1
+    )
+    canvas.setFillColor(branding.ink(config.GRID_INK))
+    canvas.setFont("Helvetica-Bold", size)
+    canvas.drawString(_pt(x), _pt(y), text)
 
 
 def _grid_offsets(start: float, length: float, step_mm: float) -> list[float]:
@@ -150,8 +225,8 @@ def draw_tile_marks(
 ) -> None:
     """Schnitt- und Klebemarken: wo geschnitten und wie ueberlappt geklebt wird."""
     canvas.saveState()
-    canvas.setStrokeGray(0.0)
-    canvas.setLineWidth(0.3)
+    canvas.setStrokeColor(branding.ink(config.BRAND_INK))
+    canvas.setLineWidth(0.4)
 
     # Eckmarken: die Schnittlinie des Nutzbereichs.
     tick = 4.0
@@ -166,7 +241,7 @@ def draw_tile_marks(
 
     # Klebezone: gestrichelt markiert, damit klar ist, welcher Streifen doppelt ist.
     canvas.setDash(2, 2)
-    canvas.setStrokeGray(0.55)
+    canvas.setStrokeColor(branding.ink(config.BRAND_PRIMARY))
     if has_right_neighbour:
         x = placement.x + placement.width - overlap_mm
         canvas.line(_pt(x), _pt(placement.y), _pt(x), _pt(placement.y + placement.height))
@@ -174,13 +249,6 @@ def draw_tile_marks(
         y = placement.y + overlap_mm
         canvas.line(_pt(placement.x), _pt(y), _pt(placement.x + placement.width), _pt(y))
     canvas.restoreState()
-
-
-def draw_tile_label(canvas: Canvas, strip: Rect, text: str) -> None:
-    """Blattnummer rechtsbuendig in den Streifen."""
-    canvas.setFont("Helvetica-Bold", _TEXT_SIZE_PT + 1.0)
-    canvas.setFillGray(0.0)
-    canvas.drawRightString(_pt(strip.x + strip.width), _pt(strip.y + _TEXT_LINE_2_MM), text)
 
 
 def _pt(millimetres: float) -> float:

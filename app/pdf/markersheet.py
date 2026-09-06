@@ -19,6 +19,7 @@ import cv2
 from reportlab.pdfgen.canvas import Canvas
 
 from app import config
+from app.pdf import branding
 from app.pdf.layout import Rect
 
 # Ein 4x4-Marker hat mit einem Modul Rand 6 x 6 Module.
@@ -59,9 +60,32 @@ def build_markersheet(
         )
 
     _draw_instructions(canvas, sheet_w, sheet_h, marker_mm, spacing)
+    _draw_brand_footer(canvas, sheet_w, marker_mm, spacing)
     canvas.showPage()
     canvas.save()
     return buffer.getvalue()
+
+
+def _draw_brand_footer(
+    canvas: Canvas, sheet_w: float, marker_mm: float, spacing_mm: tuple[float, float]
+) -> None:
+    """Markenzeichen am unteren Blattrand.
+
+    Die Hoehe ist so gewaehlt, dass zwischen Text und unterstem Marker mehr als ein
+    Markermodul (hier gut 11 mm) weiss bleibt - die Ruhezone, auf die der Detektor
+    angewiesen ist. Naeher heran darf hier nichts.
+    """
+    strip_y, strip_h = 5.0, 11.0
+    branding.draw_brand_block(canvas, sheet_w - 15.0, strip_y, strip_h, with_claim=True)
+
+    canvas.setFillColor(branding.ink(config.BRAND_INK))
+    canvas.setFont("Helvetica", 6.0)
+    canvas.drawString(
+        _pt(15.0),
+        _pt(strip_y + strip_h / 2.0 - 1.0),
+        f"Markerblatt {config.ARUCO_DICT_NAME} - {marker_mm:.1f} mm - "
+        f"{spacing_mm[0]:.1f} x {spacing_mm[1]:.1f} mm",
+    )
 
 
 def _draw_marker(canvas: Canvas, marker_id: int, rect: Rect) -> None:

@@ -59,7 +59,12 @@ def test_bildrechteck_belegt_genau_den_zuschnitt():
     assert (x, y) == pytest.approx((5.0, 5.0 + config.STRIP_H_MM))
 
 
-def test_randlos_ohne_aufdrucke_ist_die_seite_das_objekt():
+def test_randlos_belegt_das_bild_exakt_den_zuschnitt():
+    """Randlos heisst: kein Seitenrand. Der Markenstreifen bleibt trotzdem.
+
+    Die Seite ist damit um STRIP_H_MM hoeher als das Objekt - das BILD aber belegt
+    weiterhin exakt crop_w x crop_h Millimeter, und nur das ist die Zusage.
+    """
     crop_w, crop_h = 700.0, 500.0
     options = ExportOptions(
         layout="single",
@@ -70,8 +75,10 @@ def test_randlos_ohne_aufdrucke_ist_die_seite_das_objekt():
     )
     result = build_pdf(dummy_image(crop_w, crop_h, dpi=150), crop_w, crop_h, options, FOOTER)
 
-    assert page_size_mm(result.data) == pytest.approx((crop_w, crop_h), abs=0.01)
-    assert result.image_rect_mm == pytest.approx((0.0, 0.0, crop_w, crop_h))
+    assert result.image_rect_mm == pytest.approx((0.0, config.STRIP_H_MM, crop_w, crop_h))
+    assert page_size_mm(result.data) == pytest.approx(
+        (crop_w, crop_h + config.STRIP_H_MM), abs=0.01
+    )
 
 
 def test_kachelung_hat_die_erwartete_seitenzahl_und_a4_seiten():

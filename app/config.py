@@ -6,7 +6,33 @@ Module importieren aus diesem Modul, sie definieren nichts nach.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
+
+# --- Marke ---------------------------------------------------------------------
+# Die Farben stammen aus snow-service-free/src/main.css und sind dort als oklch
+# notiert; hier stehen die umgerechneten sRGB-Werte, weil ReportLab und CSS im
+# PDF beide Hex brauchen. Gegenprobe: --foreground oklch(0.3717 0.0392 257.29)
+# ergibt #334155, genau die Tinte, die logo-dark.svg im Dateikommentar nennt.
+BRAND_NAME = "Bischof Snowboards"
+BRAND_CLAIM = "Made with Bischof Snowboards Software"
+BRAND_URL = "https://bischof-snowboards.com"
+
+BRAND_INK = "#334155"            # --foreground, die Hausschrift-Tinte
+BRAND_PRIMARY = "#379992"        # --primary, das Petrol der Marke
+BRAND_ACTION = "#ffbf00"         # --action, das Bernsteingelb fuer Aktionen
+BRAND_DARK = "#25242b"           # --action-foreground, der dunkle Grund
+BRAND_LIGHT = "#f1f5f9"          # --primary-foreground, helle Schrift
+BRAND_SECONDARY = "#e2e8f0"      # --secondary
+BRAND_ACCENT = "#f0f3f3"         # --accent
+BRAND_DESTRUCTIVE = "#e7000b"    # --destructive
+
+BRAND_DIR = Path(__file__).parent / "static" / "brand"
+LOGO_INK_SVG = BRAND_DIR / "logo-dark.svg"      # #334155, fuers PDF
+LOGO_BLACK_SVG = BRAND_DIR / "logo-black.svg"
+LOGO_LIGHT_SVG = BRAND_DIR / "logo-light.svg"
+LOGO_MM = 11.0                   # Kantenlaenge des Logos auf dem Papier
 
 # --- Marker ------------------------------------------------------------------
 ARUCO_DICT_NAME = "DICT_4X4_50"
@@ -74,7 +100,13 @@ TILE_OVERLAP_MM_DEFAULT = 10.0
 TILE_OVERVIEW_DEFAULT = True
 STRIP_H_MM = 18.0                    # Massstab links, Metadaten rechts (Spec 4.2)
 GRID_STEP_MM = 50.0
-GRID_GRAY = 0.75
+# Das Raster muss auf hellem UND dunklem Untergrund lesbar sein. Deshalb wird jede
+# Linie zweimal gezogen: erst ein breiter weisser Saum, dann die Kernlinie in
+# Markentinte. Auf Weiss verschwindet der Saum, auf Schwarz traegt er die Linie.
+GRID_INK = BRAND_INK
+GRID_LINE_PT = 0.5
+GRID_HALO_PT = 1.5
+GRID_LABEL_PT = 6.5
 SCALEBAR_MM = 100.0
 CONTOUR_LINE_MM = 0.25
 CONTOUR_EPS_MM = 0.5

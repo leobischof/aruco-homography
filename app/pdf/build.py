@@ -18,8 +18,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen.canvas import Canvas
 
 from app import config
-from app.pdf import overlays
-from app.pdf.layout import PageLayout, Rect, TileLayout, single_page, strip_height, tile_layout
+from app.pdf import branding, overlays
+from app.pdf.layout import Rect, TileLayout, single_page, strip_height, tile_layout
 
 
 @dataclass
@@ -75,7 +75,7 @@ def _build_single(
     footer_lines: list[str],
     contour_mm: np.ndarray | None,
 ) -> BuildResult:
-    strip_h = strip_height(options.show_scalebar, options.show_footer)
+    strip_h = strip_height()
     page = single_page(crop_w, crop_h, options.page_margin_mm, strip_h)
 
     buffer = io.BytesIO()
@@ -83,8 +83,12 @@ def _build_single(
 
     _place_image(canvas, image_bgr, page.image)
     _decorate(canvas, page.image, (0.0, 0.0), options, contour_mm)
-    if strip_h > 0.0:
-        overlays.draw_strip(canvas, page.strip, options.show_scalebar, footer_lines)
+    overlays.draw_strip(
+        canvas,
+        page.strip,
+        options.show_scalebar,
+        footer_lines if options.show_footer else [],
+    )
 
     canvas.showPage()
     canvas.save()
@@ -105,7 +109,7 @@ def _build_tiles(
     footer_lines: list[str],
     contour_mm: np.ndarray | None,
 ) -> BuildResult:
-    strip_h = strip_height(options.show_scalebar, options.show_footer)
+    strip_h = strip_height()
     plan = tile_layout(
         crop_w,
         crop_h,
@@ -139,13 +143,16 @@ def _build_tiles(
                 has_right_neighbour=tile.col < plan.n_cols - 1,
                 has_bottom_neighbour=tile.row < plan.n_rows - 1,
             )
-        if strip_h > 0.0:
-            overlays.draw_strip(canvas, plan.strip, options.show_scalebar, footer_lines)
-            overlays.draw_tile_label(
-                canvas,
-                plan.strip,
-                f"Blatt {tile.index}/{plan.page_count} - Spalte {tile.col + 1}, Reihe {tile.row + 1}",
-            )
+        overlays.draw_strip(
+            canvas,
+            plan.strip,
+            options.show_scalebar,
+            footer_lines if options.show_footer else [],
+            tile_label=(
+                f"Blatt {tile.index}/{plan.page_count} - "
+                f"Spalte {tile.col + 1}, Reihe {tile.row + 1}"
+            ),
+        )
 
         canvas.showPage()
         pages += 1
@@ -233,8 +240,9 @@ def _draw_overview(
     canvas: Canvas, plan: TileLayout, crop_w: float, crop_h: float, footer_lines: list[str]
 ) -> None:
     """Uebersichtsblatt: welches Blatt gehoert wohin."""
+    ink = branding.ink(config.BRAND_INK)
+    canvas.setFillColor(ink)
     canvas.setFont("Helvetica-Bold", 14)
-    canvas.setFillGray(0.0)
     canvas.drawString(_pt(plan.printer_margin_mm), _pt(plan.sheet_h - 20.0), "Klebeplan")
 
     canvas.setFont("Helvetica", 9)
@@ -245,9 +253,16 @@ def _draw_overview(
         f"({plan.n_cols} x {plan.n_rows}), Ueberlappung {plan.overlap_mm:.0f} mm",
     )
 
-    # Raster massstabsgetreu in den verbleibenden Platz einpassen.
+    # Raster massstabsgetreu in den verbleibenden Platz einpassen. Unten bleibt der
+    # Streifen frei, damit Marke und Metadaten auch hier stehen koennen.
+    strip = Rect(
+        plan.printer_margin_mm,
+        plan.printer_margin_mm,
+        plan.sheet_w - 2.0 * plan.printer_margin_mm,
+        config.STRIP_H_MM,
+    )
     area_w = plan.sheet_w - 2.0 * plan.printer_margin_mm
-    area_h = plan.sheet_h - 60.0
+    area_h = plan.sheet_h - 40.0 - (strip.y + strip.height + 8.0)
     scale = min(area_w / max(crop_w, 1e-6), area_h / max(crop_h, 1e-6))
     origin_x = plan.printer_margin_mm
     origin_y = plan.sheet_h - 40.0 - crop_h * scale
@@ -256,25 +271,22 @@ def _draw_overview(
     for tile in plan.tiles:
         x = origin_x + tile.crop_x * scale
         y = origin_y + (crop_h - tile.crop_y - tile.src_h) * scale
-        canvas.setStrokeGray(0.4)
+        canvas.setStrokeColor(branding.ink(config.BRAND_PRIMARY))
         canvas.rect(_pt(x), _pt(y), _pt(tile.src_w * scale), _pt(tile.src_h * scale))
         canvas.setFont("Helvetica-Bold", 10)
+        canvas.setFillColor(ink)
         canvas.drawCentredString(
             _pt(x + tile.src_w * scale / 2.0),
             _pt(y + tile.src_h * scale / 2.0),
             str(tile.index),
         )
 
-    canvas.setStrokeGray(0.0)
+    canvas.setStrokeColor(ink)
     canvas.setLineWidth(0.8)
     canvas.rect(_pt(origin_x), _pt(origin_y), _pt(crop_w * scale), _pt(crop_h * scale))
 
-    canvas.setFont("Helvetica", 6)
-    canvas.setFillGray(0.25)
-    for index, line in enumerate(footer_lines[:2]):
-        canvas.drawString(
-            _pt(plan.printer_margin_mm), _pt(plan.printer_margin_mm + 5.0 - index * 3.6), line
-        )
+    overlays.draw_strip(canvas, strip, show_scalebar=True, footer_lines=footer_lines,
+                        tile_label="Klebeplan")
 
 
 def build_footer_lines(meta: dict[str, object]) -> list[str]:
