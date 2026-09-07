@@ -109,6 +109,41 @@ def test_der_ausdruck_folgt_der_gewaehlten_sprache(client, solved):
     assert "Mode marker sheet" in english
 
 
+def test_vorgabe_ist_die_kachelung_auf_a4(client, solved):
+    """Ohne Angabe wird auf A4 gekachelt - nicht auf eine unbedruckbare Einzelseite.
+
+    Eine Schablone in Originalgroesse passt auf kein Blatt, das hier jemand im
+    Drucker hat. Die Vorgabe ist deshalb "verteilen und zusammenkleben", und der
+    Klebeplan gehoert dazu: ohne ihn weiss niemand, welches Blatt wohin gehoert.
+    """
+    request = ExportRequest(session_id=solved, crop_mm=CropMm(x0=0.0, y0=0.0, x1=400.0, y1=300.0))
+    assert request.layout == "tiles"
+    assert request.page_format == "A4"
+    assert request.tile_overview is True
+
+    response = client.post(
+        "/api/export",
+        json={
+            "session_id": solved,
+            "crop_mm": {"x0": 0.0, "y0": 0.0, "x1": 400.0, "y1": 300.0},
+            "dpi": 150,
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    # 400 x 300 mm passt auf kein A4-Blatt: mehrere Kacheln plus Klebeplan.
+    assert int(response.headers["X-Pages"]) > 1
+    pages = PdfReader(io.BytesIO(response.content)).pages
+    assert len(pages) == int(response.headers["X-Pages"])
+
+    # Sortiert verglichen, weil "auto" das Blatt quer legen darf - A4 bleibt A4.
+    box = pages[0].mediabox
+    sheet_mm = sorted(
+        (float(box.width) / config.PT_PER_MM, float(box.height) / config.PT_PER_MM)
+    )
+    assert sheet_mm == pytest.approx(sorted(config.SHEET_MM), abs=0.01)
+
+
 def test_export_ohne_solve_wird_abgelehnt(client, uploaded):
     fresh = client.post(
         "/api/upload", files={"file": ("leer.jpg", _tiny_jpeg(), "image/jpeg")}

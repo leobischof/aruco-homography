@@ -90,7 +90,10 @@ class ExportRequest(BaseModel):
     session_id: str
     crop_mm: CropMm
     dpi: int = config.DPI_DEFAULT
-    layout: Literal["single", "tiles"] = "single"
+    # Vorgabe ist die Kachelung, nicht die Einzelseite - siehe config.LAYOUT_DEFAULT.
+    # Dazu gehoert tile_overview als Klebeplan, sonst weiss niemand, welches Blatt
+    # wohin gehoert.
+    layout: Literal["single", "tiles"] = config.LAYOUT_DEFAULT
     page_format: Literal["A4", "A3"] = "A4"
     orientation: Literal["auto", "portrait", "landscape"] = "auto"
     overlap_mm: float = Field(default=config.TILE_OVERLAP_MM_DEFAULT, ge=0.0)

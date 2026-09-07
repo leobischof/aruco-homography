@@ -28,7 +28,12 @@ class ExportOptions:
     """Alles, was der Bediener am Druck einstellen kann."""
 
     dpi: int = config.DPI_DEFAULT
-    layout: str = "single"  # "single" | "tiles"
+    # "single" | "tiles". Bewusst NICHT config.LAYOUT_DEFAULT: das ist die Vorgabe
+    # der Bedienung, und die ist die Kachelung. Hier, eine Schicht tiefer, ist "eine
+    # Seite" der schlichte Fall - ein Bild, eine Seite - und Kachelung eine
+    # Betriebsart, die der Aufrufer verlangt. Wer die beiden gleichzieht, aendert
+    # stillschweigend, was tests/test_branding.py mit ExportOptions() prueft.
+    layout: str = "single"
     page_format: str = "A4"
     orientation: str = "auto"
     overlap_mm: float = config.TILE_OVERLAP_MM_DEFAULT

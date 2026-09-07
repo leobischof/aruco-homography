@@ -94,6 +94,13 @@ HORIZON_EPS = 0.02                   # Sicherheitsabstand zum Fluchtpunkt-Horizo
 EXTENT_HULL_FACTOR = 3.0             # Klammer fuer den abbildbaren Bereich
 
 # --- PDF-Geometrie ------------------------------------------------------------
+# Was der Bediener bekommt, wenn er nichts waehlt: verteilen und zusammenkleben.
+# Eine Schablone in Originalgroesse passt auf kein Blatt, das hier jemand im
+# Drucker hat - die Einzelseite ist der Sonderfall, nicht der Regelfall.
+# ACHTUNG: das ist die Vorgabe fuer die BEDIENUNG (app/schemas.py). Die
+# PDF-Schicht selbst (ExportOptions in app/pdf/build.py) hat bewusst eine andere:
+# dort ist "eine Seite" der schlichte Fall, und Kachelung eine Betriebsart.
+LAYOUT_DEFAULT = "tiles"
 PAGE_MARGIN_MM_DEFAULT = 5.0
 PRINTER_MARGIN_MM_DEFAULT = 5.0
 TILE_OVERLAP_MM_DEFAULT = 10.0
