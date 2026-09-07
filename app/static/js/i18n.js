@@ -24,18 +24,48 @@
 // Namen (er folgt free's "free-language").
 const STORAGE_KEY = "aruco-language";
 
-// Muss zu config.SUPPORTED_LOCALES und config.DEFAULT_LOCALE passen. Deutsch ist
-// die Ausgangssprache: die Oberflaeche ist deutsch, und der Benutzer steht in
-// einer Werkstatt in der Schweiz.
-export const SUPPORTED_LOCALES = ["de", "en"];
-const FALLBACK_LOCALE = "de";
+// Womit der Browser anfaengt, BEVOR er etwas geholt hat - und womit er weiter
+// macht, wenn /api/locales nicht antwortet. Die wirkliche Liste kommt von dort
+// und damit aus config.SUPPORTED_LOCALES; eine zweite Aufzaehlung der Sprachen
+// steht hier absichtlich nicht mehr (AGENTS.md, Invariante 4). Deutsch, weil die
+// Oberflaeche deutsch ist und der Benutzer in einer Werkstatt in der Schweiz steht.
+const BOOTSTRAP_LOCALE = "de";
 
 const PLACEHOLDER = /\{(\w+)\}/g;
 
-let locale = FALLBACK_LOCALE;
+let locale = BOOTSTRAP_LOCALE;
+let fallbackLocale = BOOTSTRAP_LOCALE;
+let locales = [{ code: BOOTSTRAP_LOCALE, label: BOOTSTRAP_LOCALE.toUpperCase() }];
 let messages = {};
 const loaded = new Map();
 const listeners = new Set();
+
+/** Die waehlbaren Sprachen als [{ code, label }] in der Reihenfolge aus config. */
+export function getLocales() {
+    return locales;
+}
+
+function isSupported(code) {
+    return locales.some((entry) => entry.code === code);
+}
+
+/**
+ * Sprachliste und Vorgabesprache vom Server holen.
+ *
+ * Der Umweg ueber das Netz ist der Preis dafuer, dass es die Liste nur EINMAL
+ * gibt: app/config.py sagt, welche Sprachen es gibt, /api/locales reicht sie
+ * durch, und der Sprachwaehler im Kopf entsteht daraus. Eine neue Sprache ist
+ * damit eine Katalogdatei plus ein Eintrag in config - kein Griff mehr hierher.
+ */
+async function loadLocales() {
+    const response = await fetch("/api/locales", { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`locales: HTTP ${response.status}`);
+    const payload = await response.json();
+    if (Array.isArray(payload.locales) && payload.locales.length > 0) {
+        locales = payload.locales;
+    }
+    if (isSupported(payload.default)) fallbackLocale = payload.default;
+}
 
 /** Aus dem verschachtelten JSON eine flache Karte "a.b.c" -> Text machen. */
 function flatten(node, prefix = "", target = {}) {
@@ -53,7 +83,7 @@ function flatten(node, prefix = "", target = {}) {
 /** "de-CH" -> "de"; alles Unbekannte auf die Vorgabesprache. */
 export function normaliseLocale(value) {
     const code = String(value || "").split("-")[0].toLowerCase();
-    return SUPPORTED_LOCALES.includes(code) ? code : FALLBACK_LOCALE;
+    return isSupported(code) ? code : fallbackLocale;
 }
 
 export function getLocale() {
@@ -197,22 +227,32 @@ export function onLocaleChange(listener) {
 function initialLocale() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored && SUPPORTED_LOCALES.includes(stored)) return stored;
+        if (stored && isSupported(stored)) return stored;
     } catch (error) {
         /* kein Speicher, kein Problem - dann entscheidet der Browser */
     }
     const browser = String(navigator.language || "").split("-")[0].toLowerCase();
-    return SUPPORTED_LOCALES.includes(browser) ? browser : FALLBACK_LOCALE;
+    return isSupported(browser) ? browser : fallbackLocale;
 }
 
 /**
- * Katalog laden, bevor irgendetwas gezeichnet wird.
+ * Sprachliste und Katalog laden, bevor irgendetwas gezeichnet wird.
  *
- * Schlaegt das fehl, bleibt der Katalog leer und jede Beschriftung zeigt ihren
- * Schluessel. Das ist haesslich und genau deshalb richtig: die Oberflaeche bleibt
- * bedienbar und der Fehler ist nicht zu uebersehen.
+ * Die Liste zuerst, denn ohne sie ist nicht zu entscheiden, ob die gespeicherte
+ * oder die Browsersprache ueberhaupt angeboten wird. Faellt sie aus, bleibt es
+ * bei der Vorgabesprache - die Oberflaeche laeuft weiter, nur ohne Auswahl.
+ *
+ * Schlaegt danach der Katalog fehl, bleibt er leer und jede Beschriftung zeigt
+ * ihren Schluessel. Das ist haesslich und genau deshalb richtig: die Oberflaeche
+ * bleibt bedienbar und der Fehler ist nicht zu uebersehen.
  */
 export async function initI18n() {
+    try {
+        await loadLocales();
+    } catch (error) {
+        console.error("Sprachliste nicht ladbar", error);
+    }
+
     const wanted = initialLocale();
     try {
         await setLocale(wanted, { remember: false });

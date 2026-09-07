@@ -16,6 +16,7 @@ import { createAdjustPanel } from "./adjust.js";
 import { describeError, exportPdf, postJson, uploadPhoto } from "./api.js";
 import { renderCropInfo } from "./crop-info.js";
 import { createCropRect } from "./crop-rect.js";
+import { createFilePicker } from "./file-picker.js";
 import { createHeader } from "./header.js";
 import { formatNumber, initI18n, onLocaleChange, richText, t, getLocale } from "./i18n.js";
 import { renderReport } from "./report.js";
@@ -39,12 +40,18 @@ let header = null;
 
 // --- Warten und Fehler -------------------------------------------------------
 
+// Der Schluessel, nicht der fertige Satz: waehrend eine Anfrage laeuft, laesst
+// sich die Sprache umstellen, und der Schleier bliebe sonst in der alten stehen.
+let busyKey = null;
+
 function busy(key) {
+    busyKey = key;
     el("busy-text").textContent = t(key);
     el("busy").hidden = false;
 }
 
 function idle() {
+    busyKey = null;
     el("busy").hidden = true;
 }
 
@@ -63,10 +70,7 @@ function clearError(slotId) {
 
 // --- Schritt 1: Foto ---------------------------------------------------------
 
-async function handleUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
+async function handleUpload(file) {
     clearError("upload-error");
     busy("ui.busy.upload");
     try {
@@ -303,6 +307,7 @@ function renderExportInfo() {
  * der alten Sprache stehen.
  */
 function rerender() {
+    if (busyKey) el("busy-text").textContent = t(busyKey);
     if (state.upload) {
         renderUploadInfo();
         renderDpiOptions(state.upload.defaults.dpi_choices, state.upload.defaults.dpi);
@@ -324,7 +329,7 @@ async function start() {
 
     header = createHeader({
         themeButton: el("theme-toggle"),
-        langButtons: [...document.querySelectorAll(".lang-option")],
+        langSelect: el("lang-select"),
         sheetLink: el("sheet-link"),
         getSheetParams: () => ({
             marker_mm: parseFloat(el("marker-mm").value),
@@ -345,7 +350,16 @@ async function start() {
         onError: (error) => showError("adjust-error", error),
     });
 
-    el("file").addEventListener("change", handleUpload);
+    // Die Dateiwahl bringt ihre eigene Beschriftung mit - das native Feld
+    // beschriftet sich in der Sprache des Browsers und liesse sich sonst nicht
+    // uebersetzen (siehe file-picker.js).
+    createFilePicker({
+        input: el("file"),
+        dropZone: el("file-drop"),
+        nameOutput: el("file-name"),
+        onFile: handleUpload,
+    });
+
     el("solve").addEventListener("click", handleSolve);
     el("export").addEventListener("click", handleExport);
     el("adjust-reset").addEventListener("click", () => adjustPanel.reset());

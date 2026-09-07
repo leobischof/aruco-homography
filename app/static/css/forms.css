@@ -60,32 +60,74 @@ select:disabled {
     cursor: not-allowed;
 }
 
-/* Die Datei-Auswahl ist die erste Handlung der Seite und darf danach aussehen:
-   eine gestrichelte Ablage statt eines schmalen Knopfes. */
-.file-input {
-    width: 100%;
+/* --------------------------------------------------------------------------
+   Dateiwahl
+   --------------------------------------------------------------------------
+   Die Datei-Auswahl ist die erste Handlung der Seite und darf danach aussehen:
+   eine gestrichelte Ablage statt eines schmalen Knopfes.
+
+   Sichtbar ist hier nur noch das Label. Die Eingabe selbst traegt .sr-only, weil
+   ein <input type="file"> sich in der Sprache des BROWSERS beschriftet und sich
+   nicht uebersetzen laesst (siehe js/file-picker.js). Der Knopf darin ist ein
+   gewoehnlicher .btn.btn-secondary - dasselbe, was ::file-selector-button vorher
+   nachgebaut hat, nur jetzt aus der einen Quelle in components.css.
+   -------------------------------------------------------------------------- */
+.file-drop {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
     padding: 1rem;
     background: var(--muted);
-    color: var(--muted-foreground);
     border: 1px dashed var(--border);
     border-radius: var(--radius-lg);
-    font: inherit;
     cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-out),
+                background-color var(--duration-fast) var(--ease-out);
 }
 
-.file-input:hover { border-color: var(--ring); }
+.file-drop:hover { border-color: var(--ring); }
 
-.file-input::file-selector-button {
-    margin-right: 0.75rem;
-    min-height: 2.25rem;
-    padding: 0.5rem 1rem;
-    background: var(--secondary);
-    color: var(--secondary-foreground);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    font: inherit;
-    font-weight: var(--weight-medium);
-    cursor: pointer;
+/* Der ganze Bereich ist der Knopf - also leuchtet der Knopf auch dann, wenn der
+   Zeiger nur irgendwo auf der Ablage steht. */
+.file-drop:hover .btn {
+    border-color: var(--ring);
+    color: var(--primary);
+}
+
+/* Waehrend eine Datei ueber der Flaeche haengt. */
+.file-drop.dragging {
+    border-color: var(--ring);
+    background: var(--accent);
+}
+
+/* Die Eingabe zeigt nichts an - der Fokusring gehoert deshalb auf das, was man
+   sieht. Ohne diese Regel liefe die Tabulatortaste durch ein unsichtbares
+   Element, und die Oberflaeche waere ohne Maus nicht mehr zu bedienen. */
+.file-input:focus-visible + .file-drop {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px var(--ring-soft);
+}
+
+/* Ein langer Dateiname soll umbrechen statt die Ablage zu sprengen. */
+.file-name {
+    min-width: 0;
+    color: var(--foreground);
+    overflow-wrap: anywhere;
+}
+
+/* Der Hinweis steht am anderen Ende der Ablage und erklaert damit die ganze
+   leere Flaeche, nicht nur den Knopf. */
+.file-drop-hint {
+    margin-left: auto;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+}
+
+/* Auf einem Beruehrungsbildschirm laesst sich nichts hierher ziehen - der
+   Hinweis waere dort eine Anweisung, die man nicht befolgen kann. */
+@media (pointer: coarse) {
+    .file-drop-hint { display: none; }
 }
 
 /* --------------------------------------------------------------------------
@@ -225,7 +267,9 @@ input[type="checkbox"] {
         height: 1.375rem;
     }
 
-    .file-input::file-selector-button {
-        min-height: var(--touch-target);
+    /* Umgebrochen ist der Hinweis nur noch eine Zeile, die aus der Flucht
+       faellt - dann laeuft er lieber hinter dem Dateinamen mit. */
+    .file-drop-hint {
+        margin-left: 0;
     }
 }
