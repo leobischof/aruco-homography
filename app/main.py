@@ -13,7 +13,7 @@ from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app import config
+from app import config, i18n
 from app.notices import AppError
 from app.pdf.markersheet import build_markersheet
 from app.pipeline import run_export, run_solve, solve_response
@@ -26,12 +26,23 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="ArUco-Homographie", docs_url="/api/docs", redoc_url=None)
 
 
+def request_locale(request: Request) -> str:
+    """Sprache dieser Anfrage. Der Browser schickt sie im Accept-Language-Kopf mit."""
+    return i18n.negotiate(request.headers.get("accept-language"))
+
+
 @app.exception_handler(AppError)
-async def handle_app_error(_: Request, error: AppError) -> JSONResponse:
-    """Fachliche Fehler als 422 mit Code, Klartext und betroffenem Feld."""
+async def handle_app_error(request: Request, error: AppError) -> JSONResponse:
+    """Fachliche Fehler als 422 mit Code, Parametern, Klartext und betroffenem Feld."""
+    locale = request_locale(request)
     return JSONResponse(
         status_code=422,
-        content={"code": error.code, "message": error.message, "field": error.field_name},
+        content={
+            "code": error.code,
+            "params": i18n.plain_params(error.params, locale),
+            "field": error.field_name,
+            "message": error.message(locale),
+        },
     )
 
 
@@ -42,20 +53,13 @@ async def upload(file: UploadFile = File(...)) -> dict[str, object]:
     size_mb = len(data) / (1024 * 1024)
     if size_mb > config.MAX_UPLOAD_MB:
         raise AppError(
-            "upload_too_large",
-            f"Das Foto ist {size_mb:.0f} MB gross, erlaubt sind {config.MAX_UPLOAD_MB} MB.",
-            "file",
+            "upload_too_large", "file", size_mb=f"{size_mb:.0f}", limit_mb=config.MAX_UPLOAD_MB
         )
 
     try:
         photo = load_photo(data)
     except Exception as error:  # Pillow wirft je nach Format sehr Verschiedenes.
-        raise AppError(
-            "unreadable_image",
-            f"Das Foto konnte nicht gelesen werden ({error}). Unterstuetzt werden JPEG, PNG "
-            "und HEIC.",
-            "file",
-        ) from error
+        raise AppError("unreadable_image", "file", reason=str(error)) from error
 
     session = store.create(photo, file.filename or "foto.jpg")
     return {
@@ -81,10 +85,12 @@ async def upload(file: UploadFile = File(...)) -> dict[str, object]:
 
 
 @app.post("/api/solve")
-async def solve_endpoint(request: SolveRequest) -> dict[str, object]:
+async def solve_endpoint(request: SolveRequest, http_request: Request) -> dict[str, object]:
     """Homographie bestimmen, Qualitaet bewerten, entzerrte Vorschau erzeugen."""
     session = store.get(request.session_id)
-    return solve_response(session, run_solve(session, request))
+    return solve_response(
+        session, run_solve(session, request), request_locale(http_request)
+    )
 
 
 @app.post("/api/export")
@@ -108,24 +114,33 @@ async def export_endpoint(request: ExportRequest) -> Response:
 
 @app.get("/api/markersheet")
 async def markersheet_endpoint(
+    http_request: Request,
     marker_mm: float = config.MARKER_MM_NOMINAL,
     spacing_x_mm: float = config.SHEET_SPACING_MM[0],
     spacing_y_mm: float = config.SHEET_SPACING_MM[1],
+    locale: str | None = None,
 ) -> Response:
-    """Das A4-Markerblatt zum Ausdrucken."""
+    """Das A4-Markerblatt zum Ausdrucken.
+
+    Das Blatt wird ueber einen einfachen Link geholt, also kann die Oberflaeche ihre
+    Sprache nicht als Kopfzeile mitgeben - dafuer gibt es ?locale=. Ohne die Angabe
+    entscheidet Accept-Language.
+    """
     if marker_mm <= 0.0 or spacing_x_mm <= 0.0 or spacing_y_mm <= 0.0:
-        raise AppError(
-            "bad_marker_size", "Markergroesse und Abstaende muessen groesser als 0 sein.", "marker_mm"
-        )
+        raise AppError("bad_marker_size", "marker_mm")
     if marker_mm + spacing_x_mm > config.SHEET_MM[0] or marker_mm + spacing_y_mm > config.SHEET_MM[1]:
         raise AppError(
             "sheet_too_small",
-            f"Marker {marker_mm:.0f} mm mit Abstaenden {spacing_x_mm:.0f} x {spacing_y_mm:.0f} mm "
-            f"passen nicht auf A4 ({config.SHEET_MM[0]:.0f} x {config.SHEET_MM[1]:.0f} mm).",
             "spacing_x_mm",
+            marker_mm=f"{marker_mm:.0f}",
+            spacing_x_mm=f"{spacing_x_mm:.0f}",
+            spacing_y_mm=f"{spacing_y_mm:.0f}",
+            sheet_w_mm=f"{config.SHEET_MM[0]:.0f}",
+            sheet_h_mm=f"{config.SHEET_MM[1]:.0f}",
         )
+    wanted = i18n.normalise(locale) if locale else request_locale(http_request)
     return Response(
-        content=build_markersheet(marker_mm, (spacing_x_mm, spacing_y_mm)),
+        content=build_markersheet(marker_mm, (spacing_x_mm, spacing_y_mm), wanted),
         media_type="application/pdf",
         headers={"Content-Disposition": 'inline; filename="markerblatt_A4.pdf"'},
     )
@@ -135,14 +150,14 @@ async def markersheet_endpoint(
 async def preview_endpoint(session_id: str, kind: str) -> Response:
     """Vorschau-JPEGs (original, detected, rectified)."""
     if kind not in {"original", "detected", "rectified"}:
-        raise AppError("bad_preview", f"Unbekannte Vorschau: {kind}")
+        raise AppError("bad_preview", kind=kind)
 
     session = store.get(session_id)
     path = session.preview_path(kind)
     if kind == "original" and not path.exists():
         session.write_preview("original", session.photo.bgr)
     if not path.exists():
-        raise AppError("preview_missing", "Diese Vorschau wurde noch nicht erzeugt.")
+        raise AppError("preview_missing")
 
     return FileResponse(path, media_type="image/jpeg")
 

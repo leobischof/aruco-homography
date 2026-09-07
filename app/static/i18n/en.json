@@ -1,0 +1,230 @@
+{
+  "document": {
+    "title": "ArUco Homography"
+  },
+  "ui": {
+    "header": {
+      "brand": "Bischof Snowboards",
+      "brand_link_title": "bischof-snowboards.com",
+      "logo_alt": "Bischof Snowboards",
+      "title": "ArUco Homography",
+      "subtitle": "Rectify a phone photo and print it as a dimensionally accurate PDF at 1:1.",
+      "markersheet": "Print marker sheet (A4)"
+    },
+    "steps": {
+      "upload": {
+        "title": "Photo",
+        "hint": "For the best result: use the tele lens (1× or 2×), stand well back, keep the object centred. Wide angle bends the edges, and that distortion is not corrected.",
+        "summary": "{filename} – {width} × {height} px",
+        "exif_focal": "EXIF focal length {focal_mm} mm (35 mm equivalent) – the camera height can be determined automatically.",
+        "exif_missing": "No EXIF focal length found – enter the camera distance if you need a thickness correction."
+      },
+      "params": {
+        "title": "Scale",
+        "marker_mm_label": "Marker size (mm)",
+        "marker_mm_hint": "Edge length measured on the printout, black border included.",
+        "mode_label": "Mode",
+        "mode_sheet": "Marker sheet (IDs 0–3, known layout)",
+        "mode_free": "Freely placed markers",
+        "mode_hint": "The marker sheet is more accurate, because its spacings are known.",
+        "spacing_x_label": "Centre spacing, horizontal (mm)",
+        "spacing_x_hint": "Distance between the two markers side by side.",
+        "spacing_y_label": "Centre spacing, vertical (mm)",
+        "spacing_y_hint": "Distance between the two markers above one another.",
+        "thickness_label": "Object thickness (mm)",
+        "thickness_hint": "0 if the sheet lies on the surface of the object.",
+        "camera_height_label": "Camera distance (mm, optional)",
+        "camera_height_placeholder": "from EXIF",
+        "camera_height_hint": "Only needed when EXIF carries no focal length and the thickness is greater than 0.",
+        "solve": "Rectify"
+      },
+      "report": {
+        "title": "Quality",
+        "card_residual": "Residual error",
+        "card_markers": "Markers",
+        "card_sides": "Measured edges",
+        "card_source_resolution": "Source resolution",
+        "card_camera": "Camera",
+        "card_thickness": "Thickness correction",
+        "value_residual": "{rms_px} px / {rms_mm} mm",
+        "value_markers": "{count} ({mode})",
+        "value_mode_sheet": "sheet",
+        "value_mode_free": "free",
+        "value_side": "{marker_id}: {side_mm} mm",
+        "value_source_resolution": "{mm_per_px} mm/px",
+        "value_camera": "{height_mm} mm, {tilt}",
+        "value_camera_unknown": "unknown",
+        "value_tilt": "{tilt_deg} degrees",
+        "value_tilt_unknown": "tilt n/a",
+        "value_thickness": "{thickness_mm} mm, k={factor}",
+        "value_thickness_none": "none"
+      },
+      "crop": {
+        "title": "Crop",
+        "hint": "Drag a rectangle on the image. The green area is the marker hull – anything well outside it is extrapolated and therefore uncertain.",
+        "preview_alt": "Rectified preview",
+        "x0_label": "x0 (mm)",
+        "y0_label": "y0 (mm)",
+        "x1_label": "x1 (mm)",
+        "y1_label": "y1 (mm)",
+        "size": "{width} × {height} mm",
+        "pixels": "{width_px} × {height_px} px at {dpi} dpi ({megapixels} megapixels)",
+        "over_limit": "– above the limit of {limit} megapixels",
+        "extrapolation": "Extrapolation outside the marker hull: {percent} %",
+        "extrapolation_warn": "– the rectification is unreliable there"
+      },
+      "export": {
+        "title": "Print",
+        "dpi_label": "Resolution",
+        "dpi_option": "{dpi} dpi",
+        "layout_label": "Layout",
+        "layout_single": "One page at object size",
+        "layout_tiles": "Tiling onto standard paper",
+        "page_format_label": "Paper size (tiling)",
+        "overlap_label": "Overlap (mm)",
+        "overlays_legend": "Printed extras",
+        "overlay_scalebar": "100 mm control scale",
+        "overlay_footer": "Metadata footer",
+        "overlay_grid": "50 mm grid",
+        "overlay_marks": "Cut and glue marks",
+        "overlay_overview": "Assembly plan as the first sheet",
+        "overlay_contour": "Outline as a cutting line",
+        "submit": "Create PDF",
+        "result": "PDF created: {pages} page(s), page size {page_size} mm.",
+        "result_hint": "When printing, be sure to choose {emphasis}, then measure the printed 100 mm scale to check.",
+        "result_emphasis": "100 % / no scaling"
+      }
+    },
+    "adjust": {
+      "title": "Image adjustment",
+      "grayscale_label": "Grayscale",
+      "grayscale_hint": "Drop the colour and show brightness only.",
+      "invert_label": "Invert",
+      "invert_hint": "Swap light and dark.",
+      "brightness_label": "Brightness",
+      "brightness_hint": "Make the whole image lighter or darker.",
+      "contrast_label": "Contrast",
+      "contrast_hint": "Widen the gap between light and dark.",
+      "saturation_label": "Saturation",
+      "saturation_hint": "Make the colours stronger or paler.",
+      "local_contrast_label": "Local contrast",
+      "local_contrast_hint": "Brings out detail in evenly lit areas (CLAHE).",
+      "edge_boost_label": "Edge boost",
+      "edge_boost_hint": "Unsharp mask: makes edges clearer without moving them.",
+      "edge_overlay_label": "Edge overlay",
+      "edge_overlay_hint": "Draws the detected edges as lines on top of the image.",
+      "emphasis_label": "Colour emphasis",
+      "emphasis_hint": "Bring one hue forward and hold the rest back.",
+      "emphasis_none": "none",
+      "emphasis_red": "Red",
+      "emphasis_yellow": "Yellow",
+      "emphasis_green": "Green",
+      "emphasis_cyan": "Cyan",
+      "emphasis_blue": "Blue",
+      "emphasis_magenta": "Magenta",
+      "emphasis_strength_label": "Emphasis strength",
+      "emphasis_strength_hint": "How strongly the chosen hue stands out.",
+      "threshold_label": "Threshold",
+      "threshold_hint": "Reduce to black and white – gives a hard cutting edge.",
+      "reset_label": "Reset",
+      "reset_hint": "All sliders back to their starting values."
+    },
+    "theme": {
+      "label": "Switch theme",
+      "to_dark": "Switch to dark mode",
+      "to_light": "Switch to light mode"
+    },
+    "language": {
+      "label": "Switch language",
+      "de": "Deutsch",
+      "en": "English"
+    },
+    "busy": {
+      "default": "Working …",
+      "upload": "Uploading photo …",
+      "solve": "Detecting markers and computing …",
+      "export": "Creating PDF …"
+    },
+    "footer": {
+      "claim": "Made with Bischof Snowboards Software",
+      "logo_alt": "Bischof Snowboards"
+    },
+    "common": {
+      "empty": "–",
+      "error_field": "(field: {field})",
+      "error_unknown": "Unknown error."
+    }
+  },
+  "notices": {
+    "camera_height_override": "Using the camera distance you entered, {height_mm} mm (the EXIF estimate would have been {estimate_mm} mm).",
+    "camera_pose_unknown": "Camera height unknown (no EXIF focal length). Without an object thickness this has no consequences.",
+    "camera_height_implausible": "EXIF and homography give a camera height of {height_mm} mm – that is implausible, so it is discarded.",
+    "single_marker": "Only one marker detected: the homography is exactly determined, but without any redundancy – no error measure can be given.",
+    "collinear_markers": "The markers lie almost on a straight line. Across that line the homography has next to no support and becomes unreliable there; spread the markers over an area.",
+    "high_residual": "Residual error {rms_px} px ({rms_mm} mm) above the threshold. Likely causes: lens distortion, an unsharp photo, or a marker sheet that is not flat.",
+    "marker_size_deviation": "Marker {marker_id} measures {measured_mm} mm when projected back, instead of {expected_mm} mm ({deviation_pct} % deviation).",
+    "marker_rotation": "Marker {marker_id} is rotated by {rotation_deg} degrees against the anchor marker. Free mode assumes all markers share one orientation."
+  },
+  "errors": {
+    "upload_too_large": "The photo is {size_mb} MB, and at most {limit_mb} MB are allowed.",
+    "unreadable_image": "The photo could not be read ({reason}). JPEG, PNG and HEIC are supported.",
+    "bad_marker_size": "Marker size and spacings must be greater than 0.",
+    "sheet_too_small": "A {marker_mm} mm marker with spacings of {spacing_x_mm} × {spacing_y_mm} mm does not fit on A4 ({sheet_w_mm} × {sheet_h_mm} mm).",
+    "bad_preview": "Unknown preview: {kind}",
+    "preview_missing": "This preview has not been created yet.",
+    "empty_crop": "The crop has no area.",
+    "not_solved": "Nothing has been rectified for this session yet. Please run “Rectify” first.",
+    "session_expired": "The session has expired. Please upload the photo again.",
+    "bad_page_format": "Unknown paper size: {page_format}. Available: {formats}.",
+    "margins_too_large": "Margin and strip leave no usable area on {page_format}.",
+    "overlap_too_large": "An overlap of {overlap_mm} mm is too large for {page_format} ({usable_w_mm} × {usable_h_mm} mm are usable).",
+    "camera_height_required": "The camera distance is missing for the thickness correction: the photo carries no usable EXIF focal length (typical for forwarded images). Enter the camera-to-sheet distance in mm, or set the object thickness to 0.",
+    "output_too_large": "The result would be {width_px} × {height_px} pixels ({megapixels} megapixels), and at most {limit_mpx} megapixels are allowed. {hint}",
+    "output_too_large_hint_dpi": "It fits at {dpi} dpi.",
+    "output_too_large_hint_crop": "Not even {dpi} dpi is enough – make the crop smaller.",
+    "no_markers": "No ArUco marker was found. Check sharpness, lighting, and whether the whole marker sheet is in the frame.",
+    "bad_mode": "Unknown mode: {mode}",
+    "no_sheet_ids": "Only the marker IDs {found} were detected. The supplied sheet uses {expected}. Switch to free mode, or print the app's marker sheet.",
+    "homography_failed": "No homography could be computed from the detected markers. Do they lie almost on a straight line?",
+    "homography_degenerate": "The homography is degenerate (H[2,2] = 0).",
+    "thickness_too_large": "The object thickness ({thickness_mm} mm) must be smaller than the camera distance ({camera_height_mm} mm)."
+  },
+  "pdf": {
+    "document_title": "Template {width} × {height} mm",
+    "scalebar_caption": "Control scale {length} mm – measure it! 10 mm divisions",
+    "tiles": {
+      "sheet": "Sheet {index}/{count}",
+      "position": "Column {col}, row {row}"
+    },
+    "assembly": {
+      "title": "Assembly plan",
+      "summary": "Overall size {width} × {height} mm – {pages} sheets ({cols} × {rows}), overlap {overlap} mm"
+    },
+    "footer": {
+      "line1": "{object_mm} | {dpi} dpi | {scale} | Mode {mode} | Markers {marker_ids} @ {marker_mm} mm",
+      "line2": "RMS {rms} | Camera {camera} | Thickness {thickness} | Extrapolation {extrapolation} | {source} | {timestamp}",
+      "object": "{width} × {height} mm",
+      "contour": " | Contour {width} × {height} mm",
+      "scale_source": "{mm_per_px} mm/px source",
+      "mode_sheet": "marker sheet",
+      "mode_free": "free",
+      "camera": "{height_mm} mm{tilt} ({source})",
+      "camera_tilt": ", {tilt_deg} degrees",
+      "camera_unknown": "unknown"
+    },
+    "markersheet": {
+      "document_title": "ArUco Homography – A4 marker sheet",
+      "title": "ArUco Homography – marker sheet",
+      "print_hint": "Print without scaling (100 %, not “fit to page”)",
+      "marker_label": "ID {marker_id}",
+      "dictionary": "Dictionary {dictionary}, IDs {ids} (0 top left, 1 top right, 2 bottom left, 3 bottom right)",
+      "side": "Nominal edge length {marker_mm} mm (black border included)",
+      "spacing": "Centre spacings {spacing_x_mm} mm × {spacing_y_mm} mm",
+      "measure_1": "After printing, measure the marker edge AND both centre spacings,",
+      "measure_2": "then enter the MEASURED values in the app – that takes any",
+      "measure_3": "printer scaling out of the calculation.",
+      "footer": "Marker sheet {dictionary} – {marker_mm} mm – {spacing_x_mm} × {spacing_y_mm} mm",
+      "scale_caption": "Control scale {length} mm – measure it!"
+    }
+  }
+}

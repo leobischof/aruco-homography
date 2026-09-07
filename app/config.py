@@ -115,6 +115,19 @@ CONTOUR_MIN_AREA_FRAC = 0.05
 # Papierformate fuer die Kachelung, immer (Breite, Hoehe) im Hochformat.
 SHEET_FORMATS = {"A4": (210.0, 297.0), "A3": (297.0, 420.0)}
 
+# --- Sprachen -----------------------------------------------------------------
+# Oberflaeche und PDF sprechen dieselben Kataloge. Sie liegen unter app/static/i18n/,
+# damit der Browser sie direkt laden kann UND Python sie lesen kann - eine Datei je
+# Sprache, keine zweite Fassung fuer den Server.
+LOCALE_DIR = Path(__file__).parent / "static" / "i18n"
+SUPPORTED_LOCALES = ("de", "en")
+DEFAULT_LOCALE = "de"
+# Schluessel, unter dem der Browser die zuletzt gewaehlte Sprache merkt. Der Name
+# folgt snow-service-free ("free-language"), damit die Werkzeuge des Hauses sich
+# gleich verhalten.
+LOCALE_STORAGE_KEY = "aruco-language"
+THEME_STORAGE_KEY = "aruco-theme"
+
 # --- Server -------------------------------------------------------------------
 SESSION_TTL_S = 3600
 HOST = "0.0.0.0"

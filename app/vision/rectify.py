@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from app import config
+from app.i18n import Phrase
 from app.notices import AppError
 from app.vision.extent import Extent
 
@@ -41,16 +42,20 @@ def check_output_budget(crop: Extent, dpi: int) -> None:
         for choice in config.DPI_CHOICES
         if _megapixels(crop, choice) <= config.MAX_OUTPUT_MPX
     ]
+    # Welcher Rat hilft, steht hier fest - in welcher Sprache er ankommt, erst am Rand.
     hint = (
-        f"Mit {max(affordable)} dpi passt es."
+        Phrase("errors.output_too_large_hint_dpi", {"dpi": max(affordable)})
         if affordable
-        else f"Auch {min(config.DPI_CHOICES)} dpi reicht nicht - verkleinere den Zuschnitt."
+        else Phrase("errors.output_too_large_hint_crop", {"dpi": min(config.DPI_CHOICES)})
     )
     raise AppError(
         "output_too_large",
-        f"Das Ergebnis waere {width} x {height} Pixel ({megapixels:.0f} MPixel) gross, "
-        f"erlaubt sind {config.MAX_OUTPUT_MPX:.0f} MPixel. {hint}",
         "dpi",
+        width_px=width,
+        height_px=height,
+        megapixels=f"{megapixels:.0f}",
+        limit_mpx=f"{config.MAX_OUTPUT_MPX:.0f}",
+        hint=hint,
     )
 
 

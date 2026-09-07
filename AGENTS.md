@@ -80,8 +80,11 @@ und fiele sonst erst am realen Foto auf.
 
 ## Konventionen
 
-- **Deutsch** in Oberfläche, Kommentaren und Docstrings. Commit-Betreffs auf Englisch mit
-  konventionellem Präfix (`feat:` `fix:` `docs:` `chore:` `test:` `refactor:`).
+- **Deutsch** in Kommentaren, Docstrings und interner Dokumentation. Die Oberfläche selbst
+  spricht Deutsch **und** Englisch — jede sichtbare Zeichenkette kommt aus einem i18n-Katalog
+  (`app/static/i18n/`), keine mehr fest im Code.
+- Commit-Betreffs auf Englisch mit konventionellem Präfix (`feat:` `fix:` `docs:` `chore:`
+  `test:` `refactor:`).
 - Kommentare erklären **warum**, nicht was.
 - Eine Datei, ein Zweck, etwa 300 Zeilen Code als Richtwert.
 - Wiederverwenden statt neu bauen: nie eine zweite Art, dasselbe zu tun.

@@ -19,6 +19,7 @@ import cv2
 from reportlab.pdfgen.canvas import Canvas
 
 from app import config
+from app.i18n import translate
 from app.pdf import branding
 from app.pdf.layout import Rect
 
@@ -43,31 +44,38 @@ def sheet_layout(
 def build_markersheet(
     marker_mm: float = config.MARKER_MM_NOMINAL,
     spacing_mm: tuple[float, float] | None = None,
+    locale: str = config.DEFAULT_LOCALE,
 ) -> bytes:
     """Das komplette Markerblatt als PDF-Bytes."""
     spacing = spacing_mm or config.SHEET_SPACING_MM
     sheet_w, sheet_h = config.SHEET_MM
     buffer = io.BytesIO()
     canvas = Canvas(buffer, pagesize=(_pt(sheet_w), _pt(sheet_h)))
-    canvas.setTitle("ArUco-Homographie - Markerblatt A4")
+    canvas.setTitle(translate("pdf.markersheet.document_title", locale))
 
     for marker_id, rect in sheet_layout(marker_mm, spacing).items():
         _draw_marker(canvas, marker_id, rect)
         canvas.setFont("Helvetica", 7)
         canvas.setFillGray(0.35)
         canvas.drawCentredString(
-            _pt(rect.x + rect.width / 2.0), _pt(rect.y - 4.0), f"ID {marker_id}"
+            _pt(rect.x + rect.width / 2.0),
+            _pt(rect.y - 4.0),
+            translate("pdf.markersheet.marker_label", locale, marker_id=marker_id),
         )
 
-    _draw_instructions(canvas, sheet_w, sheet_h, marker_mm, spacing)
-    _draw_brand_footer(canvas, sheet_w, marker_mm, spacing)
+    _draw_instructions(canvas, sheet_w, sheet_h, marker_mm, spacing, locale)
+    _draw_brand_footer(canvas, sheet_w, marker_mm, spacing, locale)
     canvas.showPage()
     canvas.save()
     return buffer.getvalue()
 
 
 def _draw_brand_footer(
-    canvas: Canvas, sheet_w: float, marker_mm: float, spacing_mm: tuple[float, float]
+    canvas: Canvas,
+    sheet_w: float,
+    marker_mm: float,
+    spacing_mm: tuple[float, float],
+    locale: str = config.DEFAULT_LOCALE,
 ) -> None:
     """Markenzeichen am unteren Blattrand.
 
@@ -83,8 +91,14 @@ def _draw_brand_footer(
     canvas.drawString(
         _pt(15.0),
         _pt(strip_y + strip_h / 2.0 - 1.0),
-        f"Markerblatt {config.ARUCO_DICT_NAME} - {marker_mm:.1f} mm - "
-        f"{spacing_mm[0]:.1f} x {spacing_mm[1]:.1f} mm",
+        translate(
+            "pdf.markersheet.footer",
+            locale,
+            dictionary=config.ARUCO_DICT_NAME,
+            marker_mm=f"{marker_mm:.1f}",
+            spacing_x_mm=f"{spacing_mm[0]:.1f}",
+            spacing_y_mm=f"{spacing_mm[1]:.1f}",
+        ),
     )
 
 
@@ -116,6 +130,7 @@ def _draw_instructions(
     sheet_h: float,
     marker_mm: float,
     spacing_mm: tuple[float, float],
+    locale: str = config.DEFAULT_LOCALE,
 ) -> None:
     """Titel, Bedienhinweis, Layoutangaben und der eigene Kontrollmassstab."""
     centre_x = sheet_w / 2.0
@@ -123,34 +138,48 @@ def _draw_instructions(
 
     canvas.setFillGray(0.0)
     canvas.setFont("Helvetica-Bold", 13)
-    canvas.drawCentredString(_pt(centre_x), _pt(top), "ArUco-Homographie - Markerblatt")
+    canvas.drawCentredString(_pt(centre_x), _pt(top), translate("pdf.markersheet.title", locale))
 
     canvas.setFont("Helvetica-Bold", 9)
     canvas.drawCentredString(
-        _pt(centre_x), _pt(top - 8.0), "Ohne Skalierung drucken (100 %, nicht 'an Seite anpassen')"
+        _pt(centre_x), _pt(top - 8.0), translate("pdf.markersheet.print_hint", locale)
     )
 
     line_step = 4.6
     canvas.setFont("Helvetica", 8)
     canvas.setFillGray(0.2)
+    # Die drei Messzeilen stehen einzeln im Katalog: sie werden zentriert gesetzt, und
+    # wo der Umbruch sitzt, entscheidet die Sprache - nicht der Code.
     lines = [
-        f"Woerterbuch {config.ARUCO_DICT_NAME}, IDs "
-        f"{', '.join(str(i) for i in config.SHEET_MARKER_IDS)} "
-        "(0 oben links, 1 oben rechts, 2 unten links, 3 unten rechts)",
-        f"Nennkantenlaenge {marker_mm:.1f} mm (inkl. schwarzem Rand)",
-        f"Mittelpunktabstaende {spacing_mm[0]:.1f} mm x {spacing_mm[1]:.1f} mm",
+        translate(
+            "pdf.markersheet.dictionary",
+            locale,
+            dictionary=config.ARUCO_DICT_NAME,
+            ids=", ".join(str(i) for i in config.SHEET_MARKER_IDS),
+        ),
+        translate("pdf.markersheet.side", locale, marker_mm=f"{marker_mm:.1f}"),
+        translate(
+            "pdf.markersheet.spacing",
+            locale,
+            spacing_x_mm=f"{spacing_mm[0]:.1f}",
+            spacing_y_mm=f"{spacing_mm[1]:.1f}",
+        ),
         "",
-        "Nach dem Druck Markerkante UND beide Mittelpunktabstaende messen und",
-        "die GEMESSENEN Werte in der App eintragen - damit faellt jede",
-        "Druckerskalierung aus der Rechnung heraus.",
+        translate("pdf.markersheet.measure_1", locale),
+        translate("pdf.markersheet.measure_2", locale),
+        translate("pdf.markersheet.measure_3", locale),
     ]
     for index, line in enumerate(lines):
         canvas.drawCentredString(_pt(centre_x), _pt(top - 18.0 - index * line_step), line)
 
-    _draw_control_scale(canvas, centre_x - config.SCALEBAR_MM / 2.0, sheet_h / 2.0 - 32.0)
+    _draw_control_scale(
+        canvas, centre_x - config.SCALEBAR_MM / 2.0, sheet_h / 2.0 - 32.0, locale
+    )
 
 
-def _draw_control_scale(canvas: Canvas, x: float, y: float) -> None:
+def _draw_control_scale(
+    canvas: Canvas, x: float, y: float, locale: str = config.DEFAULT_LOCALE
+) -> None:
     """100-mm-Balken mit 10-mm-Teilung, gleiche Machart wie im Export-PDF."""
     height = 3.0
     canvas.setFillGray(0.0)
@@ -166,7 +195,9 @@ def _draw_control_scale(canvas: Canvas, x: float, y: float) -> None:
     canvas.drawCentredString(
         _pt(x + config.SCALEBAR_MM / 2.0),
         _pt(y - 5.0),
-        f"Kontrollmassstab {config.SCALEBAR_MM:.0f} mm - nachmessen!",
+        translate(
+            "pdf.markersheet.scale_caption", locale, length=f"{config.SCALEBAR_MM:.0f}"
+        ),
     )
 
 

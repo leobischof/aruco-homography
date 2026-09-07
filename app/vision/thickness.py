@@ -29,9 +29,9 @@ def correction_matrix(
     if camera_height_mm <= thickness_mm:
         raise AppError(
             "thickness_too_large",
-            f"Die Objektdicke ({thickness_mm:.1f} mm) muss kleiner sein als der "
-            f"Kameraabstand ({camera_height_mm:.0f} mm).",
             "thickness_mm",
+            thickness_mm=f"{thickness_mm:.1f}",
+            camera_height_mm=f"{camera_height_mm:.0f}",
         )
 
     factor = camera_height_mm / (camera_height_mm - thickness_mm)
@@ -53,11 +53,7 @@ def effective_homography(
         return np.asarray(homography, dtype=np.float64), 1.0
 
     if not pose.usable_for_thickness:
-        raise AppError(
-            "camera_height_required",
-            "Fuer die Dickenkorrektur werden Kamerahoehe und Lotpunkt gebraucht.",
-            "camera_height_mm",
-        )
+        raise AppError("camera_height_required", "camera_height_mm")
 
     assert pose.nadir_mm is not None and pose.height_mm is not None  # von usable_for_thickness
     correction = correction_matrix(pose.nadir_mm, pose.height_mm, thickness_mm)

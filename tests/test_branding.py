@@ -73,7 +73,7 @@ def test_marke_bleibt_auch_ohne_aufdrucke():
 
     text = page_texts(result.data)[0]
     assert config.BRAND_CLAIM in text
-    assert "Kontrollmassstab" not in text
+    assert "Kontrollmaßstab" not in text
 
 
 def page_link_targets(data: bytes, page_index: int = 0) -> list[str]:

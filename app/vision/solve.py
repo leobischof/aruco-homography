@@ -98,20 +98,16 @@ def solve(
 ) -> Solution:
     """Einstiegspunkt: Modus waehlen, loesen, Qualitaet bewerten."""
     if not markers:
-        raise AppError(
-            "no_markers",
-            "Es wurde kein ArUco-Marker gefunden. Pruefe Schaerfe, Beleuchtung und ob das "
-            "Markerblatt vollstaendig im Bild ist.",
-        )
+        raise AppError("no_markers")
     if marker_mm <= 0.0:
-        raise AppError("bad_marker_size", "Die Markergroesse muss groesser als 0 sein.", "marker_mm")
+        raise AppError("bad_marker_size", "marker_mm")
 
     if mode == "sheet":
         homography, plane_by_id = _solve_sheet(markers, marker_mm, spacing_mm)
     elif mode == "free":
         homography, plane_by_id = _solve_free(markers, marker_mm)
     else:
-        raise AppError("bad_mode", f"Unbekannter Modus: {mode}", "mode")
+        raise AppError("bad_mode", "mode", mode=mode)
 
     used = [m for m in markers if m.marker_id in plane_by_id]
     return _finalize(homography, plane_by_id, used, marker_mm, mode, notices)
@@ -125,13 +121,11 @@ def _solve_sheet(
     layout = sheet_plane_corners(marker_mm, spacing_mm)
     usable = [m for m in markers if m.marker_id in layout]
     if not usable:
-        found = ", ".join(str(m.marker_id) for m in markers)
         raise AppError(
             "no_sheet_ids",
-            f"Erkannt wurden nur die Marker-IDs {found}. Das mitgelieferte Blatt benutzt "
-            f"{', '.join(str(i) for i in config.SHEET_MARKER_IDS)}. Wechsle in den Frei-Modus "
-            "oder drucke das Markerblatt der App.",
             "mode",
+            found=", ".join(str(m.marker_id) for m in markers),
+            expected=", ".join(str(i) for i in config.SHEET_MARKER_IDS),
         )
 
     plane_by_id = {m.marker_id: layout[m.marker_id] for m in usable}
@@ -146,11 +140,7 @@ def _solve_sheet(
     else:
         homography, _ = cv2.findHomography(plane_pts, image_pts, method=cv2.LMEDS)
         if homography is None:
-            raise AppError(
-                "homography_failed",
-                "Aus den erkannten Markern liess sich keine Homographie berechnen. "
-                "Liegen sie fast auf einer Linie?",
-            )
+            raise AppError("homography_failed")
 
     return _refine_homography(homography, plane_pts, image_pts), plane_by_id
 
@@ -216,7 +206,7 @@ def _as_eight(homography: np.ndarray) -> np.ndarray:
     """Homographie auf H[2,2] = 1 normieren und die 8 freien Parameter zurueckgeben."""
     matrix = np.asarray(homography, dtype=np.float64)
     if abs(matrix[2, 2]) < 1e-15:
-        raise AppError("homography_degenerate", "Die Homographie ist entartet (H[2,2] = 0).")
+        raise AppError("homography_degenerate")
     return (matrix / matrix[2, 2]).ravel()[:8]
 
 
@@ -282,11 +272,7 @@ def _rotation_deviation(quad: np.ndarray) -> float:
 def _add_quality_notices(solution: Solution, marker_mm: float, notices: NoticeList) -> None:
     """Alle Warnungen aus Spec 3.7 erzeugen - keine bricht ab, jede wird sichtbar."""
     if len(solution.markers) == 1:
-        notices.warn(
-            "single_marker",
-            "Nur ein Marker erkannt: die Homographie ist damit exakt bestimmt, aber ohne "
-            "jede Redundanz - ein Fehlermass laesst sich nicht angeben.",
-        )
+        notices.warn("single_marker")
 
     # Kollinearitaet an den MITTELPUNKTEN messen, nicht an der Eckenhuelle: jeder
     # Marker bringt selbst 67 mm Ausdehnung mit, sodass drei Marker in einer Reihe
@@ -298,18 +284,13 @@ def _add_quality_notices(solution: Solution, marker_mm: float, notices: NoticeLi
             float(np.linalg.norm(a - b)) for a in centres for b in centres
         )
         if span > 0.0 and spread / (span * span) < config.COLLINEARITY_WARN:
-            notices.warn(
-                "collinear_markers",
-                "Die Marker liegen fast auf einer Linie. Quer dazu stuetzt sich die "
-                "Homographie kaum ab und wird dort unzuverlaessig; verteile die Marker "
-                "flaechig.",
-            )
+            notices.warn("collinear_markers")
 
     if solution.rms_px > config.RMS_WARN_PX or solution.rms_mm > config.RMS_WARN_MM:
         notices.warn(
             "high_residual",
-            f"Restfehler {solution.rms_px:.2f} px ({solution.rms_mm:.2f} mm) ueber der Schwelle. "
-            "Ursachen: Objektivverzeichnung, unscharfes Foto oder ein nicht ebenes Markerblatt.",
+            rms_px=f"{solution.rms_px:.2f}",
+            rms_mm=f"{solution.rms_mm:.2f}",
         )
 
     for fit in solution.markers:
@@ -317,8 +298,10 @@ def _add_quality_notices(solution: Solution, marker_mm: float, notices: NoticeLi
         if deviation > config.MARKER_SIZE_DEV_WARN:
             notices.warn(
                 "marker_size_deviation",
-                f"Marker {fit.marker_id} misst zurueckgerechnet {fit.side_mm_measured:.1f} mm "
-                f"statt {marker_mm:.1f} mm ({deviation * 100:.1f} % Abweichung).",
+                marker_id=fit.marker_id,
+                measured_mm=f"{fit.side_mm_measured:.1f}",
+                expected_mm=f"{marker_mm:.1f}",
+                deviation_pct=f"{deviation * 100:.1f}",
             )
 
     if solution.mode == "free":
@@ -327,7 +310,6 @@ def _add_quality_notices(solution: Solution, marker_mm: float, notices: NoticeLi
             if abs(fit.rotation_deg - reference) > config.MARKER_ROT_WARN_DEG:
                 notices.warn(
                     "marker_rotation",
-                    f"Marker {fit.marker_id} ist gegenueber dem Ankermarker um "
-                    f"{abs(fit.rotation_deg - reference):.1f} Grad verdreht. Der Frei-Modus "
-                    "setzt gleich ausgerichtete Marker voraus.",
+                    marker_id=fit.marker_id,
+                    rotation_deg=f"{abs(fit.rotation_deg - reference):.1f}",
                 )

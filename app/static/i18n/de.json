@@ -1,0 +1,230 @@
+{
+  "document": {
+    "title": "ArUco-Homographie"
+  },
+  "ui": {
+    "header": {
+      "brand": "Bischof Snowboards",
+      "brand_link_title": "bischof-snowboards.com",
+      "logo_alt": "Bischof Snowboards",
+      "title": "ArUco-Homographie",
+      "subtitle": "Handyfoto entzerren und als maßhaltiges PDF in Originalgröße drucken.",
+      "markersheet": "Markerblatt drucken (A4)"
+    },
+    "steps": {
+      "upload": {
+        "title": "Foto",
+        "hint": "Tipp fürs Ergebnis: Tele (1× oder 2×), großer Abstand, Objekt mittig. Weitwinkel biegt die Ränder, und diese Verzeichnung wird nicht korrigiert.",
+        "summary": "{filename} – {width} × {height} px",
+        "exif_focal": "EXIF-Brennweite {focal_mm} mm (KB-Äquivalent) – die Kamerahöhe kann automatisch bestimmt werden.",
+        "exif_missing": "Keine EXIF-Brennweite gefunden – für eine Dickenkorrektur bitte den Kameraabstand eintragen."
+      },
+      "params": {
+        "title": "Maßstab",
+        "marker_mm_label": "Markergröße (mm)",
+        "marker_mm_hint": "Am Ausdruck gemessene Kantenlänge inkl. schwarzem Rand.",
+        "mode_label": "Modus",
+        "mode_sheet": "Markerblatt (IDs 0–3, bekanntes Layout)",
+        "mode_free": "Frei platzierte Marker",
+        "mode_hint": "Das Markerblatt ist genauer, weil die Abstände bekannt sind.",
+        "spacing_x_label": "Mittelpunktabstand waagerecht (mm)",
+        "spacing_x_hint": "Abstand der beiden nebeneinanderliegenden Marker.",
+        "spacing_y_label": "Mittelpunktabstand senkrecht (mm)",
+        "spacing_y_hint": "Abstand der beiden untereinanderliegenden Marker.",
+        "thickness_label": "Objektdicke (mm)",
+        "thickness_hint": "0, wenn das Blatt auf der Objektoberfläche liegt.",
+        "camera_height_label": "Kameraabstand (mm, optional)",
+        "camera_height_placeholder": "aus EXIF",
+        "camera_height_hint": "Nur nötig, wenn EXIF keine Brennweite hat und die Dicke größer als 0 ist.",
+        "solve": "Entzerren"
+      },
+      "report": {
+        "title": "Qualität",
+        "card_residual": "Restfehler",
+        "card_markers": "Marker",
+        "card_sides": "Gemessene Kanten",
+        "card_source_resolution": "Auflösung Quelle",
+        "card_camera": "Kamera",
+        "card_thickness": "Dickenkorrektur",
+        "value_residual": "{rms_px} px / {rms_mm} mm",
+        "value_markers": "{count} ({mode})",
+        "value_mode_sheet": "Blatt",
+        "value_mode_free": "frei",
+        "value_side": "{marker_id}: {side_mm} mm",
+        "value_source_resolution": "{mm_per_px} mm/px",
+        "value_camera": "{height_mm} mm, {tilt}",
+        "value_camera_unknown": "unbekannt",
+        "value_tilt": "{tilt_deg} Grad",
+        "value_tilt_unknown": "Neigung n/a",
+        "value_thickness": "{thickness_mm} mm, k={factor}",
+        "value_thickness_none": "keine"
+      },
+      "crop": {
+        "title": "Zuschnitt",
+        "hint": "Rechteck im Bild aufziehen. Die grüne Fläche ist die Marker-Hülle – alles weit außerhalb wird extrapoliert und damit unsicher.",
+        "preview_alt": "Entzerrte Vorschau",
+        "x0_label": "x0 (mm)",
+        "y0_label": "y0 (mm)",
+        "x1_label": "x1 (mm)",
+        "y1_label": "y1 (mm)",
+        "size": "{width} × {height} mm",
+        "pixels": "{width_px} × {height_px} px bei {dpi} dpi ({megapixels} MPixel)",
+        "over_limit": "– über der Grenze von {limit} MPixel",
+        "extrapolation": "Extrapolation außerhalb der Marker-Hülle: {percent} %",
+        "extrapolation_warn": "– dort wird die Entzerrung unsicher"
+      },
+      "export": {
+        "title": "Druck",
+        "dpi_label": "Auflösung",
+        "dpi_option": "{dpi} dpi",
+        "layout_label": "Layout",
+        "layout_single": "Eine Seite in Objektgröße",
+        "layout_tiles": "Kachelung auf Normalformat",
+        "page_format_label": "Papierformat (Kachelung)",
+        "overlap_label": "Überlappung (mm)",
+        "overlays_legend": "Aufdrucke",
+        "overlay_scalebar": "100-mm-Kontrollmaßstab",
+        "overlay_footer": "Metadaten-Fußzeile",
+        "overlay_grid": "50-mm-Raster",
+        "overlay_marks": "Schnitt- und Klebemarken",
+        "overlay_overview": "Klebeplan als erstes Blatt",
+        "overlay_contour": "Umriss als Schnittlinie",
+        "submit": "PDF erzeugen",
+        "result": "PDF erzeugt: {pages} Seite(n), Seitenformat {page_size} mm.",
+        "result_hint": "Beim Drucken unbedingt {emphasis} wählen und danach den aufgedruckten 100-mm-Maßstab nachmessen.",
+        "result_emphasis": "100 % / keine Skalierung"
+      }
+    },
+    "adjust": {
+      "title": "Bildaufbereitung",
+      "grayscale_label": "Graustufen",
+      "grayscale_hint": "Farbe weglassen und nur die Helligkeit zeigen.",
+      "invert_label": "Invertieren",
+      "invert_hint": "Hell und dunkel tauschen.",
+      "brightness_label": "Helligkeit",
+      "brightness_hint": "Das ganze Bild heller oder dunkler machen.",
+      "contrast_label": "Kontrast",
+      "contrast_hint": "Den Abstand zwischen Hell und Dunkel spreizen.",
+      "saturation_label": "Sättigung",
+      "saturation_hint": "Farben kräftiger oder blasser machen.",
+      "local_contrast_label": "Lokaler Kontrast",
+      "local_contrast_hint": "Holt Zeichnung aus gleichmäßigen Flächen heraus (CLAHE).",
+      "edge_boost_label": "Kantenanhebung",
+      "edge_boost_hint": "Unschärfemaske: macht Kanten deutlicher, ohne das Bild zu verändern.",
+      "edge_overlay_label": "Kantenzeichnung",
+      "edge_overlay_hint": "Legt die erkannten Kanten als Linien über das Bild.",
+      "emphasis_label": "Farbbetonung",
+      "emphasis_hint": "Einen Farbton hervorheben und den Rest zurücknehmen.",
+      "emphasis_none": "keine",
+      "emphasis_red": "Rot",
+      "emphasis_yellow": "Gelb",
+      "emphasis_green": "Grün",
+      "emphasis_cyan": "Cyan",
+      "emphasis_blue": "Blau",
+      "emphasis_magenta": "Magenta",
+      "emphasis_strength_label": "Stärke der Betonung",
+      "emphasis_strength_hint": "Wie deutlich der gewählte Farbton hervortritt.",
+      "threshold_label": "Schwellwert",
+      "threshold_hint": "Auf Schwarzweiß reduzieren – ergibt eine harte Schnittkante.",
+      "reset_label": "Zurücksetzen",
+      "reset_hint": "Alle Regler zurück auf die Ausgangswerte."
+    },
+    "theme": {
+      "label": "Design wechseln",
+      "to_dark": "Auf dunkles Design umschalten",
+      "to_light": "Auf helles Design umschalten"
+    },
+    "language": {
+      "label": "Sprache wechseln",
+      "de": "Deutsch",
+      "en": "English"
+    },
+    "busy": {
+      "default": "Rechne …",
+      "upload": "Lade Foto …",
+      "solve": "Suche Marker und rechne …",
+      "export": "Erzeuge PDF …"
+    },
+    "footer": {
+      "claim": "Made with Bischof Snowboards Software",
+      "logo_alt": "Bischof Snowboards"
+    },
+    "common": {
+      "empty": "–",
+      "error_field": "(Feld: {field})",
+      "error_unknown": "Unbekannter Fehler."
+    }
+  },
+  "notices": {
+    "camera_height_override": "Eingetippter Kameraabstand {height_mm} mm benutzt (die EXIF-Schätzung wäre {estimate_mm} mm gewesen).",
+    "camera_pose_unknown": "Kamerahöhe unbekannt (keine EXIF-Brennweite). Ohne Objektdicke ist das ohne Folgen.",
+    "camera_height_implausible": "Aus EXIF und Homographie ergibt sich eine Kamerahöhe von {height_mm} mm – das ist unplausibel und wird verworfen.",
+    "single_marker": "Nur ein Marker erkannt: die Homographie ist damit exakt bestimmt, aber ohne jede Redundanz – ein Fehlermaß lässt sich nicht angeben.",
+    "collinear_markers": "Die Marker liegen fast auf einer Linie. Quer dazu stützt sich die Homographie kaum ab und wird dort unzuverlässig; verteile die Marker flächig.",
+    "high_residual": "Restfehler {rms_px} px ({rms_mm} mm) über der Schwelle. Ursachen: Objektivverzeichnung, unscharfes Foto oder ein nicht ebenes Markerblatt.",
+    "marker_size_deviation": "Marker {marker_id} misst zurückgerechnet {measured_mm} mm statt {expected_mm} mm ({deviation_pct} % Abweichung).",
+    "marker_rotation": "Marker {marker_id} ist gegenüber dem Ankermarker um {rotation_deg} Grad verdreht. Der Frei-Modus setzt gleich ausgerichtete Marker voraus."
+  },
+  "errors": {
+    "upload_too_large": "Das Foto ist {size_mb} MB groß, erlaubt sind {limit_mb} MB.",
+    "unreadable_image": "Das Foto konnte nicht gelesen werden ({reason}). Unterstützt werden JPEG, PNG und HEIC.",
+    "bad_marker_size": "Markergröße und Abstände müssen größer als 0 sein.",
+    "sheet_too_small": "Marker {marker_mm} mm mit Abständen {spacing_x_mm} × {spacing_y_mm} mm passen nicht auf A4 ({sheet_w_mm} × {sheet_h_mm} mm).",
+    "bad_preview": "Unbekannte Vorschau: {kind}",
+    "preview_missing": "Diese Vorschau wurde noch nicht erzeugt.",
+    "empty_crop": "Der Zuschnitt hat keine Fläche.",
+    "not_solved": "Für diese Sitzung wurde noch nicht entzerrt. Bitte zuerst „Entzerren“ ausführen.",
+    "session_expired": "Die Sitzung ist abgelaufen. Bitte das Foto erneut hochladen.",
+    "bad_page_format": "Unbekanntes Papierformat: {page_format}. Möglich: {formats}.",
+    "margins_too_large": "Rand und Streifen lassen auf {page_format} keine nutzbare Fläche übrig.",
+    "overlap_too_large": "Die Überlappung von {overlap_mm} mm ist für {page_format} zu groß (nutzbar sind {usable_w_mm} × {usable_h_mm} mm).",
+    "camera_height_required": "Für die Dickenkorrektur fehlt der Kameraabstand: das Foto enthält keine brauchbare EXIF-Brennweite (typisch für weitergeleitete Bilder). Trage den Abstand Kamera–Blatt in mm ein oder setze die Objektdicke auf 0.",
+    "output_too_large": "Das Ergebnis wäre {width_px} × {height_px} Pixel ({megapixels} MPixel) groß, erlaubt sind {limit_mpx} MPixel. {hint}",
+    "output_too_large_hint_dpi": "Mit {dpi} dpi passt es.",
+    "output_too_large_hint_crop": "Auch {dpi} dpi reicht nicht – verkleinere den Zuschnitt.",
+    "no_markers": "Es wurde kein ArUco-Marker gefunden. Prüfe Schärfe, Beleuchtung und ob das Markerblatt vollständig im Bild ist.",
+    "bad_mode": "Unbekannter Modus: {mode}",
+    "no_sheet_ids": "Erkannt wurden nur die Marker-IDs {found}. Das mitgelieferte Blatt benutzt {expected}. Wechsle in den Frei-Modus oder drucke das Markerblatt der App.",
+    "homography_failed": "Aus den erkannten Markern ließ sich keine Homographie berechnen. Liegen sie fast auf einer Linie?",
+    "homography_degenerate": "Die Homographie ist entartet (H[2,2] = 0).",
+    "thickness_too_large": "Die Objektdicke ({thickness_mm} mm) muss kleiner sein als der Kameraabstand ({camera_height_mm} mm)."
+  },
+  "pdf": {
+    "document_title": "Schablone {width} × {height} mm",
+    "scalebar_caption": "Kontrollmaßstab {length} mm – nachmessen! Teilung 10 mm",
+    "tiles": {
+      "sheet": "Blatt {index}/{count}",
+      "position": "Spalte {col}, Reihe {row}"
+    },
+    "assembly": {
+      "title": "Klebeplan",
+      "summary": "Gesamtgröße {width} × {height} mm – {pages} Blatt ({cols} × {rows}), Überlappung {overlap} mm"
+    },
+    "footer": {
+      "line1": "{object_mm} | {dpi} dpi | {scale} | Modus {mode} | Marker {marker_ids} @ {marker_mm} mm",
+      "line2": "RMS {rms} | Kamera {camera} | Dicke {thickness} | Extrapolation {extrapolation} | {source} | {timestamp}",
+      "object": "{width} × {height} mm",
+      "contour": " | Kontur {width} × {height} mm",
+      "scale_source": "{mm_per_px} mm/px Quelle",
+      "mode_sheet": "Markerblatt",
+      "mode_free": "frei",
+      "camera": "{height_mm} mm{tilt} ({source})",
+      "camera_tilt": ", {tilt_deg} Grad",
+      "camera_unknown": "unbekannt"
+    },
+    "markersheet": {
+      "document_title": "ArUco-Homographie – Markerblatt A4",
+      "title": "ArUco-Homographie – Markerblatt",
+      "print_hint": "Ohne Skalierung drucken (100 %, nicht „an Seite anpassen“)",
+      "marker_label": "ID {marker_id}",
+      "dictionary": "Wörterbuch {dictionary}, IDs {ids} (0 oben links, 1 oben rechts, 2 unten links, 3 unten rechts)",
+      "side": "Nennkantenlänge {marker_mm} mm (inkl. schwarzem Rand)",
+      "spacing": "Mittelpunktabstände {spacing_x_mm} mm × {spacing_y_mm} mm",
+      "measure_1": "Nach dem Druck Markerkante UND beide Mittelpunktabstände messen und",
+      "measure_2": "die GEMESSENEN Werte in der App eintragen – damit fällt jede",
+      "measure_3": "Druckerskalierung aus der Rechnung heraus.",
+      "footer": "Markerblatt {dictionary} – {marker_mm} mm – {spacing_x_mm} × {spacing_y_mm} mm",
+      "scale_caption": "Kontrollmaßstab {length} mm – nachmessen!"
+    }
+  }
+}

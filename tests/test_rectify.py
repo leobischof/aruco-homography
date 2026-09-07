@@ -66,7 +66,11 @@ def test_zu_grosse_ausgabe_wird_abgelehnt_mit_vorschlag():
         check_output_budget(riesig, 600)
 
     assert error.value.code == "output_too_large"
-    assert "dpi" in error.value.message.lower()
+    assert error.value.field_name == "dpi"
+    # Der Vorschlag steckt als Baustein in den Parametern, nicht als fertiger Satz -
+    # welche Sprache daraus wird, entscheidet erst die HTTP-Schicht.
+    assert error.value.params["hint"].key == "errors.output_too_large_hint_crop"
+    assert "dpi" in error.value.message("de").lower()
 
 
 def test_erlaubte_ausgabe_geht_durch():

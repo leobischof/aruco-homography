@@ -69,11 +69,7 @@ class SessionStore:
         self.purge()
         session = self._sessions.get(session_id)
         if session is None:
-            raise AppError(
-                "session_expired",
-                "Die Sitzung ist abgelaufen. Bitte das Foto erneut hochladen.",
-                "session_id",
-            )
+            raise AppError("session_expired", "session_id")
         return session
 
     def purge(self) -> None:

@@ -18,6 +18,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen.canvas import Canvas
 
 from app import config
+from app.i18n import translate
 from app.pdf import branding, overlays
 from app.pdf.layout import Rect, TileLayout, single_page, strip_height, tile_layout
 
@@ -40,6 +41,9 @@ class ExportOptions:
     tile_overview: bool = config.TILE_OVERVIEW_DEFAULT
     contour: bool = False
     title: str = "ArUco-Homographie"
+    # Sprache der Aufdrucke. Die Marke bleibt davon unberuehrt - sie ist ein
+    # Zeichen, kein Text (AGENTS.md, Invariante 3).
+    locale: str = config.DEFAULT_LOCALE
 
 
 @dataclass
@@ -88,6 +92,7 @@ def _build_single(
         page.strip,
         options.show_scalebar,
         footer_lines if options.show_footer else [],
+        locale=options.locale,
     )
 
     canvas.showPage()
@@ -125,7 +130,7 @@ def _build_tiles(
     pages = 0
 
     if options.tile_overview:
-        _draw_overview(canvas, plan, crop_w, crop_h, footer_lines)
+        _draw_overview(canvas, plan, crop_w, crop_h, footer_lines, options.locale)
         canvas.showPage()
         pages += 1
 
@@ -148,10 +153,8 @@ def _build_tiles(
             plan.strip,
             options.show_scalebar,
             footer_lines if options.show_footer else [],
-            tile_label=(
-                f"Blatt {tile.index}/{plan.page_count} - "
-                f"Spalte {tile.col + 1}, Reihe {tile.row + 1}"
-            ),
+            tile_label=_tile_label(tile.index, plan.page_count, tile.col, tile.row, options.locale),
+            locale=options.locale,
         )
 
         canvas.showPage()
@@ -166,6 +169,13 @@ def _build_tiles(
         page_count=pages,
         meta={"n_cols": plan.n_cols, "n_rows": plan.n_rows, "tiles": plan.page_count},
     )
+
+
+def _tile_label(index: int, count: int, col: int, row: int, locale: str) -> str:
+    """Blattnummer und Rasterplatz - zwei Bausteine, damit beide Sprachen frei sind."""
+    sheet = translate("pdf.tiles.sheet", locale, index=index, count=count)
+    position = translate("pdf.tiles.position", locale, col=col + 1, row=row + 1)
+    return f"{sheet} - {position}"
 
 
 def _new_canvas(buffer: io.BytesIO, width_mm: float, height_mm: float, title: str) -> Canvas:
@@ -237,20 +247,34 @@ def _crop_pixels(
 
 
 def _draw_overview(
-    canvas: Canvas, plan: TileLayout, crop_w: float, crop_h: float, footer_lines: list[str]
+    canvas: Canvas,
+    plan: TileLayout,
+    crop_w: float,
+    crop_h: float,
+    footer_lines: list[str],
+    locale: str = config.DEFAULT_LOCALE,
 ) -> None:
     """Uebersichtsblatt: welches Blatt gehoert wohin."""
     ink = branding.ink(config.BRAND_INK)
+    title = translate("pdf.assembly.title", locale)
     canvas.setFillColor(ink)
     canvas.setFont("Helvetica-Bold", 14)
-    canvas.drawString(_pt(plan.printer_margin_mm), _pt(plan.sheet_h - 20.0), "Klebeplan")
+    canvas.drawString(_pt(plan.printer_margin_mm), _pt(plan.sheet_h - 20.0), title)
 
     canvas.setFont("Helvetica", 9)
     canvas.drawString(
         _pt(plan.printer_margin_mm),
         _pt(plan.sheet_h - 28.0),
-        f"Gesamtgroesse {crop_w:.1f} x {crop_h:.1f} mm - {plan.page_count} Blatt "
-        f"({plan.n_cols} x {plan.n_rows}), Ueberlappung {plan.overlap_mm:.0f} mm",
+        translate(
+            "pdf.assembly.summary",
+            locale,
+            width=f"{crop_w:.1f}",
+            height=f"{crop_h:.1f}",
+            pages=plan.page_count,
+            cols=plan.n_cols,
+            rows=plan.n_rows,
+            overlap=f"{plan.overlap_mm:.0f}",
+        ),
     )
 
     # Raster massstabsgetreu in den verbleibenden Platz einpassen. Unten bleibt der
@@ -286,22 +310,36 @@ def _draw_overview(
     canvas.rect(_pt(origin_x), _pt(origin_y), _pt(crop_w * scale), _pt(crop_h * scale))
 
     overlays.draw_strip(canvas, strip, show_scalebar=True, footer_lines=footer_lines,
-                        tile_label="Klebeplan")
+                        tile_label=title, locale=locale)
 
 
-def build_footer_lines(meta: dict[str, object]) -> list[str]:
+# Die Platzhalter der beiden Fusszeilen. Was der Aufrufer nicht mitgibt, wird zu "?" -
+# eine halb gefuellte Zeile ist immer noch besser als eine fehlende.
+_FOOTER_FIELDS = (
+    "object_mm",
+    "dpi",
+    "scale",
+    "mode",
+    "marker_ids",
+    "marker_mm",
+    "rms",
+    "camera",
+    "thickness",
+    "extrapolation",
+    "source",
+    "timestamp",
+)
+
+
+def build_footer_lines(
+    meta: dict[str, object], locale: str = config.DEFAULT_LOCALE
+) -> list[str]:
     """Zwei Zeilen Metadaten - alles, was einen Ausdruck spaeter nachvollziehbar macht."""
-    first = (
-        f"{meta.get('object_mm', '?')} | {meta.get('dpi', '?')} dpi | "
-        f"{meta.get('scale', '?')} | Modus {meta.get('mode', '?')} | "
-        f"Marker {meta.get('marker_ids', '?')} @ {meta.get('marker_mm', '?')} mm"
-    )
-    second = (
-        f"RMS {meta.get('rms', '?')} | Kamera {meta.get('camera', '?')} | "
-        f"Dicke {meta.get('thickness', '?')} | Extrapolation {meta.get('extrapolation', '?')} | "
-        f"{meta.get('source', '?')} | {meta.get('timestamp', '?')}"
-    )
-    return [first, second]
+    values = {field: meta.get(field, "?") for field in _FOOTER_FIELDS}
+    return [
+        translate("pdf.footer.line1", locale, **values),
+        translate("pdf.footer.line2", locale, **values),
+    ]
 
 
 def _pt(millimetres: float) -> float:

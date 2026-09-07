@@ -1,13 +1,18 @@
 """Gemeinsames Vokabular fuer Warnungen und Fehler.
 
 Warnungen halten den Ablauf nicht auf, sie erscheinen in der UI und in der
-PDF-Fusszeile. Fehler brechen ab. Beide tragen einen maschinenlesbaren Code, damit
-das Frontend gezielt reagieren kann, und deutschen Klartext fuer den Bediener.
+PDF-Fusszeile. Fehler brechen ab. Beide tragen einen Code und benannte Parameter -
+KEINEN fertigen Satz. Der Satz entsteht erst am Rand (HTTP-Antwort, PDF) aus dem
+Sprachkatalog, sodass dieselbe Warnung deutsch oder englisch herauskommt, ohne dass
+die Rechenschritte davon etwas wissen.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from app import config
+from app.i18n import plain_params, translate
 
 
 @dataclass(frozen=True)
@@ -15,18 +20,24 @@ class Notice:
     """Eine Warnung oder ein Hinweis zu einem Rechenergebnis."""
 
     code: str
-    message: str
+    params: dict[str, object] = field(default_factory=dict)
     severity: str = "warn"  # "info" | "warn"
+
+    def message(self, locale: str = config.DEFAULT_LOCALE) -> str:
+        return translate(f"notices.{self.code}", locale, **self.params)
 
 
 class AppError(Exception):
-    """Abbruchfehler mit Code, Klartext und optionalem Feldbezug fuer die UI."""
+    """Abbruchfehler mit Code, Parametern und optionalem Feldbezug fuer die UI."""
 
-    def __init__(self, code: str, message: str, field_name: str | None = None) -> None:
-        super().__init__(message)
+    def __init__(self, code: str, field_name: str | None = None, **params: object) -> None:
+        super().__init__(code)
         self.code = code
-        self.message = message
         self.field_name = field_name
+        self.params = params
+
+    def message(self, locale: str = config.DEFAULT_LOCALE) -> str:
+        return translate(f"errors.{self.code}", locale, **self.params)
 
 
 @dataclass
@@ -35,16 +46,25 @@ class NoticeList:
 
     items: list[Notice] = field(default_factory=list)
 
-    def warn(self, code: str, message: str) -> None:
-        self.items.append(Notice(code, message, "warn"))
+    def warn(self, code: str, **params: object) -> None:
+        self.items.append(Notice(code, params, "warn"))
 
-    def info(self, code: str, message: str) -> None:
-        self.items.append(Notice(code, message, "info"))
+    def info(self, code: str, **params: object) -> None:
+        self.items.append(Notice(code, params, "info"))
 
     def extend(self, other: "NoticeList") -> None:
         self.items.extend(other.items)
 
-    def as_dicts(self) -> list[dict[str, str]]:
+    def as_dicts(self, locale: str = config.DEFAULT_LOCALE) -> list[dict[str, object]]:
+        """Fuer die HTTP-Antwort. Der fertige Satz bleibt drin, damit /api/docs und
+        jeder Nicht-Browser-Verbraucher lesbar bleiben - gerendert aus demselben
+        Katalog, den auch die Oberflaeche benutzt."""
         return [
-            {"code": n.code, "message": n.message, "severity": n.severity} for n in self.items
+            {
+                "code": notice.code,
+                "params": plain_params(notice.params, locale),
+                "severity": notice.severity,
+                "message": notice.message(locale),
+            }
+            for notice in self.items
         ]

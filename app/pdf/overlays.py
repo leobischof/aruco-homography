@@ -17,6 +17,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
 
 from app import config
+from app.i18n import translate
 from app.pdf import branding
 from app.pdf.layout import Rect
 
@@ -47,6 +48,7 @@ def draw_strip(
     show_scalebar: bool,
     footer_lines: list[str],
     tile_label: str | None = None,
+    locale: str = config.DEFAULT_LOCALE,
 ) -> None:
     """Den Streifen unter dem Bild fuellen: Massstab, Metadaten, Blattnummer, Marke."""
     # Die Marke sitzt immer rechts aussen und bekommt ihren Platz zuerst; alles
@@ -58,7 +60,7 @@ def draw_strip(
     available = max(10.0, brand_left - _GAP_MM - strip.x)
 
     if show_scalebar:
-        _draw_scalebar(canvas, strip, available)
+        _draw_scalebar(canvas, strip, available, locale)
 
     canvas.setFillColor(branding.ink(config.BRAND_INK))
     for index, line in enumerate(footer_lines[:2]):
@@ -86,7 +88,9 @@ def _fit(text: str, font: str, size_pt: float, width_mm: float) -> str:
     return text + "..."
 
 
-def _draw_scalebar(canvas: Canvas, strip: Rect, available_mm: float) -> None:
+def _draw_scalebar(
+    canvas: Canvas, strip: Rect, available_mm: float, locale: str = config.DEFAULT_LOCALE
+) -> None:
     """100-mm-Balken mit 10-mm-Teilung. Nachmessen beweist die Skalierung."""
     length = min(config.SCALEBAR_MM, available_mm)
     base_y = strip.y + _SCALEBAR_BASE_MM
@@ -116,7 +120,7 @@ def _draw_scalebar(canvas: Canvas, strip: Rect, available_mm: float) -> None:
     canvas.drawString(
         _pt(strip.x),
         _pt(strip.y + _SCALEBAR_LABEL_MM),
-        f"Kontrollmassstab {length:.0f} mm - nachmessen! Teilung 10 mm",
+        translate("pdf.scalebar_caption", locale, length=f"{length:.0f}"),
     )
 
 

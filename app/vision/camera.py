@@ -106,8 +106,8 @@ def resolve_pose(
         # Ein ausdruecklich eingetippter Abstand schlaegt die Schaetzung.
         notices.info(
             "camera_height_override",
-            f"Eingetippter Kameraabstand {camera_height_override_mm:.0f} mm benutzt "
-            f"(EXIF-Schaetzung waere {automatic.height_mm:.0f} mm gewesen).",
+            height_mm=f"{camera_height_override_mm:.0f}",
+            estimate_mm=f"{automatic.height_mm:.0f}",
         )
         return CameraPose(
             source="manual",
@@ -127,18 +127,9 @@ def resolve_pose(
         )
 
     if needs_correction:
-        raise AppError(
-            "camera_height_required",
-            "Fuer die Dickenkorrektur fehlt der Kameraabstand: das Foto enthaelt keine "
-            "brauchbare EXIF-Brennweite (typisch fuer weitergeleitete Bilder). Trage den "
-            "Abstand Kamera-Blatt in mm ein oder setze die Objektdicke auf 0.",
-            "camera_height_mm",
-        )
+        raise AppError("camera_height_required", "camera_height_mm")
 
-    notices.info(
-        "camera_pose_unknown",
-        "Kamerahoehe unbekannt (keine EXIF-Brennweite). Ohne Objektdicke ist das ohne Folgen.",
-    )
+    notices.info("camera_pose_unknown")
     return CameraPose(source="none", focal_px=None, height_mm=None, nadir_mm=None, tilt_deg=None)
 
 
@@ -159,11 +150,7 @@ def _try_automatic(
     )
 
     if not (config.CAM_HEIGHT_MIN_MM <= camera_height_mm <= config.CAM_HEIGHT_MAX_MM):
-        notices.warn(
-            "camera_height_implausible",
-            f"Aus EXIF und Homographie ergibt sich eine Kamerahoehe von "
-            f"{camera_height_mm:.0f} mm - das ist unplausibel und wird verworfen.",
-        )
+        notices.warn("camera_height_implausible", height_mm=f"{camera_height_mm:.0f}")
         return None
 
     return CameraPose(

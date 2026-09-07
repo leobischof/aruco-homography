@@ -12,7 +12,7 @@ from datetime import datetime
 
 import numpy as np
 
-from app import config
+from app import config, i18n
 from app.notices import AppError, NoticeList
 from app.pdf.build import BuildResult, ExportOptions, build_footer_lines, build_pdf
 from app.schemas import ExportRequest, SolveRequest
@@ -105,15 +105,15 @@ def run_export(session: Session, request: ExportRequest) -> BuildResult:
     """Vom gewaehlten Zuschnitt zum druckfertigen PDF."""
     solved = session.state.get("solve")
     if not isinstance(solved, SolveResult):
-        raise AppError(
-            "not_solved",
-            "Fuer diese Sitzung wurde noch nicht entzerrt. Bitte zuerst 'Entzerren' ausfuehren.",
-            "session_id",
-        )
+        raise AppError("not_solved", "session_id")
+
+    # Die Sprache des Ausdrucks kommt aus der Anfrage. getattr, weil ExportRequest das
+    # Feld erst bekommt, wenn app/schemas.py nachzieht - bis dahin gilt die Vorgabe.
+    locale = i18n.normalise(getattr(request, "locale", config.DEFAULT_LOCALE))
 
     crop = Extent(request.crop_mm.x0, request.crop_mm.y0, request.crop_mm.x1, request.crop_mm.y1)
     if crop.width <= 0.0 or crop.height <= 0.0:
-        raise AppError("empty_crop", "Der Zuschnitt hat keine Flaeche.", "crop_mm")
+        raise AppError("empty_crop", "crop_mm")
 
     rectify_module.check_output_budget(crop, request.dpi)
     px_per_mm = rectify_module.px_per_mm_for_dpi(request.dpi)
@@ -143,11 +143,14 @@ def run_export(session: Session, request: ExportRequest) -> BuildResult:
         show_marks=request.overlays.marks,
         tile_overview=request.tile_overview,
         contour=request.contour,
-        title=f"Schablone {crop.width:.0f} x {crop.height:.0f} mm",
+        title=i18n.translate(
+            "pdf.document_title", locale, width=f"{crop.width:.0f}", height=f"{crop.height:.0f}"
+        ),
+        locale=locale,
     )
 
     footer = build_footer_lines(
-        _footer_meta(session, solved, crop, request, contour_mm)
+        _footer_meta(session, solved, crop, request, contour_mm, locale), locale
     )
     return build_pdf(rectified, crop.width, crop.height, options, footer, contour_mm)
 
@@ -158,25 +161,43 @@ def _footer_meta(
     crop: Extent,
     request: ExportRequest,
     contour_mm: np.ndarray | None,
+    locale: str = config.DEFAULT_LOCALE,
 ) -> dict[str, object]:
     """Die Metadaten der Fusszeile - ein Ausdruck soll spaeter nachvollziehbar sein."""
     pose = solved.pose
     if pose.height_mm is None:
-        camera = "unbekannt"
+        camera = i18n.translate("pdf.footer.camera_unknown", locale)
     else:
-        tilt = f", {pose.tilt_deg:.0f} Grad" if pose.tilt_deg is not None else ""
-        camera = f"{pose.height_mm:.0f} mm{tilt} ({pose.source})"
+        tilt = (
+            ""
+            if pose.tilt_deg is None
+            else i18n.translate("pdf.footer.camera_tilt", locale, tilt_deg=f"{pose.tilt_deg:.0f}")
+        )
+        camera = i18n.translate(
+            "pdf.footer.camera",
+            locale,
+            height_mm=f"{pose.height_mm:.0f}",
+            tilt=tilt,
+            source=pose.source,
+        )
 
-    object_text = f"{crop.width:.1f} x {crop.height:.1f} mm"
+    object_text = i18n.translate(
+        "pdf.footer.object", locale, width=f"{crop.width:.1f}", height=f"{crop.height:.1f}"
+    )
     if contour_mm is not None and len(contour_mm) >= 2:
         width_mm, height_mm = contour_module.bounding_box_mm(contour_mm)
-        object_text += f" | Kontur {width_mm:.1f} x {height_mm:.1f} mm"
+        object_text += i18n.translate(
+            "pdf.footer.contour", locale, width=f"{width_mm:.1f}", height=f"{height_mm:.1f}"
+        )
 
+    mode_key = "sheet" if solved.solution.mode == "sheet" else "free"
     return {
         "object_mm": object_text,
         "dpi": request.dpi,
-        "scale": f"{solved.solution.mm_per_px:.4f} mm/px Quelle",
-        "mode": "Markerblatt" if solved.solution.mode == "sheet" else "frei",
+        "scale": i18n.translate(
+            "pdf.footer.scale_source", locale, mm_per_px=f"{solved.solution.mm_per_px:.4f}"
+        ),
+        "mode": i18n.translate(f"pdf.footer.mode_{mode_key}", locale),
         "marker_ids": ",".join(str(f.marker_id) for f in solved.solution.markers),
         "marker_mm": f"{solved.marker_mm:.1f}",
         "rms": f"{solved.solution.rms_px:.2f} px / {solved.solution.rms_mm:.3f} mm",
@@ -188,7 +209,9 @@ def _footer_meta(
     }
 
 
-def solve_response(session: Session, result: SolveResult) -> dict[str, object]:
+def solve_response(
+    session: Session, result: SolveResult, locale: str = config.DEFAULT_LOCALE
+) -> dict[str, object]:
     """SolveResult in die JSON-Form bringen, die das Frontend erwartet."""
     solution = result.solution
     crop = result.crop
@@ -237,5 +260,5 @@ def solve_response(session: Session, result: SolveResult) -> dict[str, object]:
             "extrapolation_warn": config.EXTRAPOLATION_WARN_FRAC,
         },
         "elapsed_s": round(result.elapsed_s, 2),
-        "warnings": result.notices.as_dicts(),
+        "warnings": result.notices.as_dicts(locale),
     }

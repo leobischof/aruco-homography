@@ -92,7 +92,7 @@ def strip_height() -> float:
 def single_page(crop_w: float, crop_h: float, margin_mm: float, strip_h: float) -> PageLayout:
     """Seitengeometrie fuer die Einzelseite (Spec 4.2)."""
     if crop_w <= 0.0 or crop_h <= 0.0:
-        raise AppError("empty_crop", "Der Zuschnitt hat keine Flaeche.", "crop_mm")
+        raise AppError("empty_crop", "crop_mm")
 
     page_w = crop_w + 2.0 * margin_mm
     page_h = crop_h + 2.0 * margin_mm + strip_h
@@ -110,9 +110,9 @@ def sheet_size(page_format: str, orientation: str) -> tuple[float, float]:
     if page_format not in config.SHEET_FORMATS:
         raise AppError(
             "bad_page_format",
-            f"Unbekanntes Papierformat: {page_format}. Moeglich: "
-            f"{', '.join(sorted(config.SHEET_FORMATS))}.",
             "page_format",
+            page_format=page_format,
+            formats=", ".join(sorted(config.SHEET_FORMATS)),
         )
     width, height = config.SHEET_FORMATS[page_format]
     return (height, width) if orientation == "landscape" else (width, height)
@@ -140,17 +140,15 @@ def tile_layout(
     step_h = usable_h - overlap_mm
 
     if usable_w <= 0.0 or usable_h <= 0.0:
-        raise AppError(
-            "margins_too_large",
-            f"Rand und Streifen lassen auf {page_format} keine nutzbare Flaeche uebrig.",
-            "printer_margin_mm",
-        )
+        raise AppError("margins_too_large", "printer_margin_mm", page_format=page_format)
     if step_w <= 0.0 or step_h <= 0.0:
         raise AppError(
             "overlap_too_large",
-            f"Die Ueberlappung von {overlap_mm:.0f} mm ist fuer {page_format} zu gross "
-            f"(nutzbar sind {usable_w:.0f} x {usable_h:.0f} mm).",
             "overlap_mm",
+            overlap_mm=f"{overlap_mm:.0f}",
+            page_format=page_format,
+            usable_w_mm=f"{usable_w:.0f}",
+            usable_h_mm=f"{usable_h:.0f}",
         )
 
     n_cols = max(1, math.ceil((crop_w - overlap_mm) / step_w))
