@@ -1,0 +1,627 @@
+/* ==========================================================================
+   tokens.css - die Farb-, Form- und Schriftwerte dieses Werkzeugs.
+   Beschrieben in docs/design/design-system.md.
+
+   WAS HIER HINEINGEHOERT: nur Tokens (plus die eine @font-face-Regel und
+   color-scheme). Kein Selektor fuer ein Bedienelement, keine Layoutregel -
+   die stehen in style.css. Wer hier eine Klasse anlegt, hat zwei Stellen
+   geschaffen, an denen die Oberflaeche entsteht.
+
+   WOHER DIE WERTE KOMMEN: aus snow-service-free/src/main.css, dem Haus-
+   Designsystem des Webprojekts. Die semantischen Namen (--background,
+   --primary, --card, ...) sind dort dieselben. Genau das ist der Zweck:
+   zwei Werkzeuge, ein Haus. Ein neuer Name hier ist eine Abweichung und
+   braucht eine Begruendung im Kommentar.
+
+   KEIN BUILD-SCHRITT: FastAPI liefert diese Datei so aus, wie sie hier
+   steht. Alles, was free per Tailwind erzeugt (@apply, @theme inline,
+   @custom-variant, die dark:-Variante), gibt es hier nicht und darf hier
+   auch nicht auftauchen - es wuerde stillschweigend nichts tun.
+
+   ZWEI EBENEN, und das ist Absicht:
+
+     1. Die Palette (--bfsb-*). Jeder Farbwert steht hier genau einmal.
+     2. Die Rollen (--background, --primary, ...). Sie zeigen nur auf einen
+        Palettenwert. Ein Thema zu wechseln heisst deshalb, ein paar Zeiger
+        umzulegen - nicht dreissig Farben abzuschreiben.
+
+   Nur die Rollen in style.css benutzen. Die --bfsb-* sind die Farbliste,
+   kein Vokabular fuer die Oberflaeche: "der Knopf ist petrol" ist eine
+   Aussage, die beim naechsten Themenwechsel falsch wird, "der Knopf ist
+   --primary" nicht.
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   Schrift
+   --------------------------------------------------------------------------
+   Montserrat variabel, dieselbe Datei wie in free (src/assets/fonts/).
+   `format("woff2")` zusammen mit `font-weight: 100 900` ist die Schreibweise,
+   die free benutzt und die jeder Browser versteht, der woff2 kann. Das
+   frueher hier stehende `format("woff2-variations")` ist eine Sackgasse aus
+   der Anfangszeit variabler Schriften: Browser, die den String nicht kennen,
+   verwerfen die ganze @font-face-Regel und fallen wortlos auf Segoe UI
+   zurueck - man sieht es nur, wenn man darauf achtet.
+
+   Nur der aufrechte Schnitt: eine kursive Variabelschrift liegt in diesem
+   Repo nicht, und ein `font-style: italic` wuerde sonst synthetisch
+   geneigt statt echt kursiv gesetzt.
+
+   Der Pfad ist absolut, weil main.py das ganze Verzeichnis app/static unter
+   "/" haengt - relativ zu dieser Datei waere es "../brand/...", was beim
+   Verschieben der Datei bricht. */
+@font-face {
+    font-family: "Montserrat";
+    src: url("/brand/fonts/Montserrat-VariableFont_wght.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+
+/* ==========================================================================
+   EBENE 1 - Die Palette
+   ==========================================================================
+   Basis in sRGB-Hex. Der Grund ist nicht Nostalgie, sondern der Einsatzort:
+   dieses Werkzeug wird auf Handys in einer Werkstatt bedient, und oklch()
+   kann erst Chrome 111, Firefox 113 und Safari 15.4. Ein Telefon von 2022
+   mit altem System-Browser ist hier ein realistischer Fall, und eine
+   Oberflaeche ohne Farben ist auf so einem Geraet nicht "etwas blasser",
+   sondern unbenutzbar.
+
+   Die oklch-Werte kommen direkt darunter in einem @supports-Block. Warum
+   nicht einfach zwei Deklarationen untereinander, Hex zuerst?
+
+       --primary: #379992;
+       --primary: oklch(0.6245 0.0905 188.44);   <- Falle
+
+   Weil das bei Custom Properties gerade NICHT die uebliche CSS-Ruecknahme
+   ausloest. Der Wert einer Custom Property wird beim Parsen nicht geprueft -
+   jede Tokenfolge ist gueltig -, also gewinnt immer die zweite Zeile. Der
+   alte Browser merkt erst bei `color: var(--primary)`, dass er oklch nicht
+   lesen kann, und dann ist es zu spaet: die Eigenschaft ist "invalid at
+   computed-value time" und faellt auf `unset` zurueck. Ergebnis waere
+   geerbte oder Ausgangsfarbe - schlimmer als gar kein Fallback, weil es
+   aussieht wie ein Fehler im Stylesheet.
+
+   @supports prueft dagegen VOR der Zuweisung. Jeder Wert steht dadurch
+   trotzdem genau zweimal in der Datei und nirgends dreimal: einmal Hex,
+   einmal oklch, in derselben Reihenfolge wie sonst auch.
+
+   Die Hex-Werte sind exakte sRGB-Umrechnungen der oklch-Werte, nachgerechnet
+   und mit config.py gegengeprueft (BRAND_INK, BRAND_PRIMARY, BRAND_ACTION,
+   BRAND_DARK, BRAND_LIGHT, BRAND_SECONDARY, BRAND_ACCENT, BRAND_DESTRUCTIVE
+   stimmen auf das Byte). Ein Unterschied zwischen beiden Schreibweisen bleibt
+   nur, wo der oklch-Wert ausserhalb von sRGB liegt (Bernstein, Rot): dort ist
+   die oklch-Fassung auf einem P3-Bildschirm etwas satter. Das ist der einzige
+   Gewinn der zweiten Ebene und der Grund, sie ueberhaupt zu fuehren.
+   ========================================================================== */
+
+:root {
+    /* --- Neutrale, hell nach dunkel -------------------------------------- */
+    --bfsb-white: #ffffff;      /* free --background hell */
+    --bfsb-mist: #f0f3f3;       /* free --accent hell = BRAND_ACCENT */
+    --bfsb-fog: #e2e8f0;        /* free --secondary hell = BRAND_SECONDARY */
+    --bfsb-edge: #cbd5e1;       /* free --cube-edge hell; die einzige Kantenfarbe des Hauses */
+    --bfsb-snow: #f1f5f9;       /* free --primary-foreground = BRAND_LIGHT */
+    --bfsb-ash: #9ca3af;        /* free index.html: .dark body */
+    --bfsb-steel: #596474;      /* abgeleitet aus --foreground, siehe --muted-foreground */
+    --bfsb-ink: #334155;        /* free --foreground hell = BRAND_INK, die Tinte des Logos */
+    --bfsb-slate: #43424c;      /* Linienfarbe im Dunklen, aus der bisherigen style.css */
+    --bfsb-graphite: #36353c;   /* free --accent dunkel */
+    --bfsb-carbon: #2d2c34;     /* Flaechenfarbe im Dunklen, aus der bisherigen style.css */
+    --bfsb-night: #25242b;      /* free --background dunkel = BRAND_DARK */
+
+    /* --- Marke ------------------------------------------------------------
+       Petrol ist die Identitaet, Bernstein die Handlung. Die tiefen und
+       hellen Varianten sind KEINE neuen Farben: gleicher Farbton, gleiche
+       Buntheit, nur eine andere Helligkeit - der einzige Freiheitsgrad, den
+       oklch dafuer vorsieht. Sie existieren, weil das Petrol der Marke auf
+       Weiss nur 3,42:1 erreicht und damit als Fliesstext durchfaellt, und
+       weil Bernstein auf Weiss mit 1,65:1 praktisch unsichtbar ist. */
+    --bfsb-petrol: #379992;         /* free --primary = BRAND_PRIMARY */
+    --bfsb-petrol-deep: #00736d;    /* Petrol fuer Text auf hellem Grund, 5,72:1 auf Weiss */
+    --bfsb-petrol-bright: #5ab8b1;  /* Petrol fuer Text auf dunklem Grund, 6,53:1 auf --bfsb-night */
+
+    --bfsb-amber: #ffbf00;          /* free --action = BRAND_ACTION */
+    --bfsb-amber-deep: #935800;     /* Bernstein fuer Text auf hellem Grund, 5,77:1 auf Weiss */
+    --bfsb-amber-press: #dd9f00;    /* gedrueckter Zustand: dasselbe Bernstein, dunkler */
+
+    --bfsb-red: #e7000b;            /* free --destructive hell = BRAND_DESTRUCTIVE */
+    --bfsb-red-deep: #d20000;       /* Rot fuer Text auf hellem Grund, 5,61:1 auf Weiss */
+    --bfsb-red-bright: #fd736c;     /* Rot fuer Text auf dunklem Grund, 5,74:1 auf --bfsb-night */
+    --bfsb-red-dark: #82181a;       /* free --destructive dunkel: die Flaeche, nicht die Schrift */
+
+    /* --- Halbtransparente --------------------------------------------------
+       Stehen hier und nicht in den Themenbloecken, damit auch sie genau
+       einmal existieren. Die RGB-Tripel wiederholen einen Palettenwert -
+       unvermeidlich, solange color-mix() genauso jung ist wie oklch und
+       deshalb als Fallback nicht taugt. Wer eine dieser Farben aendert,
+       aendert die Zahlen oben mit. */
+    --bfsb-petrol-a14: rgba(55, 153, 146, 0.14);
+    --bfsb-petrol-a50: rgba(55, 153, 146, 0.50);
+    --bfsb-petrol-a85: rgba(55, 153, 146, 0.85);
+    --bfsb-amber-a10: rgba(255, 191, 0, 0.10);
+    --bfsb-night-a45: rgba(37, 36, 43, 0.45);
+    --bfsb-night-a55: rgba(37, 36, 43, 0.55);
+    --bfsb-night-a85: rgba(37, 36, 43, 0.85);
+    --bfsb-mist-a88: rgba(240, 243, 243, 0.88);
+}
+
+/* Aufwertung: dieselbe Palette in oklch, nur wo der Browser oklch kennt.
+   Die oklch-Zeichenketten sind, wo free sie hat, WORTGLEICH aus
+   free/src/main.css uebernommen - auch dort, wo sie ausserhalb von sRGB
+   liegen und deshalb nicht exakt dem Hex daneben entsprechen. Das ist der
+   Sinn: Diff gegen main.css muss stumm bleiben. */
+@supports (color: oklch(0 0 0)) {
+    :root {
+        --bfsb-white: oklch(1 0 0);
+        --bfsb-mist: oklch(0.9619 0.0032 197.1);
+        --bfsb-fog: oklch(0.9288 0.0126 255.51);
+        --bfsb-edge: oklch(0.869 0.0198 252.89);
+        --bfsb-snow: oklch(0.9683 0.0069 247.9);
+        --bfsb-ash: oklch(0.7137 0.0192 261.32);
+        --bfsb-steel: oklch(0.5 0.029 257.29);
+        --bfsb-ink: oklch(0.3717 0.0392 257.29);
+        --bfsb-slate: oklch(0.3839 0.0169 290.17);
+        --bfsb-graphite: oklch(0.3327 0.0122 292.28);
+        --bfsb-carbon: oklch(0.2974 0.0144 291.23);
+        --bfsb-night: oklch(0.2643 0.013 292.04);
+
+        --bfsb-petrol: oklch(0.6245 0.0905 188.44);
+        --bfsb-petrol-deep: oklch(0.5 0.0905 188.44);
+        --bfsb-petrol-bright: oklch(0.7245 0.0905 188.44);
+
+        --bfsb-amber: oklch(0.8403 0.1724 84.08);
+        --bfsb-amber-deep: oklch(0.51 0.1724 84.08);
+        --bfsb-amber-press: oklch(0.7403 0.1724 84.08);
+
+        --bfsb-red: oklch(0.577 0.245 27.325);
+        --bfsb-red-deep: oklch(0.52 0.245 27.325);
+        --bfsb-red-bright: oklch(0.72 0.17 25.331);
+        --bfsb-red-dark: oklch(0.396 0.141 25.723);
+
+        --bfsb-petrol-a14: oklch(0.6245 0.0905 188.44 / 0.14);
+        --bfsb-petrol-a50: oklch(0.6245 0.0905 188.44 / 0.50);
+        --bfsb-petrol-a85: oklch(0.6245 0.0905 188.44 / 0.85);
+        --bfsb-amber-a10: oklch(0.8403 0.1724 84.08 / 0.10);
+        --bfsb-night-a45: oklch(0.2643 0.013 292.04 / 0.45);
+        --bfsb-night-a55: oklch(0.2643 0.013 292.04 / 0.55);
+        --bfsb-night-a85: oklch(0.2643 0.013 292.04 / 0.85);
+        --bfsb-mist-a88: oklch(0.9619 0.0032 197.1 / 0.88);
+    }
+}
+
+
+/* ==========================================================================
+   EBENE 2 - Die Rollen, helles Thema
+   ==========================================================================
+   Hell steht auf blankem :root und ist damit der Ausgangszustand. Das ist
+   eine Entscheidung, keine Bequemlichkeit: die Oberflaeche war bisher nur
+   dunkel, und ein Werkzeug, das man am Fenster oder draussen neben der
+   Maschine bedient, braucht das helle Thema mindestens so dringend. Beide
+   sind hier vollwertig, keines ist die Abwandlung des anderen.
+
+   Das Paar-Prinzip aus free: --x ist eine Flaeche, --x-foreground ist die
+   Tinte, die darauf lesbar ist. Sie werden nur zusammen benutzt. Eine
+   Vordergrundfarbe auf einer fremden Flaeche ist immer ein Fehler, auch
+   wenn es zufaellig gerade gut aussieht.
+   ========================================================================== */
+
+:root {
+    /* Sagt dem Browser, welche seiner eigenen Farben er nehmen soll -
+       Bildlaufleisten, Auswahlmarkierung, die eingebauten Formularteile.
+       "light dark" heisst: wir koennen beides, entscheide nach der
+       Systemeinstellung. Die beiden [data-theme]-Bloecke weiter unten
+       nageln es fest, sobald der Benutzer selbst gewaehlt hat. */
+    color-scheme: light dark;
+
+    /* --- Flaechen und Tinte -----------------------------------------------
+       Die Leiter ist Seite < Karte < Feld. free hat sie auch, notiert sie
+       aber anders: dort ist --background das Weiss der Karten, und der
+       eigentliche Seitengrund ist ein Verlauf, der in index.html steht und
+       damit ausserhalb des Tokensystems liegt. Hier gibt es keinen Verlauf
+       und keinen zweiten Ort, also traegt --background den Seitengrund -
+       sonst waere eine weisse Karte auf weissem Grund nur an ihrem Rand zu
+       erkennen, und der ist in free hell genau eine Haaresbreite breit. */
+    --background: var(--bfsb-mist);
+    --foreground: var(--bfsb-ink);
+
+    --card: var(--bfsb-white);
+    --card-foreground: var(--bfsb-ink);
+
+    --popover: var(--bfsb-white);
+    --popover-foreground: var(--bfsb-ink);
+
+    /* --- Marke -------------------------------------------------------------
+       --primary ist die Identitaet: Fokusring, aktiver Zustand, alles, was
+       "Bischof Snowboards" sagt. --action ist der Handlungsruf und gehoert
+       genau einer Sache pro Ansicht - dem Knopf, der die Sache tut. Zwei
+       Bernsteinknoepfe nebeneinander heben sich gegenseitig auf.
+
+       Warnung zu --primary-foreground: der Wert ist der des Hauses
+       (BRAND_LIGHT), und auf dem dunklen Markenstreifen im PDF steht er mit
+       14:1. Direkt auf einer --primary-Flaeche erreicht er aber nur 3,13:1
+       und faellt als Knopfbeschriftung durch. Dort gehoert
+       --action-foreground hin (4,49:1). Der Wert bleibt trotzdem stehen,
+       weil er in free und in config.py genau so lautet; wer ihn hier
+       stillschweigend anders setzt, hat die drei Faelle auseinandergefuehrt. */
+    --primary: var(--bfsb-petrol);
+    --primary-foreground: var(--bfsb-snow);
+
+    --action: var(--bfsb-amber);
+    --action-foreground: var(--bfsb-night);
+
+    /* --- Ruhige Flaechen ---------------------------------------------------
+       --secondary und --muted sind Flaechen (Chip, Eingabefeld, Tabellen-
+       zeile), --accent ist die leiseste davon und zugleich der Hover-Grund.
+       --muted-foreground ist der einzige Ausreisser dieser Gruppe: es ist
+       KEINE Flaeche, sondern die Nebentinte fuer Beschriftungen und Hinweise. */
+    --secondary: var(--bfsb-fog);
+    --secondary-foreground: var(--bfsb-night);
+
+    --muted: var(--bfsb-fog);
+    /* free setzt hier --action-foreground, also fast Schwarz. Auf Weiss ist
+       das mit 15,4:1 kein Kontrastproblem, aber auch nichts "Gedaempftes" -
+       eine Nebenbeschriftung, die genauso laut ist wie die Hauptschrift,
+       hat keine Aufgabe. Und im dunklen Thema traegt free denselben Wert
+       weiter, wo er dann auf 1,00:1 gegen den eigenen Grund faellt: die
+       Schrift ist schlicht weg. Deshalb hier ein echtes Grau, gerechnet auf
+       dem Farbton von --foreground: 6,00:1 auf Weiss, 5,38:1 auf dem
+       Seitengrund, 4,87:1 auf --muted. */
+    --muted-foreground: var(--bfsb-steel);
+
+    --accent: var(--bfsb-mist);
+    --accent-foreground: var(--bfsb-ink);
+
+    /* --- Fehler ------------------------------------------------------------
+       --destructive ist die Flaeche eines Abbruchknopfes oder Fehlerbanners.
+       free setzt --destructive-foreground hell auf denselben Wert wie
+       --destructive - Schrift in Flaechenfarbe, also unsichtbar; das ist
+       dort erkennbar ein Versehen (die Knopfkomponente umgeht es mit einem
+       fest verdrahteten text-white). Hier steht das Weiss als Token, damit
+       niemand es noch einmal fest verdrahten muss: 4,77:1 auf --destructive. */
+    --destructive: var(--bfsb-red);
+    --destructive-foreground: var(--bfsb-white);
+
+    /* --- Linien und Fokus ---------------------------------------------------
+       free setzt --border hell auf reines Weiss und dunkel auf den
+       Hintergrund - in beiden Faellen unsichtbar, weil die Trennung dort aus
+       Schatten kommt. Dieses Werkzeug trennt mit Linien (Formularfelder,
+       Abschnitte, Tabellen), also braucht --border einen Wert, den man
+       sieht: hell die einzige Kantenfarbe, die das Haus hat (--cube-edge),
+       dunkel die Linienfarbe, die diese Oberflaeche schon benutzt hat.
+
+       --input ist in shadcn streng genommen die Rahmenfarbe eines Feldes.
+       Hier traegt es Rahmen UND Fuellung, weil die Felder dieser Oberflaeche
+       gefuellt sind. Der Wert ist der, den free tatsaechlich malt: die
+       Input-Komponente dort setzt bg-muted, nicht bg-input. */
+    --border: var(--bfsb-edge);
+    --input: var(--bfsb-fog);
+    --ring: var(--primary);
+    /* Der weiche Aussenring des Fokus. free schreibt dafuer `ring-ring/50` - die
+       Schraegstrich-Deckkraft ist reine Tailwind-Syntax und laesst sich ohne
+       color-mix() (genauso jung wie oklch) nicht nachbauen. Also ein eigener
+       Token statt einer fest verdrahteten Zahl in style.css. Beide Themen
+       teilen ihn, weil --ring in beiden dasselbe Petrol ist. */
+    --ring-soft: var(--bfsb-petrol-a50);
+
+    /* --- Toene des Qualitaetsberichts ---------------------------------------
+       Der Bericht sagt in drei Stufen, wie sehr man dem Ergebnis trauen darf.
+       Das sind Textfarben auf dem Seiten- oder Kartengrund, keine Flaechen,
+       und deshalb koennen es NICHT einfach --primary, --action und
+       --destructive sein: auf Weiss erreichen die 3,42:1 / 1,65:1 / 4,77:1,
+       zwei davon sind unlesbar. Hier stehen die abgedunkelten Geschwister
+       derselben Farben; alle drei liegen auf Seiten-, Karten- und Feldgrund
+       ueber 4,5:1.
+
+       "gut" ist bewusst das Markenpetrol und nicht Gruen: gruen/rot allein
+       ist fuer die haeufigste Farbsehschwaeche kein Unterschied, Petrol
+       gegen Rot dagegen schon - und es ist die Farbe, die dieses Haus
+       ohnehin fuer "in Ordnung" benutzt. */
+    --tone-good: var(--bfsb-petrol-deep);
+    --tone-warn: var(--bfsb-amber-deep);
+    --tone-bad: var(--bfsb-red-deep);
+
+    /* --- Schleier ueber der Seite -------------------------------------------
+       Liegt waehrend der Berechnung ueber allem. Der Wert ist der eigene
+       Seitengrund mit 88 %: der Inhalt bleibt schemenhaft erkennbar (man
+       sieht, wo man war), ist aber deutlich genug abgesetzt, dass niemand
+       hineinzuklicken versucht. */
+    --scrim: var(--bfsb-mist-a88);
+
+    /* ======================================================================
+       Was diese Anwendung braucht und free nicht kennt
+       ======================================================================
+       Alles hier drunter zeichnet auf ein FOTO, nicht auf die Oberflaeche.
+       Das ist der Grund, warum manche dieser Farben dem Thema NICHT folgen:
+       was darunter liegt, ist das Bild des Benutzers, und das ist im hellen
+       wie im dunklen Thema dasselbe. Zwei Definitionen, die sich heute
+       zufaellig gleichen, sind genau der Weg, auf dem sie eines Tages
+       auseinanderlaufen (free begruendet das bei --curve-zone genauso).
+       ====================================================================== */
+
+    /* --- Marker-Huelle -----------------------------------------------------
+       Das Vieleck durch die vier Markermittelpunkte. Innerhalb davon ist die
+       Homographie gemessen, ausserhalb wird sie fortgeschrieben - die Huelle
+       ist also eine Vertrauensaussage, und Vertrauen ist in diesem Haus
+       Petrol. Bisher stand hier ein fest verdrahtetes rgba(78, 201, 122, ...)
+       in app.js; dieses Gruen gehoert zu keiner Marke und stammt aus keinem
+       Token. Fuellung sehr schwach, damit das Foto darunter beurteilbar
+       bleibt, Kontur kraeftig, damit die Grenze eine Grenze ist. */
+    --hull-fill: var(--bfsb-petrol-a14);
+    --hull-stroke: var(--bfsb-petrol-a85);
+
+    /* --- Zuschnitt-Rechteck -------------------------------------------------
+       Das Rechteck IST die Handlung dieser Seite - der Benutzer zieht daran,
+       und was darin liegt, wird gedruckt. Also Bernstein, die Handlungsfarbe
+       des Hauses, und damit unverwechselbar von der Huelle getrennt.
+
+       --crop-halo ist die dunkle Naht unter der hellen Kernlinie. Denselben
+       Kniff verlangt AGENTS.md fuer das Raster im PDF (dort weisse Naht unter
+       dunkler Linie, hier umgekehrt, weil der Kern hier hell ist): eine
+       einzelne Linie auf einem Foto ist irgendwann genau so hell wie das,
+       worueber sie laeuft. Das Paar aus hell und dunkel ist es nie.
+
+       Halo und Abdunklung tragen keine Themenvariante - siehe oben. */
+    --crop-stroke: var(--action);
+    --crop-fill: var(--bfsb-amber-a10);
+    --crop-halo: var(--bfsb-night-a55);
+
+    /* Die Flaeche ausserhalb des Rechtecks. Sagt "das kommt nicht mit aufs
+       Blatt", ohne das Foto unkenntlich zu machen - man muss dort noch
+       erkennen koennen, ob der Rand zu eng gewaehlt ist. */
+    --crop-dim: var(--bfsb-night-a45);
+
+    /* Die Griffe an den Ecken. Die Fuellung ist deckend die Kartenfarbe, also
+       das einzige Stueck Oberflaeche in diesem Bild: ein Griff muss auch
+       ueber einem weissen Deckel und ueber einer schwarzen Schattenkante
+       sichtbar bleiben, und das leistet nur Deckkraft, keine Transparenz.
+       Beim Ueberfahren kippt die Fuellung auf Bernstein - dieselbe Farbe wie
+       die Kontur, der Griff wird also "heiss" -, beim Druecken auf das
+       dunklere Bernstein. */
+    --crop-handle: var(--card);
+    --crop-handle-stroke: var(--crop-stroke);
+    --crop-handle-hover: var(--action);
+    --crop-handle-active: var(--bfsb-amber-press);
+
+    /* ======================================================================
+       Form, Schrift, Bewegung - themenunabhaengig
+       ====================================================================== */
+
+    /* --- Radien -------------------------------------------------------------
+       free rechnet die Stufen aus einem einzigen Wert aus (main.css,
+       @theme inline). Dieselbe Rechnung, nur ohne Tailwind:
+         sm = r - 4px   Menueeintrag, Marke, alles Kleinteilige
+         md = r - 2px   Knopf, Eingabefeld, Auswahl, Hinweisblase
+         lg = r         Abschnitt, groessere Flaeche
+         xl = r + 4px   Karte
+         full           runder Symbolknopf
+       Nicht neu erfinden: ein sechster Radius sagt nichts, was diese fuenf
+       nicht schon sagen. */
+    --radius: 0.625rem;
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --radius-full: 9999px;
+
+    /* --- Schrift ------------------------------------------------------------
+       Montserrat zuerst, danach das, was auf dem Geraet ohnehin liegt.
+       "Segoe UI" steht vor system-ui, weil die Werkstattrechner Windows sind
+       und system-ui dort auf denselben Schnitt zeigt - aber eben erst nach
+       einer Aufloesung, die aeltere Browser nicht koennen.
+
+       Die Gewichte sind die vier, die free tatsaechlich benutzt: 400 fuer
+       Fliesstext, 500 fuer Beschriftungen, 600 fuer Ueberschriften und Werte,
+       700 nur fuer die Wortmarke. Als font-weight, nicht als
+       font-variation-settings: bei einer Variabelschrift mit deklariertem
+       Bereich 100-900 tut font-weight dasselbe, wird aber von fetten
+       Ersatzschriften und von Suchen im Browser richtig verstanden. */
+    --font-sans: "Montserrat", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --weight-normal: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --weight-bold: 700;
+
+    /* Groessen der Tailwind-Skala, aber nur die Stufen, die free wirklich
+       setzt (gezaehlt: text-sm 49x, text-xs 25x, dann mit grossem Abstand
+       lg, base, 2xl). Eine Stufe, die niemand benutzt, ist eine Einladung,
+       sie zu benutzen. */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-2xl: 1.5rem;
+
+    --leading-tight: 1.25;
+    --leading-normal: 1.55;
+
+    /* Die Markenzeile ("BISCHOF SNOWBOARDS") wird versalisiert gesetzt, und
+       Versalien brauchen Luft - ohne Sperrung klebt Montserrat in Grossbuchstaben
+       zusammen. --tracking-wide ist die schwaechere Dosis fuer die kleinen
+       Grossbuchstaben-Beschriftungen im Qualitaetsbericht. */
+    --tracking-wide: 0.05em;
+    --tracking-brand: 0.08em;
+
+    /* --- Erhebung -----------------------------------------------------------
+       Drei Stufen, die Werte von Tailwind, weil free genau die rendert:
+       xs am Knopf, sm an Karte und Hinweisblase, md am aufklappenden Menue.
+       Im dunklen Thema werden sie kraeftiger nachgezogen - ein Schatten aus
+       10 % Schwarz ist auf #25242b nicht vorhanden. */
+    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.10), 0 1px 2px -1px rgba(0, 0, 0, 0.10);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.10);
+
+    /* --- Bewegung -----------------------------------------------------------
+       Zwei Werte reichen: schnell fuer alles, was am Zeiger haengt (Hover,
+       Fokus), langsam fuer alles, was erscheint oder verschwindet. */
+    --duration-fast: 150ms;
+    --duration-slow: 300ms;
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+    /* --- Beruehrung ---------------------------------------------------------
+       Mindestkantenlaenge fuer alles, was am Handy angetippt wird. 44px ist
+       nicht gegriffen: es ist Apples Untergrenze und die kleinste Groesse,
+       die mit Arbeitshandschuhen noch zuverlaessig trifft. free hat dafuer
+       keinen Token, sondern eine gemessene Rampe (--menubar-control,
+       2rem bis 2.5rem) - aber die loest ein anderes Problem, naemlich eine
+       Leiste, die auf EINE Zeile passen muss. Hier gibt es keine solche
+       Leiste, also darf die Untergrenze grosszuegiger sein. Die Grenze zum
+       Handy ist im ganzen Haus 768px (free: app.isMobile, die Toast-Regeln
+       in main.css); in einer @media-Abfrage laesst sich kein Token benutzen,
+       deshalb steht die Zahl hier nur im Kommentar. */
+    --touch-target: 2.75rem;
+}
+
+
+/* ==========================================================================
+   EBENE 2 - Die Rollen, dunkles Thema
+   ==========================================================================
+   Drei Zustaende, und alle drei muessen gebaut sein:
+
+     1. Systemvorgabe hell   -> blankes :root oben
+     2. Systemvorgabe dunkel -> der @media-Block
+     3. eigene Wahl          -> [data-theme="dark"] bzw. [data-theme="light"]
+
+   Der @media-Block schliesst [data-theme="light"] aus. Ohne dieses :not()
+   koennte ein Benutzer auf einem dunkel eingestellten Telefon nicht mehr
+   auf Hell schalten - die Systemvorgabe wuerde seine Wahl ueberschreiben.
+
+   Der [data-theme="dark"]-Block steht NACH dem @media-Block. Beide haben
+   dieselbe Spezifitaet (0,2,0), also entscheidet die Reihenfolge, und die
+   ausdrueckliche Wahl muss die Systemvorgabe schlagen - auch in die andere
+   Richtung: hell eingestelltes System, dunkel gewaehlte Oberflaeche.
+
+   Die beiden Bloecke sind wortgleich. Das ist keine Schlamperei, sondern
+   die Grenze von reinem CSS: eine Regel innerhalb eines @media und eine
+   ausserhalb lassen sich nicht zu einer Selektorliste zusammenfassen. Weil
+   hier nur Zeiger auf die Palette stehen und keine Farbwerte, kostet die
+   Wiederholung nichts ausser Zeilen - wer eine aendert, aendert die andere
+   mit, und beide Listen sind kurz genug, um das zu sehen.
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+
+        /* Leiter wie im Hellen, nur umgekehrt: Seite < Karte < Feld.
+           free setzt --card dunkel gleich --background und trennt mit
+           Schatten - was auf #25242b nicht funktioniert, weil ein Schatten
+           dort nichts abdunkeln kann, was nicht schon dunkel waere. */
+        --background: var(--bfsb-night);
+        --foreground: var(--bfsb-snow);
+
+        --card: var(--bfsb-carbon);
+        --card-foreground: var(--bfsb-snow);
+
+        --popover: var(--bfsb-carbon);
+        --popover-foreground: var(--bfsb-snow);
+
+        /* Petrol und Bernstein wechseln nicht. Eine Marke, die je nach
+           Tageslicht die Farbe wechselt, ist keine. free haelt das genauso. */
+
+        /* free laesst --secondary und --muted im Dunklen auf den HELLEN
+           Werten stehen. Das ist dort in sich stimmig - ein heller Chip mit
+           dunkler Schrift -, aber es kippt jedes Eingabefeld ins Helle,
+           waehrend die Seite dunkel bleibt. Fuer ein Werkzeug, das nachts
+           in der Werkstatt benutzt wird, ist das genau die falsche Blendung. */
+        --secondary: var(--bfsb-graphite);
+        --secondary-foreground: var(--bfsb-snow);
+
+        --muted: var(--bfsb-graphite);
+        --muted-foreground: var(--bfsb-ash);
+
+        --accent: var(--bfsb-graphite);
+        --accent-foreground: var(--bfsb-snow);
+
+        /* Dunkles Rot als Flaeche, helle Schrift darauf: 9,15:1. Das leuchtende
+           Rot, das free hier --destructive-foreground nennt, ist in Wahrheit
+           eine TEXTfarbe und steht deshalb unten bei --tone-bad. */
+        --destructive: var(--bfsb-red-dark);
+        --destructive-foreground: var(--bfsb-snow);
+
+        --border: var(--bfsb-slate);
+        --input: var(--bfsb-graphite);
+
+        /* Petrol erreicht auf dem dunklen Grund nur 4,49:1 und verfehlt die
+           Schwelle um eine Haaresbreite; Bernstein dagegen steht dort mit
+           9,30:1 und darf die Markenfarbe bleiben. */
+        --tone-good: var(--bfsb-petrol-bright);
+        --tone-warn: var(--action);
+        --tone-bad: var(--bfsb-red-bright);
+
+        --scrim: var(--bfsb-night-a85);
+
+        /* Schatten aus 10 % Schwarz sind auf #25242b nicht sichtbar. */
+        --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+        --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.45);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.50), 0 2px 4px -2px rgba(0, 0, 0, 0.50);
+    }
+}
+
+/* Ausdrueckliche Wahl "dunkel" - schlaegt die Systemvorgabe in beide
+   Richtungen, weil dieser Block hinter dem @media-Block steht. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --background: var(--bfsb-night);
+    --foreground: var(--bfsb-snow);
+
+    --card: var(--bfsb-carbon);
+    --card-foreground: var(--bfsb-snow);
+
+    --popover: var(--bfsb-carbon);
+    --popover-foreground: var(--bfsb-snow);
+
+    --secondary: var(--bfsb-graphite);
+    --secondary-foreground: var(--bfsb-snow);
+
+    --muted: var(--bfsb-graphite);
+    --muted-foreground: var(--bfsb-ash);
+
+    --accent: var(--bfsb-graphite);
+    --accent-foreground: var(--bfsb-snow);
+
+    --destructive: var(--bfsb-red-dark);
+    --destructive-foreground: var(--bfsb-snow);
+
+    --border: var(--bfsb-slate);
+    --input: var(--bfsb-graphite);
+
+    --tone-good: var(--bfsb-petrol-bright);
+    --tone-warn: var(--action);
+    --tone-bad: var(--bfsb-red-bright);
+
+    --scrim: var(--bfsb-night-a85);
+
+    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.30);
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.45), 0 1px 2px -1px rgba(0, 0, 0, 0.45);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.50), 0 2px 4px -2px rgba(0, 0, 0, 0.50);
+}
+
+/* Ausdrueckliche Wahl "hell". Die Farben stehen schon auf blankem :root und
+   gelten hier automatisch weiter - der @media-Block ist ja durch sein
+   :not() ausgeschlossen. Zu setzen bleibt nur color-scheme: sonst faerbt
+   ein dunkel eingestelltes System die Bildlaufleisten und die eingebauten
+   Formularteile weiter dunkel, mitten in einer hellen Oberflaeche. */
+:root[data-theme="light"] {
+    color-scheme: light;
+}
+
+
+/* --------------------------------------------------------------------------
+   Wer weniger Bewegung angefordert hat, bekommt weniger Bewegung.
+   Hier auf Tokenebene, damit es fuer jede Regel gilt, die die Dauern
+   benutzt, statt in jeder einzeln wiederholt zu werden. Zustaende bleiben
+   dabei erhalten, nur der Weg dorthin faellt weg - eine Blende von 0ms ist
+   ein Sprung, kein fehlender Zustand.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-fast: 0ms;
+        --duration-slow: 0ms;
+    }
+}
