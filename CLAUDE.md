@@ -36,5 +36,15 @@ Beweis am echten Ausdruck (drucken, mit dem Messschieber nachmessen) noch ausste
 
 ## Git
 
-Nur committen, wenn danach gefragt wurde. Betreff englisch mit konventionellem Präfix,
-Rumpf erklärt das Warum. Ein Commit, eine Sache.
+**Die Regeln stehen in [docs/contributing/git.md](docs/contributing/git.md)** — dort steht
+die verbindliche Fassung, hier nur das, was man ohnehin auswendig können muss:
+
+- **Committen ohne Rückfrage, pushen nur auf Ansage.** Örtlich mutig, nach außen nicht.
+  Eine Push-Erlaubnis gilt für genau einen Push, nicht für die nächsten.
+- **Ein Feature, ein Commit.** Braucht die Beschreibung ein „und", sind es zwei.
+- **Betreff englisch** mit konventionellem Präfix, dann eine **Leerzeile**, dann der Rumpf,
+  der das *Warum* erklärt.
+- Jeder Commit ist für sich lauffähig: `.\dev.ps1 run-tests` ist grün, bevor er gesetzt wird.
+
+Diese Regel weicht bewusst von der globalen `~/.claude/CLAUDE.md` ab, die das Committen an
+eine Rückfrage bindet. Für dieses Repo gilt die hiesige Fassung.

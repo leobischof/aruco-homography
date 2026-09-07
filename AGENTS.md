@@ -83,8 +83,9 @@ und fiele sonst erst am realen Foto auf.
 - **Deutsch** in Kommentaren, Docstrings und interner Dokumentation. Die Oberfläche selbst
   spricht Deutsch **und** Englisch — jede sichtbare Zeichenkette kommt aus einem i18n-Katalog
   (`app/static/i18n/`), keine mehr fest im Code.
-- Commit-Betreffs auf Englisch mit konventionellem Präfix (`feat:` `fix:` `docs:` `chore:`
-  `test:` `refactor:`).
+- **Git:** committen ohne Rückfrage, **pushen nur auf ausdrückliche Ansage**. Ein Feature,
+  ein Commit. Betreff englisch mit konventionellem Präfix, Leerzeile, dann das Warum.
+  Verbindlich in [docs/contributing/git.md](docs/contributing/git.md).
 - Kommentare erklären **warum**, nicht was.
 - Eine Datei, ein Zweck, etwa 300 Zeilen Code als Richtwert.
 - Wiederverwenden statt neu bauen: nie eine zweite Art, dasselbe zu tun.
