@@ -137,20 +137,36 @@ Python herausbekommt. Sonst erbte C++ jede Schiefe von Python und niemand sähe 
 Jede Stufe liefert etwas, das für sich funktioniert und geprüft werden kann. Keine
 Stufe lässt den ausgelieferten Stand kaputt zurück.
 
-### Stufe 0 · Das größte Risiko zuerst anfassen — Tage
+### Stufe 0 · ✅ ERLEDIGT — ArUco mit Subpixel läuft im Browser
 
-**`opencv.js` mit `aruco` bauen und im Browser laufen sehen.**
+**Ergebnis: [`stage-0-opencv-js.md`](stage-0-opencv-js.md).** Der Browser findet
+dieselben Ecken wie Python, auf **ein Millionstel Pixel** genau (größter Unterschied
+1,2 · 10⁻⁴ px = ein `float32`-ULP). `CORNER_REFINE_SUBPIX` wird wirklich ausgeführt,
+belegt dadurch, dass es ohne den Schalter **4,3-mal** schlechter wird — im Browser wie
+in Python.
 
-Der Standardbau von `opencv.js` enthält **kein** `aruco` — das Modul steckt in
-`opencv_contrib`. Ein eigener Emscripten-Bau ist möglich und wird durchweg als
-fummelig beschrieben; der einzige fertige, den es gibt, steht auf OpenCV **4.5.3**
-und ist damit alt (dieser Code nutzt die `ArucoDetector`-API ab 4.7).
+**Die Annahme, auf der diese Stufe stand, war falsch, und zwar zugunsten des Projekts.**
+Hier stand, `aruco` stecke in `opencv_contrib` und brauche einen fummeligen eigenen
+Emscripten-Bau. Das galt bis OpenCV 4.6. **Seit 4.7 liegt ArUco im Hauptbaum, im Modul
+`objdetect`** — nachgeprüft an beiden Enden: das OpenCV 5.0.0 dieses Projekts baut
+`… objdetect …` und **kein einziges** contrib-Modul, hat aber ein vollständiges
+`cv2.aruco`.
 
-**Bis das läuft, ist das Web-Ziel eine Hoffnung und kein Plan.** Deshalb steht es
-vorn: scheitert es, ändert sich der Zuschnitt — und zwar in Woche 1 statt in Woche 8.
+Es war nie ein contrib-Problem, sondern ein **Bindungs**-Problem: der offizielle
+`opencv.js` baut den Code mit, exportiert die ArUco-Klassen aber nicht. Wer die
+Whitelist erweitert, bekommt sie — und das hat jemand bereits getan.
 
-*Fertig, wenn:* ein Browser eine der eingefrorenen Szenen lädt, vier Marker findet
-und dieselben Ecken meldet wie Python, innerhalb der Toleranz.
+Benutzt wurde **`@techstark/opencv-js@5.0.0-release.1`**: OpenCV **5.0.0**, dieselbe
+Hauptversion wie der Desktop. Kein Docker, kein emsdk, kein eigener Bau. **Die
+teuerste Stufe des Fahrplans war ein `npm pack`.**
+
+13,3 MB roh, 2,67 MB über Brotli, eine Datei ohne separate `.wasm`, in 111 ms
+einsatzbereit. Erkennung 3,8–5,7× langsamer als nativ (einkernig, ohne SIMD) — für ein
+Handyfoto **unter einer Sekunde**.
+
+**Was der Spike ausdrücklich nicht zeigt:** nur die *Erkennung* wurde geprüft, gegen
+eine *synthetische* Szene, in *einem* Browser. Homographie, Kamerazerlegung,
+Dickenkorrektur und `least_squares → cv::LMSolver` sind unberührt.
 
 ### Stufe 1 · `shared/` — eine Wahrheit, sprachneutral — Tage
 
@@ -221,8 +237,21 @@ außerhalb von OpenCV ist `scipy.optimize.least_squares` an genau zwei Stellen
 
 ## 7 · Woran es scheitern könnte
 
-- **`opencv.js` mit `aruco` lässt sich nicht bauen** → Web-Ziel muss anders gelöst
-  werden. Deshalb Stufe 0.
+- ~~**`opencv.js` mit `aruco` lässt sich nicht bauen**~~ → **erledigt** (Stufe 0). An
+  seine Stelle treten zwei kleinere: der benutzte Bau ist das Werk *einer* Person und
+  gehört für einen Auslieferungsstand **eingefroren und mitgeliefert**, nicht bei jedem
+  Bau frisch aus npm gezogen; und 2,7 MB liegen vor der ersten Messung.
+- **Zwei Befunde aus Stufe 0, die Stufe 2 jetzt schon binden:**
+  - **`imgcodecs` ist im WASM-Bau abgeschaltet** — kein `imread`, `imencode`,
+    `imwrite`. Der gemeinsame C++-Kern **darf sie nicht anfassen**: er nimmt einen
+    rohen Pixelpuffer plus Maße und gibt einen solchen zurück. Kodieren und Dekodieren
+    gehört auf jedes Ziel einzeln. Heute ist der Messkern schon sauber (`cv2.imread`
+    steht nur in `pipeline.py` und `session.py`, beides Vorschaudateien). **Das muss er
+    bleiben.**
+  - **EXIF gibt es im Browser nicht.** Brennweite und Bildlage liest heute PIL, nicht
+    OpenCV; der Canvas wirft die Metadaten weg. Das Web-Ziel braucht einen eigenen
+    JS-EXIF-Leser. `camera.py` fällt bereits sauber auf die manuelle Eingabe zurück,
+    aber die Arbeit stand im Fahrplan nirgends.
 - **Der C++-Kern besteht die Python-Suite nicht** innerhalb der Toleranz → nicht
   weitergehen, sondern die Abweichung finden. Eine Stufe 3 auf einem Kern, der um
   einen Zehntelmillimeter danebenliegt, ist verlorene Arbeit.

@@ -1,0 +1,242 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ArUco WASM spike</title>
+<style>
+  body { font: 13px/1.55 ui-monospace, Consolas, monospace; margin: 16px; max-width: 100ch; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>ArUco / OpenCV.js subpixel spike</h1>
+<pre id="log">starting…</pre>
+<canvas id="cnv" style="display:none"></canvas>
+<script>
+  // Ergebnis liegt am Ende in window.SPIKE - der Treiber liest es von dort aus.
+  window.SPIKE = { status: "running", lines: [] };
+  const logEl = document.getElementById("log");
+  function log(s) {
+    window.SPIKE.lines.push(s);
+    logEl.textContent = window.SPIKE.lines.join("\n");
+    console.log(s);
+  }
+  window.addEventListener("error", (e) => {
+    window.SPIKE.status = "error";
+    window.SPIKE.error = String(e.message) + "\n" + (e.error && e.error.stack || "");
+    log("WINDOW ERROR: " + window.SPIKE.error);
+  });
+</script>
+<script src="opencv.js"></script>
+<script>
+// Dieser Build ist MODULARIZE: window.cv ist ein Promise, kein fertiges Modul.
+// Das klassische Module.onRuntimeInitialized feuert hier nie.
+window.addEventListener("load", async () => {
+  try {
+    const t0 = performance.now();
+    window.cv = await window.cv;
+    window.SPIKE.initMs = performance.now() - t0;
+    await run();
+  } catch (err) {
+    window.SPIKE.status = "error";
+    window.SPIKE.error = String(err && err.stack || err);
+    log("THROW: " + window.SPIKE.error);
+  }
+});
+</script>
+<script>
+const SMALL = { w: 2400, h: 1800, raw: "scene-gray.raw", truth: "scene-truth.json", png: "scene.png" };
+const BIG   = { w: 4000, h: 3000, raw: "scene-12mp-gray.raw", truth: "scene-12mp-truth.json" };
+
+/** Alles auflisten, was nach ArUco aussieht - die Namen der Bindings sind nicht garantiert. */
+function introspect() {
+  const names = [];
+  for (const k in cv) if (/aruco|Aruco|Dictionary|DetectorParam|CORNER_REFINE|DICT_4X4|generateImageMarker/.test(k)) names.push(k);
+  return names.sort();
+}
+
+function readCorners(cornersVec, idsMat) {
+  const out = {};
+  for (let i = 0; i < cornersVec.size(); i++) {
+    const m = cornersVec.get(i);
+    const d = m.data32F;                        // 4 Ecken x (x,y)
+    const quad = [];
+    for (let c = 0; c < 4; c++) quad.push([d[2 * c], d[2 * c + 1]]);
+    out[String(idsMat.data32S[i])] = quad;
+    m.delete();
+  }
+  return out;
+}
+
+/** Ein Durchlauf mit gewaehltem Refinement. repeats > 1 misst warm, nicht kalt. */
+function detect(grayMat, refineMethod, repeats = 1) {
+  // Der Konstruktor aruco_Dictionary nimmt (0,3) Argumente - der Weg ueber die
+  // freie Funktion ist derselbe wie in Python.
+  const dict = cv.getPredefinedDictionary(cv.DICT_4X4_50);
+  const params = new cv.aruco_DetectorParameters();
+
+  params.cornerRefinementMethod = refineMethod;
+  params.cornerRefinementWinSize = 5;
+  params.cornerRefinementMaxIterations = 50;
+  params.cornerRefinementMinAccuracy = 0.01;
+  params.adaptiveThreshWinSizeMin = 3;
+  params.adaptiveThreshWinSizeMax = 53;
+  params.adaptiveThreshWinSizeStep = 10;
+  params.minMarkerPerimeterRate = 0.01;
+
+  // Zurueckgelesen: ein stillschweigend ignoriertes Feld faellt hier auf.
+  const echo = {
+    cornerRefinementMethod: params.cornerRefinementMethod,
+    cornerRefinementWinSize: params.cornerRefinementWinSize,
+    cornerRefinementMaxIterations: params.cornerRefinementMaxIterations,
+    cornerRefinementMinAccuracy: params.cornerRefinementMinAccuracy,
+    adaptiveThreshWinSizeMax: params.adaptiveThreshWinSizeMax,
+    minMarkerPerimeterRate: params.minMarkerPerimeterRate,
+  };
+
+  const refine = new cv.aruco_RefineParameters(10, 3, true);
+  const detector = new cv.aruco_ArucoDetector(dict, params, refine);
+
+  let found = null;
+  const times = [];
+  for (let r = 0; r < repeats; r++) {
+    const corners = new cv.MatVector(), ids = new cv.Mat(), rejected = new cv.MatVector();
+    const t0 = performance.now();
+    detector.detectMarkers(grayMat, corners, ids, rejected);
+    times.push(performance.now() - t0);
+    found = readCorners(corners, ids);
+    corners.delete(); ids.delete(); rejected.delete();
+  }
+
+  detector.delete(); dict.delete(); params.delete(); refine.delete();
+  return { corners: found, params: echo, times, bestMs: Math.min(...times) };
+}
+
+function errorStats(found, truth) {
+  const per = {}, all = [];
+  for (const id of Object.keys(truth)) {
+    if (!found[id]) { per[id] = null; continue; }
+    const e = found[id].map((p, i) => Math.hypot(p[0] - truth[id][i][0], p[1] - truth[id][i][1]));
+    per[id] = e; all.push(...e);
+  }
+  if (!all.length) return { per, mean: null, max: null, n: 0 };
+  return { per, mean: all.reduce((a, b) => a + b, 0) / all.length, max: Math.max(...all), n: all.length };
+}
+
+async function grayFromRaw(spec) {
+  const raw = new Uint8Array(await (await fetch(spec.raw)).arrayBuffer());
+  if (raw.length !== spec.w * spec.h) throw new Error(`raw size ${raw.length} != ${spec.w * spec.h}`);
+  const m = new cv.Mat(spec.h, spec.w, cv.CV_8UC1);
+  m.data.set(raw);
+  return m;
+}
+
+/** Der realistische Weg: Datei -> <img> -> Canvas -> cv.imread. Faerbt der Canvas das Bild um? */
+async function grayFromCanvas(spec) {
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = spec.png; });
+  const cnv = document.getElementById("cnv");
+  cnv.width = img.naturalWidth; cnv.height = img.naturalHeight;
+  cnv.getContext("2d", { willReadFrequently: true }).drawImage(img, 0, 0);
+  const rgba = cv.imread(cnv);
+  const gray = new cv.Mat();
+  cv.cvtColor(rgba, gray, cv.COLOR_RGBA2GRAY);
+  rgba.delete();
+  return gray;
+}
+
+function applyClahe(src) {
+  // Python schreibt cv2.createCLAHE(...); in opencv.js gibt es nur die Klasse.
+  const dst = new cv.Mat();
+  const op = new cv.CLAHE(2.0, new cv.Size(8, 8));
+  op.apply(src, dst);
+  op.delete();
+  return dst;
+}
+
+async function run() {
+  const results = {}, out = window.SPIKE;
+  log(`OpenCV ready in ${out.initMs.toFixed(0)} ms.`);
+  log("aruco bindings: " + JSON.stringify(introspect()));
+  out.bindings = introspect();
+  out.buildInfo = cv.getBuildInformation();
+  log("CORNER_REFINE_SUBPIX = " + cv.CORNER_REFINE_SUBPIX + ", NONE = " + cv.CORNER_REFINE_NONE);
+
+  const truth = await (await fetch(SMALL.truth)).json();
+
+  // --- 1) Byte-identische Eingabe: dieselben Graustufen, die Python gesehen hat. ---
+  const gray = await grayFromRaw(SMALL);
+  const clahe = applyClahe(gray);
+
+  for (const [label, method, mat] of [
+    ["clahe-subpix", cv.CORNER_REFINE_SUBPIX, clahe],
+    ["clahe-no-subpix", cv.CORNER_REFINE_NONE, clahe],
+    ["plain-gray-subpix", cv.CORNER_REFINE_SUBPIX, gray],
+  ]) {
+    const r = detect(mat, method, 5);
+    const stats = errorStats(r.corners, truth);
+    results[label] = { corners: r.corners, params: r.params, times: r.times, bestMs: r.bestMs, stats,
+                       count: Object.keys(r.corners).length };
+    log(`${label}: ${Object.keys(r.corners).length} markers, mean ${stats.mean.toFixed(4)} px, ` +
+        `max ${stats.max.toFixed(4)} px, best of 5 ${r.bestMs.toFixed(0)} ms`);
+  }
+
+  // --- 2) Der realistische Weg ueber Canvas. Muss dasselbe liefern. ---
+  const canvasGray = await grayFromCanvas(SMALL);
+  const canvasClahe = applyClahe(canvasGray);
+  {
+    const r = detect(canvasClahe, cv.CORNER_REFINE_SUBPIX, 3);
+    const stats = errorStats(r.corners, truth);
+    // Abweichung zwischen Canvas-Weg und Rohbytes-Weg - misst allein den Bildtransport.
+    let maxDelta = 0;
+    for (const id of Object.keys(r.corners)) {
+      const a = r.corners[id], b = results["clahe-subpix"].corners[id];
+      for (let c = 0; c < 4; c++) maxDelta = Math.max(maxDelta, Math.abs(a[c][0] - b[c][0]), Math.abs(a[c][1] - b[c][1]));
+    }
+    results["canvas-clahe-subpix"] = { corners: r.corners, stats, bestMs: r.bestMs, times: r.times,
+                                       maxDeltaVsRaw: maxDelta, count: Object.keys(r.corners).length };
+    log(`canvas-clahe-subpix: ${Object.keys(r.corners).length} markers, mean ${stats.mean.toFixed(4)} px, ` +
+        `max ${stats.max.toFixed(4)} px | max deviation from raw-byte path: ${maxDelta.toExponential(3)} px`);
+  }
+
+  // --- 3) 12 MP, die Groesse eines echten Handyfotos. ---
+  const truthBig = await (await fetch(BIG.truth)).json();
+  const grayBig = await grayFromRaw(BIG);
+  const claheBig = applyClahe(grayBig);
+  {
+    const r = detect(claheBig, cv.CORNER_REFINE_SUBPIX, 3);
+    const stats = errorStats(r.corners, truthBig);
+    results["12mp-clahe-subpix"] = { corners: r.corners, stats, bestMs: r.bestMs, times: r.times,
+                                     count: Object.keys(r.corners).length };
+    log(`12mp-clahe-subpix: ${Object.keys(r.corners).length} markers, mean ${stats.mean.toFixed(4)} px, ` +
+        `max ${stats.max.toFixed(4)} px, best of 3 ${r.bestMs.toFixed(0)} ms`);
+  }
+
+  // --- 4) Markerblatt: erzeugt der Browser dieselben Marker, die wir drucken? ---
+  try {
+    const dict = cv.getPredefinedDictionary(cv.DICT_4X4_50);
+    const img = new cv.Mat();
+    cv.generateImageMarker(dict, 0, 120, img, 1);
+    results.generateImageMarker = { ok: true, rows: img.rows, cols: img.cols,
+                                    checksum: img.data.reduce((a, b) => (a + b) % 4294967296, 0) };
+    log(`generateImageMarker: ok, ${img.rows}x${img.cols}, checksum ${results.generateImageMarker.checksum}`);
+    img.delete(); dict.delete();
+  } catch (e) {
+    results.generateImageMarker = { ok: false, error: String(e) };
+    log("generateImageMarker FAILED: " + e);
+  }
+
+  // --- 5) Die 16 Ecken im Klartext - das ist der geforderte Beweis. ---
+  log("\n--- 16 corners (clahe-subpix) vs. analytic ground truth ---");
+  const found = results["clahe-subpix"].corners;
+  for (const id of Object.keys(truth).sort()) {
+    for (let c = 0; c < 4; c++) {
+      const f = found[id][c], t = truth[id][c];
+      log(`id ${id} corner ${c}: found (${f[0].toFixed(3)}, ${f[1].toFixed(3)})` +
+          `  truth (${t[0].toFixed(3)}, ${t[1].toFixed(3)})` +
+          `  err ${Math.hypot(f[0] - t[0], f[1] - t[1]).toFixed(4)} px`);
+    }
+  }
+
+  for (const m of [gray, clahe, canvasGray, canvasClahe, grayBig, claheBig]) m.delete();
+  out.results = results;
+  out.status = "done";
+  log("\nSTATUS: done");
+}
+</script>
