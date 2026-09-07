@@ -1,0 +1,14 @@
+{
+  "name": "aruco-homographie-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PDF-Bau in JavaScript (web/pdf/) - laeuft im Browser, unter Node und spaeter in der Android-Huelle. Siehe docs/cpp-migration/README.md.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "test": "node --test \"web/pdf/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "pdf-lib": "1.17.1"
+  }
+}

@@ -71,3 +71,8 @@ Desktop.ini
 
 # --- Spike Stufe 0: rohe Graustufen, 16 MB, aus spike/make_scene.py herstellbar ----
 spike/*.raw
+
+# --- JavaScript ----------------------------------------------------------------
+# npm-Abhaengigkeiten des PDF-Baus (web/pdf/). Gebaut, nicht geschrieben -
+# package.json und package-lock.json dagegen schon.
+/node_modules/

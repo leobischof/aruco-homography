@@ -152,6 +152,38 @@ function Invoke-RunTests {
     Invoke-Native -What 'run-tests' -Action { & $VenvPython -m pytest -q @Rest }
 }
 
+# Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node statt ReportLab. Kein
+# Auslieferungsweg, sondern ein Pruefstand: die vorhandenen PDF-Pruefungen lesen das
+# fertige PDF zurueck und messen es - sie interessiert nicht, wer es gebaut hat.
+# Siehe docs/cpp-migration/README.md und tools/pdf_js_bridge.py.
+function Invoke-RunTestsPdfJs {
+    Confirm-Deps
+    Confirm-NodeModules
+    Write-Step 'Running tests with the JavaScript PDF builder (ARUCO_PDF=js)'
+    $previous = $env:ARUCO_PDF
+    $env:ARUCO_PDF = 'js'
+    try {
+        Invoke-Native -What 'run-tests-pdf-js' -Action { & $VenvPython -m pytest -q @Rest }
+    } finally {
+        $env:ARUCO_PDF = $previous
+    }
+}
+
+# Die reine Rechnung von web/pdf/ (Seiten- und Kachelgeometrie, Textbreiten). Der
+# eigentliche Beweis bleibt run-tests-pdf-js; das hier laeuft ohne Python.
+function Invoke-RunTestsJs {
+    Confirm-NodeModules
+    Write-Step 'Running the JavaScript unit tests'
+    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/pdf/**/*.test.mjs' @Rest }
+}
+
+# Selbstheilend wie Confirm-Deps, nur fuer npm.
+function Confirm-NodeModules {
+    if (Test-Path (Join-Path $RepoRoot 'node_modules\pdf-lib')) { return }
+    Write-Warn 'node_modules fehlt - npm install laeuft jetzt'
+    Invoke-Native -What 'npm install' -Action { npm install --prefix $RepoRoot }
+}
+
 function Invoke-BuildMarkersheet {
     Confirm-Deps
     Write-Step 'Building the A4 marker sheet PDF'
@@ -322,6 +354,8 @@ function Show-Help {
     Write-Cmd 'install-deps'      'venv anlegen und requirements.txt installieren'
     Write-Cmd 'start-server'      'Server starten, Oberflaeche im eigenen Fenster zeigen, LAN-URL + QR ausgeben (--browser | --no-browser)'
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
+    Write-Cmd 'run-tests-pdf-js'  'Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node (ARUCO_PDF=js)'
+    Write-Cmd 'run-tests-js'      'Die reine JavaScript-Rechnung pruefen (node --test)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
@@ -336,6 +370,8 @@ switch ($Command.ToLowerInvariant()) {
     'install-deps'      { Invoke-InstallDeps }
     'start-server'      { Invoke-StartServer }
     'run-tests'         { Invoke-RunTests }
+    'run-tests-pdf-js'  { Invoke-RunTestsPdfJs }
+    'run-tests-js'      { Invoke-RunTestsJs }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
     'build-installer'   { Invoke-BuildInstaller }
