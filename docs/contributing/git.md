@@ -44,8 +44,9 @@ Das ist die wichtigste Regel dieser Datei, und sie ist bewusst **asymmetrisch**.
 | Handlung | Erlaubnis |
 |---|---|
 | `git commit` | **Ohne Rückfrage.** Fertige Arbeit gehört committet, nicht in einem schmutzigen Arbeitsverzeichnis geparkt. |
-| `git push` | **Nur nach ausdrücklicher Aufforderung.** Jedes Mal neu. |
-| `git push --force` | Nur nach ausdrücklicher Aufforderung **für genau diesen Push**. Eine frühere Erlaubnis gilt nicht weiter. |
+| `git push` (Feature-Branch) | **Nur nach ausdrücklicher Aufforderung.** Jedes Mal neu. |
+| `git push` nach `master` | **Geht nicht mehr.** GitHub weist es ab — siehe Abschnitt 7. |
+| `git push --force` | Nur nach ausdrücklicher Aufforderung **für genau diesen Push**. Eine frühere Erlaubnis gilt nicht weiter. Auf `master` ohnehin gesperrt. |
 
 Warum die Asymmetrie: ein Commit ist örtlich und umkehrbar — er kostet nichts und rettet
 Arbeit. Ein Push ist öffentlich und für andere sofort sichtbar; ein `--force` kann fremde
@@ -213,3 +214,55 @@ git branch -d feat/kurzname
 
 Sobald ein zweiter Mensch mitschreibt, gehört diese Entscheidung neu getroffen und hier
 ersetzt.
+
+---
+
+## 7 · `master` ist geschützt — es führt nur ein Weg hinein
+
+Seit 2026-09-07 nimmt GitHub auf `master` **keinen direkten Push mehr an**, auch nicht vom
+Eigentümer (`enforce_admins`). Der einzige Weg ist ein **Pull Request, per Squash gemergt**.
+
+Am Repository eingestellt:
+
+| Einstellung | Wert | Wozu |
+|---|---|---|
+| Squash-Merge | **erlaubt** | die einzige Merge-Art |
+| Merge-Commit | gesperrt | keine Merge-Blasen in der Historie |
+| Rebase-Merge | gesperrt | ausdrücklich nicht gewollt |
+| Pull Request nötig | ja | direkte Pushes werden abgewiesen |
+| Nötige Freigaben | **0** | Einzelbearbeiter: bei 1 könnte niemand seinen eigenen PR mergen |
+| Lineare Historie | erzwungen | passt zu Squash, verbietet Merge-Commits auch am Branch |
+| Force-Push, Löschen | gesperrt | `master` lässt sich nicht mehr umschreiben |
+| Branch nach Merge löschen | automatisch | räumt die Feature-Branches selbst auf |
+
+### Was daraus für den Zuschnitt folgt
+
+**Ein Feature, ein Branch, ein Pull Request.** Beim Squash-Merge wird der ganze PR zu
+**einem** Commit auf `master` — die Einheit der Historie ist also nicht mehr der einzelne
+Commit, sondern der PR. Zwei Features in einem PR landen als ein einziger Commit auf
+`master`, und damit wäre Abschnitt 3 ausgehebelt.
+
+Innerhalb des Branches darf und soll trotzdem kleinteilig committet werden: diese Commits
+sind die Arbeitsspur, der PR-Titel wird der Commit-Betreff auf `master`. Also gilt für den
+**PR-Titel** genau, was Abschnitt 4 über den Betreff sagt, und die PR-Beschreibung trägt
+das Warum.
+
+### Der Ablauf
+
+```powershell
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+# arbeiten, committen, Tests grün halten
+git push -u origin feat/kurzname          # nur auf Ansage
+gh pr create --base master --title "feat: kurzer betreff" --body "..."
+gh pr merge --squash --delete-branch      # nur auf Ansage
+```
+
+Danach das Worktree entfernen (Abschnitt 6). `master` örtlich wieder einholen mit
+`git pull --ff-only` — der Squash-Commit ist ein **anderer** Commit als die eigenen, der
+lokale Branch ist danach Geschichte und wird nicht weiterverwendet.
+
+### Wenn der Schutz einmal im Weg steht
+
+Er ist Absicht, nicht Versehen. Er wird nicht „mal eben" abgeschaltet, um einen Push
+durchzubekommen — das ist genau der Reflex, gegen den er existiert. Wer ihn wirklich
+ändern muss, tut es sichtbar und stellt ihn danach wieder her.
