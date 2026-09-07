@@ -79,6 +79,9 @@ ArUco-Homographie/
 ├─ .gitignore
 ├─ .vscode/tasks.json
 ├─ docs/superpowers/specs/2026-09-06-aruco-homographie-design.md
+├─ shared/                      # sprachneutral, geteilt mit C++ und JS (docs/cpp-migration/)
+│  ├─ constants.json            # die Produktkonstanten selbst (§8)
+│  └─ fixtures/                 # eingefrorene Prüfszenen samt Grundwahrheit
 ├─ app/
 │  ├─ __init__.py
 │  ├─ main.py                   # FastAPI-App, Routen, Static-Mount, Startbanner (LAN-URL + QR)
@@ -891,7 +894,20 @@ Pydantic selbst mit 422 und `detail`, ohne `code`.
 
 ---
 
-## 8 · Konstanten (SSOT `app/config.py`)
+## 8 · Konstanten (SSOT `app/config.py`, Produktwerte aus `shared/constants.json`)
+
+Für den Python-Code ändert sich nichts: jeder Name unten steht in `app/config.py` und wird
+von dort importiert. Woher der *Wert* kommt, ist zweigeteilt. Aussagen über das **Produkt**
+— Millimeter, Schwellen, Farben, Papier — stehen in `shared/constants.json` und werden beim
+Import gelesen; Aussagen über dieses **Python-Programm** — Pfade, Port, Fassung,
+Speicherschlüssel — stehen im Klartext in `config.py`. Grund ist der Umzug auf einen
+C++-Kern und eine JavaScript-PDF-Schicht (`docs/cpp-migration/README.md`): drei Sprachen
+brauchen dieselben Zahlen, und abgeschriebene Zahlen driften — hier in Millimetern.
+
+Zwei Folgen, beide beabsichtigt: `ARUCO_DICT_ID` steht **nicht** in der sprachneutralen
+Datei, sondern wird aus `ARUCO_DICT_NAME` abgeleitet (eine OpenCV-Nummer wäre dort keine
+sprachneutrale Angabe), und es gibt **keinen Rückfallwert** — fehlt die Datei, bricht der
+Start ab, statt mit halben Konstanten falsch zu messen.
 
 ```python
 APP_VERSION              = "0.0.2-alpha"           # einzige Fassung; dev.ps1 gibt sie an den

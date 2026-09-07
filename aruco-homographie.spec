@@ -122,6 +122,9 @@ datas = [
     # Oberflaeche, Marke und i18n-Kataloge. KEIN Python - die statische Analyse
     # von PyInstaller sieht davon nichts.
     (os.path.join(ROOT, "app", "static"), os.path.join("app", "static")),
+    # Die geteilten Konstanten. Liegen ausserhalb von app/, muessen also einzeln
+    # genannt werden - ohne sie bricht config.py beim Start ab.
+    (os.path.join(ROOT, "shared"), "shared"),
 ]
 
 # ReportLab laedt Schriftmetriken und Type-1-Schriften erst zur Laufzeit aus dem

@@ -36,7 +36,14 @@ Server, den der Benutzer gestartet hat, niemals beenden — `kill-servers` triff
 ## Aufbau
 
 ```
-app/config.py        SSOT: jede Konstante, jede Markenfarbe, das Blattlayout. Auch
+shared/              sprachneutral: constants.json (Produktkonstanten) und
+                     fixtures/ (eingefrorene Prüfszenen samt Grundwahrheit). Das
+                     teilen sich Python, C++ und JavaScript — siehe
+                     docs/cpp-migration/README.md. Liegt außerhalb von app/ und
+                     muss deshalb in aruco-homographie.spec stehen.
+app/config.py        SSOT: jede Konstante, jede Markenfarbe, das Blattlayout —
+                     die Produktwerte gelesen aus shared/constants.json, die
+                     Programmwerte (Pfade, Port, Fassung) im Klartext. Auch
                      dev.ps1 liest von hier — Port, Fassung (APP_VERSION) und
                      Marke — und reicht die letzten beiden an den Installer weiter.
 app/notices.py       Vokabular für Warnungen und Abbrüche: Code + Parameter, KEIN
@@ -68,8 +75,14 @@ aruco-homographie.spec   PyInstaller-Bauvorschrift für die Windows-.exe
 3. **Der Markenstreifen ist immer da.** Maßstab und Fußzeile sind abschaltbar, das Logo
    und „Made with Bischof Snowboards Software" nicht — sie gehören auf jedes Blatt.
    Geprüft in `tests/test_branding.py`, für *jede* Seite eines gekachelten Exports.
-4. **`app/config.py` ist die einzige Stelle für Konstanten.** Keine zweite Definition,
-   auch nicht „nur kurz" in einem Modul.
+4. **Eine Konstante hat genau eine Stelle.** Für Python ist das weiterhin
+   `app/config.py` — dort steht jeder Name, dort holt ihn jedes Modul. Woher der *Wert*
+   kommt, ist zweigeteilt: Aussagen über das **Produkt** (Millimeter, Schwellen, Farben,
+   Papier) stehen in `shared/constants.json`, Aussagen über dieses **Python-Programm**
+   (Pfade, Port, Fassung, Speicherschlüssel) im Klartext in `config.py`. Keine zweite
+   Definition, auch nicht „nur kurz" in einem Modul — und **kein Rückfallwert**: fehlt
+   `shared/constants.json`, bricht der Start ab, statt mit halben Konstanten falsch zu
+   messen (`test_startup.py`).
 5. **Das Raster muss auf hellem und dunklem Untergrund lesbar sein.** Deshalb weißer
    Saum unter der Kernlinie — nicht durch eine einzelne graue Linie ersetzen.
 6. **Die Bildaufbereitung ist kosmetisch, niemals geometrisch.** `app/vision/enhance.py`
@@ -123,7 +136,7 @@ und fiele sonst erst am realen Foto auf.
 | `ndarray.ptp()` | In NumPy 2 entfernt. `np.ptp(array)` benutzen. |
 | `cv2.aruco` | Steckt ab OpenCV 5 im Hauptpaket; `opencv-contrib-python` ist nicht nötig. Auch im **headless**-Rad vollständig vorhanden — das benutzt dieses Projekt, weil es nie ein `cv2`-Fenster öffnet. |
 | Pfade auf mitgelieferte Dateien | Immer über `config.resource_path()`. `Path(__file__).parent` zeigt in der gebauten `.exe` neben die Daten, und die Anwendung startet dann mit nackter Seite — ohne Schrift, ohne Logo, ohne Übersetzung. Das sieht wie ein Erfolg aus und ist deshalb der teuerste Fehler hier. |
-| Neue Datei unter `app/static/` | Kommt automatisch mit ins Bundle (der ganze Baum wird kopiert). Eine neue Datendatei **außerhalb** `app/static/` muss in `aruco-homographie.spec` eingetragen werden, sonst fehlt sie nur in der `.exe`. |
+| Neue Datei unter `app/static/` oder `shared/` | Kommt automatisch mit ins Bundle (beide Bäume werden ganz kopiert). Eine neue Datendatei **außerhalb** davon muss in `aruco-homographie.spec` eingetragen werden, sonst fehlt sie nur in der `.exe`. Was ins Bundle geht, gehört auch in `Test-BundleFresh` in `dev.ps1` — sonst tütet `build-installer` klaglos eine alte Fassung ein. |
 | Dateieigenschaften der `.exe` | PyInstaller legt **von sich aus keine Versionsressource an** — ohne den `version_info`-Block in `aruco-homographie.spec` sind Rechtsklick → Eigenschaften → Details komplett leer, ohne Herausgeber. Die binären Felder (`filevers`, `prodvers`, Inno-`VersionInfoVersion`) nehmen nur vier ganze Zahlen; `0.0.2-alpha` weist Windows ab. Deshalb `config.APP_VERSION_NUMERIC`. **Ausgefüllte Eigenschaften sind keine Signatur** — SmartScreen nennt weiterhin keinen Herausgeber. |
 | Unicode auf der Konsole | Der ASCII-QR-Code besteht aus Blockzeichen. Landet die Ausgabe in einer Pipe oder Datei statt in einer Windows-Konsole, gilt cp1252 und `print()` bricht ab. Verzierungen dürfen den Server nicht mitreißen — siehe `print_banner`. Dieselbe Falle beim Bauen: was `dev.ps1` per `Get-ConfigValue` aus `config.py` liest und an ISCC weitergibt, läuft durch zwei Codepage-Stationen. Werte, die diesen Weg nehmen, bleiben **reines ASCII** (siehe `BRAND_COPYRIGHT`); das Sonderzeichen entsteht erst am Ziel. |
 | Tiefer Ablageort des Bundles | Die längste Datei im Bundle hat 101 Zeichen relativen Pfad. Über etwa 157 Zeichen Zielordner reißt MAX_PATH, und die `.exe` stirbt beim Start mit „DLL load failed … Dateiname oder Erweiterung ist zu lang". Kein Codefehler, aber es sieht wie einer aus. Gilt nur noch für den **entpackten Ordner**: der Installer wählt den Zielpfad selbst (`%LOCALAPPDATA%\Programs\`) und kann gar nicht zu tief landen. |

@@ -2,10 +2,17 @@
 
 Jede Zahl, die an mehr als einer Stelle eine Rolle spielt, steht hier - und nur hier.
 Module importieren aus diesem Modul, sie definieren nichts nach.
+
+Die Werte selbst kommen zweigeteilt: was eine Aussage ueber das PRODUKT macht
+(Millimeter, Schwellen, Farben, Papier) steht in `shared/constants.json`, was eine
+Aussage ueber dieses PYTHON-PROGRAMM macht (Pfade, Port, Fassung, Speicherschluessel)
+steht hier im Klartext. Nach aussen ist der Unterschied unsichtbar: `config.SHEET_MM`
+liefert dasselbe wie zuvor.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -34,6 +41,67 @@ def resource_path(*parts: str) -> Path:
 
 STATIC_DIR = resource_path("static")
 
+# --- Geteilte Konstanten -------------------------------------------------------
+# Alles, was eine Aussage ueber das PRODUKT macht - Millimeter, Schwellen, Farben,
+# Papier - steht in shared/constants.json und NICHT hier. Der Grund ist der Umzug
+# auf einen C++-Kern und eine JavaScript-PDF-Schicht (docs/cpp-migration/): drei
+# Sprachen, die dieselben Zahlen brauchen. Eine Zahl, die in Python steht, muessten
+# die anderen beiden abschreiben - und abgeschriebene Zahlen driften.
+#
+# Was ueber das PYTHON-PROGRAMM etwas aussagt - Pfade, Port, Fassung - bleibt hier.
+_SHARED_DIR = (
+    Path(_BUNDLE_DIR) / "shared"
+    if _BUNDLE_DIR
+    else Path(__file__).resolve().parent.parent / "shared"
+)
+
+
+def shared_path(*parts: str) -> Path:
+    """Pfad zu einer Datei unter `shared/`, im Quellbaum wie im Bundle.
+
+    Bedingung an die Bauvorschrift: `aruco-homographie.spec` muss `shared/` ins
+    Bundle legen. Fehlt es dort, startet die .exe nicht - und das ist Absicht.
+    Eine Anwendung, die mit halben Konstanten weiterlaeuft, misst falsch.
+    """
+    return _SHARED_DIR.joinpath(*parts)
+
+
+# JSON kennt keine Tupel. Diese Schluessel sind in Python Tupel und werden beim
+# Laden zurueckverwandelt - damit `config.SHEET_MM[0]` sich nicht ploetzlich anders
+# verhaelt als vorher und `in`-Pruefungen auf DPI_CHOICES weiter stimmen.
+_TUPLE_KEYS = frozenset({
+    "SHEET_MM", "SHEET_SPACING_MM", "SHEET_MARKER_IDS", "DPI_CHOICES",
+    "ADJUST_EDGE_CANNY", "SUPPORTED_LOCALES",
+})
+
+
+def _load_shared_constants() -> dict:
+    """Liest shared/constants.json und macht aus Listen wieder Tupel.
+
+    Kein Vorgabewert, kein try/except: fehlt die Datei, ist das Bundle kaputt und
+    der Abbruch mit Dateinamen ist die freundlichste Meldung, die es dann gibt.
+    """
+    raw = json.loads(shared_path("constants.json").read_text(encoding="utf-8"))
+    raw.pop("_comment", None)
+    values = {}
+    for key, value in raw.items():
+        if key in _TUPLE_KEYS:
+            values[key] = tuple(value)
+        elif key == "SHEET_FORMATS":
+            values[key] = {name: tuple(size) for name, size in value.items()}
+        else:
+            values[key] = value
+    return values
+
+
+# Jeder Name wird unten EINZELN gebunden, nicht per `globals().update()`. Das ist
+# laenger, aber greifbar: `grep STRIP_H_MM app/config.py` findet die Stelle weiter,
+# statische Pruefer sehen die Namen ohne `noqa`, ein Tippfehler im Schluessel faellt
+# als KeyError beim Import auf statt als AttributeError irgendwo spaeter - und vor
+# allem bleibt jeder Begruendungskommentar neben seiner Konstanten stehen. JSON
+# kennt keine Kommentare; das Warum haette den Umzug sonst nicht ueberlebt.
+SHARED_CONSTANTS = _load_shared_constants()
+
 # --- Name ----------------------------------------------------------------------
 # Der Produktname: Titel der FastAPI-Anwendung, Beschriftung des eigenen Fensters,
 # Name der .exe und des Ordners um sie herum (aruco-homographie.spec liest ihn von
@@ -48,6 +116,9 @@ APP_NAME = "ArUco-Homographie"
 # waere die Sorte Duplikat, die still veraltet: der Installer hiesse dann anders,
 # als die Anwendung von sich behauptet, und niemand merkte es.
 # Der Wert folgt der obersten veroeffentlichten Ueberschrift in CHANGELOG.md.
+#
+# Bleibt bewusst in Python: eine Fassung ist eine Aussage ueber DIESES Programm,
+# nicht ueber das Produkt - der C++-Kern und der WASM-Bau bekommen eigene.
 APP_VERSION = "0.0.3-alpha"
 
 # Windows will in den BINAEREN Versionsfeldern seiner Dateieigenschaften vier ganze
@@ -63,12 +134,13 @@ APP_VERSION_NUMERIC = ".".join(str(part) for part in APP_VERSION_TUPLE)
 
 # --- Marke ---------------------------------------------------------------------
 # Die Farben stammen aus snow-service-free/src/main.css und sind dort als oklch
-# notiert; hier stehen die umgerechneten sRGB-Werte, weil ReportLab und CSS im
-# PDF beide Hex brauchen. Gegenprobe: --foreground oklch(0.3717 0.0392 257.29)
-# ergibt #334155, genau die Tinte, die logo-dark.svg im Dateikommentar nennt.
-BRAND_NAME = "Bischof Snowboards"
-BRAND_CLAIM = "Made with Bischof Snowboards Software"
-BRAND_URL = "https://bischof-snowboards.com"
+# notiert; in shared/constants.json stehen die umgerechneten sRGB-Werte, weil
+# ReportLab und CSS im PDF beide Hex brauchen. Gegenprobe: --foreground
+# oklch(0.3717 0.0392 257.29) ergibt #334155, genau die Tinte, die logo-dark.svg
+# im Dateikommentar nennt.
+BRAND_NAME = SHARED_CONSTANTS["BRAND_NAME"]
+BRAND_CLAIM = SHARED_CONSTANTS["BRAND_CLAIM"]
+BRAND_URL = SHARED_CONSTANTS["BRAND_URL"]
 # Die Zeile, die in den Dateieigenschaften beider .exe unter "Copyright" steht.
 #
 # Bewusst OHNE Jahreszahl: sie veraltete sonst jeden Januar still, und ein
@@ -87,37 +159,40 @@ BRAND_URL = "https://bischof-snowboards.com"
 # im eigenen Prozess dasselbe. Beide .exe zeigen deshalb denselben Text.
 BRAND_COPYRIGHT = f"Copyright (C) {BRAND_NAME}"
 
-BRAND_INK = "#334155"            # --foreground, die Hausschrift-Tinte
-BRAND_PRIMARY = "#379992"        # --primary, das Petrol der Marke
-BRAND_ACTION = "#ffbf00"         # --action, das Bernsteingelb fuer Aktionen
-BRAND_DARK = "#25242b"           # --action-foreground, der dunkle Grund
-BRAND_LIGHT = "#f1f5f9"          # --primary-foreground, helle Schrift
-BRAND_SECONDARY = "#e2e8f0"      # --secondary
-BRAND_ACCENT = "#f0f3f3"         # --accent
-BRAND_DESTRUCTIVE = "#e7000b"    # --destructive
+BRAND_INK = SHARED_CONSTANTS["BRAND_INK"]                  # --foreground, die Hausschrift-Tinte
+BRAND_PRIMARY = SHARED_CONSTANTS["BRAND_PRIMARY"]          # --primary, das Petrol der Marke
+BRAND_ACTION = SHARED_CONSTANTS["BRAND_ACTION"]            # --action, das Bernsteingelb fuer Aktionen
+BRAND_DARK = SHARED_CONSTANTS["BRAND_DARK"]                # --action-foreground, der dunkle Grund
+BRAND_LIGHT = SHARED_CONSTANTS["BRAND_LIGHT"]              # --primary-foreground, helle Schrift
+BRAND_SECONDARY = SHARED_CONSTANTS["BRAND_SECONDARY"]      # --secondary
+BRAND_ACCENT = SHARED_CONSTANTS["BRAND_ACCENT"]            # --accent
+BRAND_DESTRUCTIVE = SHARED_CONSTANTS["BRAND_DESTRUCTIVE"]  # --destructive
 
 BRAND_DIR = STATIC_DIR / "brand"
 LOGO_INK_SVG = BRAND_DIR / "logo-dark.svg"      # #334155, fuers PDF
 LOGO_BLACK_SVG = BRAND_DIR / "logo-black.svg"
 LOGO_LIGHT_SVG = BRAND_DIR / "logo-light.svg"
-LOGO_MM = 11.0                   # Kantenlaenge des Logos auf dem Papier
+LOGO_MM = SHARED_CONSTANTS["LOGO_MM"]            # Kantenlaenge des Logos auf dem Papier
 
 # --- Marker ------------------------------------------------------------------
-ARUCO_DICT_NAME = "DICT_4X4_50"
-ARUCO_DICT_ID = cv2.aruco.DICT_4X4_50
+ARUCO_DICT_NAME = SHARED_CONSTANTS["ARUCO_DICT_NAME"]
+# Die OpenCV-Kennung wird aus dem NAMEN abgeleitet und steht deshalb nicht in der
+# sprachneutralen Datei: eine OpenCV-Zahl waere dort keine sprachneutrale Angabe,
+# sondern eine Wette darauf, dass jede Bindung dieselbe Nummerierung benutzt.
+ARUCO_DICT_ID = getattr(cv2.aruco, ARUCO_DICT_NAME)
 
 # Nominale Kantenlaenge eines Markers INKLUSIVE schwarzem Rand. Das ist genau die
 # Groesse, die cv2.aruco als Eckpunkte liefert, und die man am Ausdruck misst.
-MARKER_MM_NOMINAL = 67.0
+MARKER_MM_NOMINAL = SHARED_CONSTANTS["MARKER_MM_NOMINAL"]
 
 # Markerblatt: A4 hoch, vier Marker auf einem Rechteck. Die Abstaende sind die am
 # realen Blatt gemessenen Mittelpunktabstaende (x, y).
-SHEET_MM = (210.0, 297.0)
-SHEET_SPACING_MM = (121.0, 171.0)
+SHEET_MM = SHARED_CONSTANTS["SHEET_MM"]
+SHEET_SPACING_MM = SHARED_CONSTANTS["SHEET_SPACING_MM"]
 
 # Zuordnung der IDs auf dem mitgelieferten Blatt: 0 = oben links, 1 = oben rechts,
 # 2 = unten links, 3 = unten rechts.
-SHEET_MARKER_IDS = (0, 1, 2, 3)
+SHEET_MARKER_IDS = SHARED_CONSTANTS["SHEET_MARKER_IDS"]
 
 
 def sheet_marker_centers(
@@ -141,25 +216,31 @@ def sheet_marker_centers(
 SHEET_MARKER_CENTERS_MM = sheet_marker_centers()
 
 # --- Aufloesung und Groessengrenzen -------------------------------------------
-DPI_DEFAULT = 300
-DPI_CHOICES = (150, 200, 300, 400, 600)
-MAX_OUTPUT_MPX = 300.0
-MAX_UPLOAD_MB = 60
-PREVIEW_MAX_PX = 1600
-DEFAULT_CROP_MAX_MM = 1500.0
-JPEG_QUALITY = 92
+DPI_DEFAULT = SHARED_CONSTANTS["DPI_DEFAULT"]
+DPI_CHOICES = SHARED_CONSTANTS["DPI_CHOICES"]
+MAX_OUTPUT_MPX = SHARED_CONSTANTS["MAX_OUTPUT_MPX"]
+MAX_UPLOAD_MB = SHARED_CONSTANTS["MAX_UPLOAD_MB"]
+PREVIEW_MAX_PX = SHARED_CONSTANTS["PREVIEW_MAX_PX"]
+DEFAULT_CROP_MAX_MM = SHARED_CONSTANTS["DEFAULT_CROP_MAX_MM"]
+JPEG_QUALITY = SHARED_CONSTANTS["JPEG_QUALITY"]
 
 # --- Qualitaetsschwellen ------------------------------------------------------
-RMS_WARN_PX = 2.0
-RMS_WARN_MM = 1.0
-MARKER_SIZE_DEV_WARN = 0.02          # 2 % Abweichung der gemessenen Markergroesse
-MARKER_ROT_WARN_DEG = 2.0            # Frei-Modus setzt gleiche Ausrichtung voraus
-EXTRAPOLATION_WARN_FRAC = 0.25       # Crop-Flaechenanteil ausserhalb der Marker-Huelle
-COLLINEARITY_WARN = 0.05             # Huellflaeche der Mittelpunkte / groesster Abstand^2
-CAM_HEIGHT_MIN_MM = 100.0
-CAM_HEIGHT_MAX_MM = 10000.0
-HORIZON_EPS = 0.02                   # Sicherheitsabstand zum Fluchtpunkt-Horizont
-EXTENT_HULL_FACTOR = 3.0             # Klammer fuer den abbildbaren Bereich
+RMS_WARN_PX = SHARED_CONSTANTS["RMS_WARN_PX"]
+RMS_WARN_MM = SHARED_CONSTANTS["RMS_WARN_MM"]
+# 2 % Abweichung der gemessenen Markergroesse
+MARKER_SIZE_DEV_WARN = SHARED_CONSTANTS["MARKER_SIZE_DEV_WARN"]
+# Frei-Modus setzt gleiche Ausrichtung voraus
+MARKER_ROT_WARN_DEG = SHARED_CONSTANTS["MARKER_ROT_WARN_DEG"]
+# Crop-Flaechenanteil ausserhalb der Marker-Huelle
+EXTRAPOLATION_WARN_FRAC = SHARED_CONSTANTS["EXTRAPOLATION_WARN_FRAC"]
+# Huellflaeche der Mittelpunkte / groesster Abstand^2
+COLLINEARITY_WARN = SHARED_CONSTANTS["COLLINEARITY_WARN"]
+CAM_HEIGHT_MIN_MM = SHARED_CONSTANTS["CAM_HEIGHT_MIN_MM"]
+CAM_HEIGHT_MAX_MM = SHARED_CONSTANTS["CAM_HEIGHT_MAX_MM"]
+# Sicherheitsabstand zum Fluchtpunkt-Horizont
+HORIZON_EPS = SHARED_CONSTANTS["HORIZON_EPS"]
+# Klammer fuer den abbildbaren Bereich
+EXTENT_HULL_FACTOR = SHARED_CONSTANTS["EXTENT_HULL_FACTOR"]
 
 # --- PDF-Geometrie ------------------------------------------------------------
 # Was der Bediener bekommt, wenn er nichts waehlt: verteilen und zusammenkleben.
@@ -168,35 +249,36 @@ EXTENT_HULL_FACTOR = 3.0             # Klammer fuer den abbildbaren Bereich
 # ACHTUNG: das ist die Vorgabe fuer die BEDIENUNG (app/schemas.py). Die
 # PDF-Schicht selbst (ExportOptions in app/pdf/build.py) hat bewusst eine andere:
 # dort ist "eine Seite" der schlichte Fall, und Kachelung eine Betriebsart.
-LAYOUT_DEFAULT = "tiles"
-PAGE_MARGIN_MM_DEFAULT = 5.0
-PRINTER_MARGIN_MM_DEFAULT = 5.0
-TILE_OVERLAP_MM_DEFAULT = 10.0
-TILE_OVERVIEW_DEFAULT = True
-STRIP_H_MM = 18.0                    # Massstab links, Metadaten rechts (Spec 4.2)
-GRID_STEP_MM = 50.0
+LAYOUT_DEFAULT = SHARED_CONSTANTS["LAYOUT_DEFAULT"]
+PAGE_MARGIN_MM_DEFAULT = SHARED_CONSTANTS["PAGE_MARGIN_MM_DEFAULT"]
+PRINTER_MARGIN_MM_DEFAULT = SHARED_CONSTANTS["PRINTER_MARGIN_MM_DEFAULT"]
+TILE_OVERLAP_MM_DEFAULT = SHARED_CONSTANTS["TILE_OVERLAP_MM_DEFAULT"]
+TILE_OVERVIEW_DEFAULT = SHARED_CONSTANTS["TILE_OVERVIEW_DEFAULT"]
+# Massstab links, Metadaten rechts (Spec 4.2)
+STRIP_H_MM = SHARED_CONSTANTS["STRIP_H_MM"]
+GRID_STEP_MM = SHARED_CONSTANTS["GRID_STEP_MM"]
 # Das Raster muss auf hellem UND dunklem Untergrund lesbar sein. Deshalb wird jede
 # Linie zweimal gezogen: erst ein breiter weisser Saum, dann die Kernlinie in
 # Markentinte. Auf Weiss verschwindet der Saum, auf Schwarz traegt er die Linie.
 GRID_INK = BRAND_INK
-GRID_LINE_PT = 0.5
-GRID_HALO_PT = 1.5
-GRID_LABEL_PT = 6.5
-SCALEBAR_MM = 100.0
-CONTOUR_LINE_MM = 0.25
-CONTOUR_EPS_MM = 0.5
-CONTOUR_MIN_AREA_FRAC = 0.05
+GRID_LINE_PT = SHARED_CONSTANTS["GRID_LINE_PT"]
+GRID_HALO_PT = SHARED_CONSTANTS["GRID_HALO_PT"]
+GRID_LABEL_PT = SHARED_CONSTANTS["GRID_LABEL_PT"]
+SCALEBAR_MM = SHARED_CONSTANTS["SCALEBAR_MM"]
+CONTOUR_LINE_MM = SHARED_CONSTANTS["CONTOUR_LINE_MM"]
+CONTOUR_EPS_MM = SHARED_CONSTANTS["CONTOUR_EPS_MM"]
+CONTOUR_MIN_AREA_FRAC = SHARED_CONSTANTS["CONTOUR_MIN_AREA_FRAC"]
 
 # Papierformate fuer die Kachelung, immer (Breite, Hoehe) im Hochformat.
-SHEET_FORMATS = {"A4": (210.0, 297.0), "A3": (297.0, 420.0)}
+SHEET_FORMATS = SHARED_CONSTANTS["SHEET_FORMATS"]
 
 # --- Sprachen -----------------------------------------------------------------
 # Oberflaeche und PDF sprechen dieselben Kataloge. Sie liegen unter app/static/i18n/,
 # damit der Browser sie direkt laden kann UND Python sie lesen kann - eine Datei je
 # Sprache, keine zweite Fassung fuer den Server.
 LOCALE_DIR = STATIC_DIR / "i18n"
-SUPPORTED_LOCALES = ("de", "en")
-DEFAULT_LOCALE = "de"
+SUPPORTED_LOCALES = SHARED_CONSTANTS["SUPPORTED_LOCALES"]
+DEFAULT_LOCALE = SHARED_CONSTANTS["DEFAULT_LOCALE"]
 # Schluessel, unter dem der Browser die zuletzt gewaehlte Sprache merkt. Der Name
 # folgt snow-service-free ("free-language"), damit die Werkzeuge des Hauses sich
 # gleich verhalten.
@@ -208,21 +290,20 @@ THEME_STORAGE_KEY = "aruco-theme"
 # Markererkennung: die Homographie wird am unveraenderten Foto gemessen. Sonst
 # wuerde ein Schaerferegler die Millimeter verschieben - und Millimeter sind hier
 # das Produkt (siehe AGENTS.md, Invarianten).
-ADJUST_CLAHE_TILES = 8               # Kachelraster fuer den lokalen Kontrast
-ADJUST_CLAHE_CLIP_MAX = 4.0          # Obergrenze des CLAHE-Clip-Limits bei Staerke 1.0
-ADJUST_UNSHARP_SIGMA_PX = 2.0        # Radius der Unschaerfemaske fuer die Kantenanhebung
-ADJUST_UNSHARP_MAX = 2.0             # Maximaler Anteil der Maske bei Staerke 1.0
-ADJUST_EDGE_CANNY = (60, 160)        # Schwellen fuer die aufgelegte Kantenzeichnung
-ADJUST_EMPHASIS_SIGMA_DEG = 25.0     # Halbe Breite des betonten Farbtonfensters (HSV-Grad)
+# Kachelraster fuer den lokalen Kontrast
+ADJUST_CLAHE_TILES = SHARED_CONSTANTS["ADJUST_CLAHE_TILES"]
+# Obergrenze des CLAHE-Clip-Limits bei Staerke 1.0
+ADJUST_CLAHE_CLIP_MAX = SHARED_CONSTANTS["ADJUST_CLAHE_CLIP_MAX"]
+# Radius der Unschaerfemaske fuer die Kantenanhebung
+ADJUST_UNSHARP_SIGMA_PX = SHARED_CONSTANTS["ADJUST_UNSHARP_SIGMA_PX"]
+# Maximaler Anteil der Maske bei Staerke 1.0
+ADJUST_UNSHARP_MAX = SHARED_CONSTANTS["ADJUST_UNSHARP_MAX"]
+# Schwellen fuer die aufgelegte Kantenzeichnung
+ADJUST_EDGE_CANNY = SHARED_CONSTANTS["ADJUST_EDGE_CANNY"]
+# Halbe Breite des betonten Farbtonfensters (HSV-Grad)
+ADJUST_EMPHASIS_SIGMA_DEG = SHARED_CONSTANTS["ADJUST_EMPHASIS_SIGMA_DEG"]
 # Farbtonmitten in OpenCV-HSV (0..179) fuer die waehlbaren Farbbetonungen.
-ADJUST_EMPHASIS_HUES = {
-    "red": 0,
-    "yellow": 22,
-    "green": 60,
-    "cyan": 90,
-    "blue": 120,
-    "magenta": 150,
-}
+ADJUST_EMPHASIS_HUES = SHARED_CONSTANTS["ADJUST_EMPHASIS_HUES"]
 
 # --- Server -------------------------------------------------------------------
 SESSION_TTL_S = 3600
@@ -255,5 +336,5 @@ WINDOW_MIN_SIZE = (900, 600)
 SERVER_STOP_WAIT_S = 5.0
 
 # --- Einheiten ----------------------------------------------------------------
-PT_PER_MM = 72.0 / 25.4              # ReportLab rechnet in Punkt
-MM_PER_INCH = 25.4
+MM_PER_INCH = SHARED_CONSTANTS["MM_PER_INCH"]
+PT_PER_MM = 72.0 / MM_PER_INCH       # ReportLab rechnet in Punkt
