@@ -66,7 +66,7 @@ AppUpdatesURL={#AppUrl}
 ; aruco-homographie.spec kommen. Ohne diese Zeilen traegt das Setup zwar einen
 ; Herausgeber, aber keinen Urheberrechtsvermerk.
 ;
-; `VersionInfoVersion` ist ein BINAERES Feld und nimmt nur Zahlen: "0.0.2-alpha"
+; `VersionInfoVersion` ist ein BINAERES Feld und nimmt nur Zahlen: "0.0.3-alpha"
 ; weist Windows ab. Abgeschnitten wird deshalb einmal in app/config.py
 ; (APP_VERSION_NUMERIC); hier kommt nur noch das Ergebnis an. Die lesbare Fassung
 ; steht daneben in den Textfeldern, wo sie erlaubt ist.

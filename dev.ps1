@@ -134,13 +134,15 @@ function Invoke-StartServer {
     Write-Host ''
     Write-Ok   ("Bevorzugter Port: {0} - ist er belegt, weicht der Server aus." -f (Get-ServerPort))
     Write-Host '     Die tatsaechliche Adresse, die Netzwerk-Adresse fuers Handy und den' -ForegroundColor DarkGray
-    Write-Host '     QR-Code gibt der Server unten aus; der Browser oeffnet sich von selbst.' -ForegroundColor DarkGray
-    Write-Host '     Beenden mit Strg+C.' -ForegroundColor DarkGray
+    Write-Host '     QR-Code gibt der Server unten aus; die Oberflaeche geht in einem' -ForegroundColor DarkGray
+    Write-Host '     eigenen Fenster auf (--browser nimmt stattdessen den Browser).' -ForegroundColor DarkGray
+    Write-Host '     Beenden: Fenster schliessen oder Strg+C.' -ForegroundColor DarkGray
     Write-Host ''
 
-    # Den Browser oeffnet app.main selbst - erst dort steht fest, welcher Port es
-    # geworden ist. Von hier aus geoeffnet traefe die URL daneben, sobald der
-    # bevorzugte Port belegt war. --no-browser wird durchgereicht, nicht abgefangen.
+    # Fenster oder Browser macht app.main selbst auf - erst dort steht fest, welcher
+    # Port es geworden ist. Von hier aus geoeffnet traefe die URL daneben, sobald der
+    # bevorzugte Port belegt war. --browser und --no-browser werden durchgereicht,
+    # nicht abgefangen.
     Invoke-Native -What 'start-server' -Action { & $VenvPython -m app.main @Rest }
 }
 
@@ -190,7 +192,11 @@ function Test-BundleFresh {
     if (-not (Test-Path $ExePath)) { return $false }
     $built = (Get-Item $ExePath).LastWriteTimeUtc
 
-    $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app') -Recurse -File |
+    # shared/ gehoert dazu, seit die Produktkonstanten dort stehen und mit ins
+    # Bundle gelegt werden. Ohne diese Zeile gaelte ein Bundle als frisch, obwohl
+    # eine geaenderte Millimeterzahl noch gar nicht darin ist - genau die stille
+    # Sorte Drift, gegen die shared/ ueberhaupt angelegt wurde.
+    $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app'), (Join-Path $RepoRoot 'shared') -Recurse -File |
         Where-Object { $_.FullName -notlike '*__pycache__*' })
     $sources += Get-Item $ExeSpec
     $newest = ($sources | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
@@ -314,7 +320,7 @@ function Show-Help {
     Write-Host 'Usage: ./dev.ps1 <command> [args...]' -ForegroundColor DarkGray
     Write-Host ''
     Write-Cmd 'install-deps'      'venv anlegen und requirements.txt installieren'
-    Write-Cmd 'start-server'      'Webserver starten, Browser oeffnen, LAN-URL + QR ausgeben (--no-browser moeglich)'
+    Write-Cmd 'start-server'      'Server starten, Oberflaeche im eigenen Fenster zeigen, LAN-URL + QR ausgeben (--browser | --no-browser)'
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'

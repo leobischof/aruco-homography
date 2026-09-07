@@ -9,6 +9,7 @@ pillow-heif
 reportlab
 svglib
 qrcode
+pywebview
 pytest
 pypdf
 pymupdf

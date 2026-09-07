@@ -47,9 +47,16 @@ Der Server bindet auf `0.0.0.0` und **bevorzugt** Port 8000; ist der belegt, wei
 freien aus (`app.main.choose_port`). Ein fester Port wäre auf einem Werkstattrechner eine Wette,
 und ein Start, der mit „address already in use" abbricht, sieht aus wie ein kaputtes Programm.
 Beim Start gibt er die LAN-URL plus ASCII-QR-Code auf der Konsole aus, damit das Foto direkt vom
-Handy hochgeladen werden kann, und öffnet den Browser auf dem Port, der es tatsächlich geworden
-ist. Er läuft im Vordergrund (`dev.ps1 start-server` blockiert); `dev.ps1 kill-servers` beendet
-hängengebliebene Instanzen.
+Handy hochgeladen werden kann. Er läuft im Vordergrund (`dev.ps1 start-server` blockiert);
+`dev.ps1 kill-servers` beendet hängengebliebene Instanzen.
+
+Die Oberfläche zeigt sich in einem **eigenen Fenster** (pywebview), das genau diesen Server auf
+dem Port anzeigt, der es tatsächlich geworden ist — ein Reiter im Browser wäre beim Aufräumen
+mitgeschlossen worden und die Anwendung schiene verschwunden, obwohl ihr Server läuft. Das
+Fenster ist eine zweite *Ansicht*, keine zweite Anwendung: der Server bleibt in jeder Betriebsart
+derselbe, und das Handy erreicht ihn weiter, während das Fenster offen steht. Welche Betriebsart
+gilt, entscheidet `app.window.choose_ui_mode` aus der Kommandozeile (§10); kann dieser Rechner
+kein Fenster zeigen, tritt der Browser ein und der Server startet trotzdem.
 
 
 Oberfläche **und** Server sprechen Deutsch und Englisch aus **denselben** Katalogdateien
@@ -72,9 +79,13 @@ ArUco-Homographie/
 ├─ .gitignore
 ├─ .vscode/tasks.json
 ├─ docs/superpowers/specs/2026-09-06-aruco-homographie-design.md
+├─ shared/                      # sprachneutral, geteilt mit C++ und JS (docs/cpp-migration/)
+│  ├─ constants.json            # die Produktkonstanten selbst (§8)
+│  └─ fixtures/                 # eingefrorene Prüfszenen samt Grundwahrheit
 ├─ app/
 │  ├─ __init__.py
 │  ├─ main.py                   # FastAPI-App, Routen, Static-Mount, Startbanner (LAN-URL + QR)
+│  ├─ window.py                 # wie sich die Oberfläche zeigt: Fenster · Browser · nichts (§10)
 │  ├─ config.py                 # SSOT aller Konstanten (§8)
 │  ├─ schemas.py                # Pydantic-Request-Modelle (SSOT der API-Typen)
 │  ├─ notices.py                # Vokabular für Warnungen und Abbrüche: Code + Parameter (§7.1)
@@ -112,7 +123,8 @@ ArUco-Homographie/
    ├─ test_extent.py · test_rectify.py · test_enhance.py
    ├─ test_layout.py · test_markersheet.py · test_pdf_size.py · test_branding.py
    ├─ test_api.py · test_adjust_api.py · test_i18n.py
-   └─ test_startup.py
+   ├─ test_startup.py
+   └─ test_window.py
 ```
 
 `app/static/js/` ist bewusst kein einzelnes `app.js` mehr und `app/static/css/` kein einzelnes
@@ -882,7 +894,20 @@ Pydantic selbst mit 422 und `detail`, ohne `code`.
 
 ---
 
-## 8 · Konstanten (SSOT `app/config.py`)
+## 8 · Konstanten (SSOT `app/config.py`, Produktwerte aus `shared/constants.json`)
+
+Für den Python-Code ändert sich nichts: jeder Name unten steht in `app/config.py` und wird
+von dort importiert. Woher der *Wert* kommt, ist zweigeteilt. Aussagen über das **Produkt**
+— Millimeter, Schwellen, Farben, Papier — stehen in `shared/constants.json` und werden beim
+Import gelesen; Aussagen über dieses **Python-Programm** — Pfade, Port, Fassung,
+Speicherschlüssel — stehen im Klartext in `config.py`. Grund ist der Umzug auf einen
+C++-Kern und eine JavaScript-PDF-Schicht (`docs/cpp-migration/README.md`): drei Sprachen
+brauchen dieselben Zahlen, und abgeschriebene Zahlen driften — hier in Millimetern.
+
+Zwei Folgen, beide beabsichtigt: `ARUCO_DICT_ID` steht **nicht** in der sprachneutralen
+Datei, sondern wird aus `ARUCO_DICT_NAME` abgeleitet (eine OpenCV-Nummer wäre dort keine
+sprachneutrale Angabe), und es gibt **keinen Rückfallwert** — fehlt die Datei, bricht der
+Start ab, statt mit halben Konstanten falsch zu messen.
 
 ```python
 APP_VERSION              = "0.0.2-alpha"           # einzige Fassung; dev.ps1 gibt sie an den
@@ -968,6 +993,13 @@ ADJUST_EMPHASIS_HUES     = {red 0, yellow 22, green 60,
 SESSION_TTL_S            = 3600
 HOST, PORT               = "0.0.0.0", 8000   # PORT ist der BEVORZUGTE Port, keine Zusage
 BROWSER_WAIT_S           = 60.0              # wie lange der Browser-Faden auf den Server wartet
+
+# --- Eigenes Fenster (§10) ---
+APP_NAME                 = "ArUco-Homographie"     # Anwendung, Fenstertitel, .exe und Ordner
+WINDOW_SIZE              = (1200, 860)             # Inhalt 68 rem + Ränder ≈ 1136 px
+WINDOW_MIN_SIZE          = (900, 600)              # über dem Umbruchpunkt der Oberfläche
+SERVER_STOP_WAIT_S       = 5.0                     # Frist zum Verabschieden nach dem Schließen
+
 PT_PER_MM                = 72 / 25.4               # ReportLab rechnet in Punkt
 MM_PER_INCH              = 25.4
 ```
@@ -1001,6 +1033,8 @@ pillow-heif
 reportlab
 svglib                      # liest die Logo-SVG als ReportLab-Zeichnung (§4.6)
 qrcode
+pywebview                   # das eigene Fenster; unter Windows über pythonnet/WinForms
+                            # und die WebView2-Laufzeit (§10)
 pytest
 pypdf
 pymupdf                     # rastert das Markerblatt für den Detektortest (§9.2)
@@ -1052,6 +1086,7 @@ verschiebt Kanten daher nicht.
 | `test_api` | Ende-zu-Ende über HTTP: Upload → Solve → Export; Kopfzeilen gegen die berechnete Geometrie; Vorgabe ist die Kachelung auf A4; der Ausdruck folgt der mitgeschickten Sprache; Fehlerpfade (`not_solved`, `session_expired`) | exakt |
 | `test_adjust_api` | die Regler über die Leitung: Pydantic-Modell spiegelt die Dataclass **Feld für Feld und Vorgabe für Vorgabe**; jeder Farbton aus `config` wird angenommen, ein fremder abgelehnt; Negativ schlägt bis in die Bildpunkte durch; **ein Export mit Aufbereitung hat dieselbe Seitengröße, dasselbe Bildrechteck und dieselbe Seitenzahl wie einer ohne** | Geometrie identisch, Inhalt verschieden |
 | `test_i18n` | beide Kataloge tragen dieselben Schlüssel und je Schlüssel dieselben Platzhalter; jeder im Quelltext benutzte Fehler- und Warncode hat einen Eintrag; `negotiate`/`normalise` über neun bzw. vier Fälle; Rückfall Englisch → Deutsch → Schlüssel; Umlaute wirklich im Katalog | exakt |
+| `test_window` | die Wahl der Betriebsart aus der Kommandozeile: Vorgabe Fenster, `--browser`, `--no-browser`, beide zusammen, jeweils mit und ohne `--port`; und der Rückfall auf den Browser in **allen drei** Sorten von Fehlschlag — pywebview fehlt, die Anzeige-Maschine wäre MSHTML, das Aufbauen wirft. Das Fenster selbst zu öffnen ist hier nicht prüfbar; die Entscheidung davor ist es, und sie ist der Teil, der still falsch wird | exakt |
 
 
 Erst wenn diese Tests grün sind, gilt die Maßhaltigkeit als belegt.
@@ -1063,10 +1098,21 @@ Markerblatt drucken → Marker messen → Foto eines Objekts bekannter Größe �
 drucken → 100-mm-Maßstab und Objektmaß mit dem Messschieber prüfen. Ergebnis wird im README
 dokumentiert.
 
-**Diese Probe steht bis heute (2026-09-07) aus.** Die Maßhaltigkeit ist ausschließlich gegen
-synthetische Szenen belegt — gegen gerechnete Wahrheit, nicht gegen Papier. Das ist eine gute
-Grundlage und kein Beweis: kein Test dieses Repos hat je einen Drucker gesehen. Wer das
-Erfolgskriterium aus §1 zitiert, zitiert bis dahin eine Zusage, keine Messung.
+**Diese Probe ist zur Hälfte erbracht (2026-09-07).** Am gedruckten Blatt wurden der
+100-mm-Kontrollmaßstab **und** das 50-mm-Raster mit dem Messschieber nachgemessen, beide richtig.
+
+Damit ist der Teil `PDF → Drucker → Papier` belegt: die Seitengeometrie stimmt, und der Drucker
+skaliert nicht.
+
+**Der zweite Teil dieser Probe — das Objektmaß — steht aus**, und das ist kein Formalismus. Die
+Reihenfolge oben nennt beides aus gutem Grund: Maßstab und Raster zeichnet die PDF-Schicht (§4.2)
+aus **denselben** Millimeterzahlen, in denen der Zuschnitt angegeben ist. Eine falsche
+Homographie ergäbe eine falsch große Schablone, auf der beide trotzdem tadellos mäßen — sie
+können diesen Fehler prinzipiell nicht sehen. Nur ein Gegenstand **bekannter Größe im Foto**,
+auf dem Ausdruck nachgemessen, prüft `Foto → Marker → Millimeter`.
+
+Wer das Erfolgskriterium aus §1 zitiert, zitiert bis dahin eine halb belegte Zusage: die
+Druckkette ist gemessen, die Messkette nicht.
 
 ---
 
@@ -1078,7 +1124,7 @@ Kurznamen des Nachbarprojekts):
 | Kommando | Wirkung |
 |---|---|
 | `install-deps` | venv anlegen, pip aktualisieren, `requirements.txt` installieren |
-| `start-server` | Server im **Vordergrund** starten, URL ausgeben, Browser öffnen, LAN-URL + QR |
+| `start-server` | Server im **Vordergrund** starten, URL ausgeben, Oberfläche im eigenen Fenster zeigen, LAN-URL + QR |
 | `run-tests` | `pytest -q` |
 | `build-markersheet [mm] [x] [y]` | Markerblatt nach `out/markerblatt_A4.pdf` |
 | `build-exe` | Windows-Bundle nach `dist/ArUco-Homographie/` (PyInstaller, One-Folder) |
@@ -1088,20 +1134,58 @@ Kurznamen des Nachbarprojekts):
 | `help` | die Liste ausgeben (auch die Vorgabe ohne Argument) |
 
 `start-server` liest den bevorzugten Port aus `app/config.py` (keine zweite Wahrheit) und zeigt
-ihn an. Den **Browser öffnet `app.main` selbst**, in einem Daemon-Faden, der wartet, bis der Port
-antwortet — so erscheint nie eine Fehlerseite, weil der Server noch nicht bereit war. Es muss dort
-geschehen und nicht im Aufrufer: erst dort steht fest, welcher Port es geworden ist, denn beim
-Ausweichen wäre jede vorher gebaute URL falsch. `--no-browser` unterdrückt das, `--port N`
-verschiebt den *Wunsch*-Port — ausgewichen wird danach wie immer. Ein unbrauchbarer Wert bricht
-nicht ab, sondern fällt auf `config.PORT` zurück: ein Doppelklick, der an einem
+ihn an. Die **Oberfläche öffnet `app.main` selbst** und nicht der Aufrufer: erst dort steht fest,
+welcher Port es geworden ist, denn beim Ausweichen wäre jede vorher gebaute URL falsch. `--port N`
+verschiebt den *Wunsch*-Port — ausgewichen wird danach wie immer; ein unbrauchbarer Wert bricht
+nicht ab, sondern fällt auf `config.PORT` zurück, denn ein Doppelklick, der an einem
 Komfortargument scheitert, wäre schlechter als einer auf dem Vorgabeport.
+
+**Wie sich die Oberfläche zeigt**, entscheidet `app.window.choose_ui_mode` — eine reine Funktion
+über den Argumenten, damit die Entscheidung prüfbar ist, auch wenn das Fenster selbst es nicht
+ist (§9.2):
+
+| Schalter | Betriebsart |
+|---|---|
+| *(keiner)* | **eigenes Fenster** — der Doppelklick soll ein Programm aufmachen, keinen Reiter |
+| `--browser` | Browser des Systems, in einem Daemon-Faden, der wartet, bis der Port antwortet — so erscheint nie eine Fehlerseite, weil der Server noch nicht bereit war |
+| `--no-browser` | **weder noch**, nur der Server |
+
+`--no-browser` sticht `--browser`, wenn beide dastehen: seine Bedeutung ist „nichts aufmachen",
+und daran hängt die Freigabeprüfung, die die Anwendung ohne Anzeige hochfährt.
+
+Im Fenstermodus laufen **Server und Fenster auf verschiedenen Fäden**: beide wollen den
+Hauptfaden — uvicorn läuft dort normalerweise, pywebview besteht darauf — also bekommt ihn das
+Fenster, und der Server einen Daemon-Faden daneben. Wird das Fenster geschlossen, bittet
+`app.main` den Server über `should_exit` zu Ende und wartet `SERVER_STOP_WAIT_S`; als Daemon
+überlebt er den Prozess ohnehin nicht.
+
+**Kann dieser Rechner kein Fenster zeigen, ist das kein Abbruch.** `app.window.show` sagt in
+einer Konsolenzeile, was fehlt, gibt `False` zurück, und der Browser tritt ein — der Server läuft
+in jedem Fall weiter, sonst wäre ein Werkstattrechner ohne WebView2-Laufzeit auch vom Handy aus
+nicht mehr zu gebrauchen. Drei Fälle: pywebview ist nicht installiert; das Aufbauen wirft; oder
+pywebview würde mit **MSHTML** zeichnen. Der letzte ist der heikle: ohne WebView2-Laufzeit fällt
+pywebview unter Windows wortlos auf die alte IE-Maschine zurück, und die kennt keine ES-Module —
+das Fenster ginge auf und bliebe leer. Ein leeres Fenster sieht aus wie ein Absturz ohne Meldung,
+also wird **vor** dem Öffnen gefragt, womit gezeichnet würde (`webview.initialize().renderer`),
+und MSHTML abgelehnt.
+
+Zwei Vorgaben von pywebview sind ausdrücklich zurückgestellt, damit sich das Fenster verhält wie
+der Browser-Reiter, den es ersetzt: `text_select=True` (sonst spritzt pywebview
+`user-select: none` ein) und `zoomable=True` (sonst ist Strg+Mausrad gesperrt). Und es läuft
+**nicht** im Privatmodus (`private_mode=False`), weil Sprache und Thema im `localStorage` stehen
+und den nächsten Start überleben sollen.
 
 `build-exe` ruft die versionierte Bauvorschrift `aruco-homographie.spec` auf. **One-Folder, nicht
 One-File:** One-File entpackt bei jedem Start OpenCV, NumPy und SciPy in ein Temp-Verzeichnis und
 kostet Sekunden Startzeit für nichts. Mit muss von Hand, weil die statische Analyse es nicht
 findet: der ganze Baum `app/static/**` (Oberfläche, Logo-SVGs, Montserrat-`.woff2`,
-i18n-Kataloge) und die Datendateien von ReportLab. Weitergegeben wird der ganze Ordner, nicht nur
-die `.exe` darin.
+i18n-Kataloge), die Datendateien von ReportLab und **zweierlei für pywebview** — die
+Anzeige-Module `webview.platforms.winforms` und `.edgechromium` als `hiddenimports` (sie werden
+erst zur Laufzeit über einen Namen gezogen) sowie der Ordner `webview/js` als Datendateien. Den
+sammelt der mitgelieferte PyInstaller-Hook **nicht**, er nimmt nur `webview/lib` mit den
+WebView2-DLLs; ohne die JavaScript-Dateien stirbt der Fensterstart mit „Cannot find JS
+directory", und die `.exe` zeigt statt des Fensters den Rückfall auf den Browser. Im Quellbaum
+fällt das nicht auf. Weitergegeben wird der ganze Ordner, nicht nur die `.exe` darin.
 
 **Die Dateieigenschaften der Anwendung** entstehen ebenfalls dort, in einem `VSVersionInfo`-Block.
 Ohne ihn sind sie **leer** — PyInstaller legt von sich aus keine Versionsressource an, und
