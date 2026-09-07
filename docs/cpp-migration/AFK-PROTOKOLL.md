@@ -91,3 +91,69 @@ Der bereits offene PR #12 (Stufe 0) wurde von `master` auf `develop` umgehängt.
 **⚠ Zu beachten beim Fassungs-PR:** `develop → master` wird **ohne** `--delete-branch`
 gemergt. `develop` ist kein Feature-Branch. In `docs/contributing/git.md` §7 steht der
 Ablauf ausgeschrieben, samt dem Nachziehen von `develop` auf `master` danach.
+
+#### 2026-09-08 · Werkzeugkette steht — bis auf ein Gerät
+
+Alles installiert, nichts davon im Repo (alles unter `_toolchain/`):
+
+| | |
+|---|---|
+| MSVC 14.50 + CMake | VS BuildTools 18, über `vswhere` gefunden statt festgeschrieben |
+| OpenCV 5.0.0 Windows-SDK | 195 MB, nur `vc16`-Bibliotheken — 14.50 bindet trotzdem sauber |
+| Emscripten | **6.0.9** |
+| JDK | **21.0.12.1 LTS** |
+| Android-SDK | NDK **27.2.12479018**, build-tools 35.0.0, platform-tools |
+| OpenCV Android-SDK | **16-KB-Seiten-Fassung**, ABIs `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64` |
+
+**Die 16-KB-Falle ist keine mehr.** In `docs/plans.md` stand sie als Sperre für Android
+15+ — sie galt für den Python/Chaquopy-Weg, den es nicht mehr gibt. OpenCV liefert für
+den nativen Weg eine eigens ausgerichtete Fassung.
+
+**⚠ Was fehlt: ein Android-Gerät oder ein Emulator.** Ein APK lässt sich hier bauen,
+aber **nicht starten**. Alles, was über „übersetzt und gelinkt" hinausgeht, bleibt für
+Android unbelegt, bis jemand es auf ein Telefon schiebt.
+
+**`winget` hing 36 Minuten bei 4,8 s Rechenzeit** und legte nichts ab; dahinter wartete
+ein untätiges `msiexec` auf etwas, das unbeaufsichtigt nie kommt. Ersetzt durch das
+ZIP von Microsoft — kein Installationsprogramm, keine Administratorrechte. Die
+Begründung steht als Kommentar im Einrichtungsskript, damit es niemand „zurückrepariert".
+
+#### 2026-09-08 · Stufe 2 fertig — die Kerne messen bit für bit gleich
+
+| | Python | C++ |
+|---|---|---|
+| Testsuite | **183 grün** | **183 grün** |
+| schlechtester Eckfehler | 0,2337 px | **0,2337 px** |
+| Mittel über 16 Ecken | 0,1402 px | **0,1402 px** |
+
+**Unterschied: 0,0 px.** Auf beiden Szenen, mit und ohne CLAHE. Und es sind dieselben
+Zahlen, die Stufe 0 im **Browser** gemessen hat — drei Implementierungen, ein Ergebnis.
+
+Selbst nachgeprüft, nicht bloß berichtet, einschließlich der Probe, auf die es ankommt:
+ein Backend, das still auf Python zurückfällt, zeigte **ebenfalls** 183 grün und bewiese
+nichts. `backend.ACTIVE = cpp`, und die geladene Datei ist die übersetzte `.pyd`.
+
+**⚠ Ein Fehler von mir, den der Agent gefunden hat.** Ich hatte ihm mitgeteilt,
+`cv::LMSolver` stehe für den Ersatz von `least_squares` bereit. Den Namen gibt es in
+OpenCV 5.0.0 **nicht**; die Klasse heißt `cv::LevMarq`. Ich hatte ihn aus einer Liste
+von Symbolen abgeleitet, die der **JavaScript**-Oberfläche des WASM-Baus fehlen — die
+sagt nichts darüber, wie die C++-Kopfdateien etwas nennen. Eine Symbolliste ist kein
+API-Verzeichnis, und ich habe sie als eines benutzt. Berichtigt in PR #18.
+
+**Nebenbefund, der Stufe 4 bindet:** `cv::contourArea` ist nach `geometry` gewandert,
+wo auch `LevMarq` liegt. **`geometry` muss auf jede WASM-Whitelist**, sonst fehlen
+beide Hälften der Messung auf einmal.
+
+#### 2026-09-08 · Was noch unbelegt ist
+
+Der Auftrag lautet „durch Blocker hindurcharbeiten". Damit niemand mehr hineinliest,
+als drinsteht:
+
+- **Der Messschieber-Beleg hängt weiter an der Python-Kette.** `100 mm = 100 mm` wurde
+  an einem Ausdruck gemessen, den Python erzeugt hat. Der C++-Kern erbt das erst, wenn
+  er die ganze Kette fährt.
+- **Und auch dieser Beleg deckt nur die halbe Kette:** `PDF → Drucker → Papier`. Der Weg
+  `Foto → Marker → Millimeter` ist nach wie vor nur gegen synthetische Szenen belegt.
+- **Kein echtes Foto.** Alles bisher Gemessene ist gerechnet.
+- **Android: nichts ausgeführt.** Siehe oben.
+
