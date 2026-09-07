@@ -21,9 +21,13 @@ Tests aus `tests/` grün halten — sie sind der einzige Beweis, den dieses Proj
 .\dev.ps1 start-server        # Server + Browser, LAN-URL und QR-Code fürs Handy
 .\dev.ps1 run-tests           # pytest
 .\dev.ps1 build-markersheet   # Markerblatt nach out/
-.\dev.ps1 kill-servers        # nur Server aus DIESEM Verzeichnis
+.\dev.ps1 build-exe           # Windows-Bundle nach dist/ (läuft ohne Python)
+.\dev.ps1 kill-servers        # nur Server aus DIESEM Verzeichnis (auch die gebaute .exe)
 .\dev.ps1 clean-all
 ```
+
+Der Port aus `app/config.py` ist der **bevorzugte**, keine Zusage: ist er belegt, weicht der
+Server aus. Die geltende Adresse steht im Startbanner.
 
 Ein selbst gestarteter Server darf den eigenen Arbeitsschritt nicht überleben. Einen
 Server, den der Benutzer gestartet hat, niemals beenden — `kill-servers` trifft beide.
@@ -40,6 +44,7 @@ app/pdf/             layout · overlays · branding · build · markersheet
 app/static/          Oberfläche; app/static/brand/ trägt Logo und Schrift
 tests/               synthetische Szenen mit bekannter Grundwahrheit
 docs/superpowers/    die Spezifikation, mit dem Code abgeglichen
+aruco-homographie.spec   PyInstaller-Bauvorschrift für die Windows-.exe
 ```
 
 ## Invarianten — hier nichts kaputt machen
@@ -95,7 +100,11 @@ und fiele sonst erst am realen Foto auf.
 | Stolperstein | Was gilt |
 |---|---|
 | `ndarray.ptp()` | In NumPy 2 entfernt. `np.ptp(array)` benutzen. |
-| `cv2.aruco` | Steckt ab OpenCV 5 im Hauptpaket; `opencv-contrib-python` ist nicht nötig. |
+| `cv2.aruco` | Steckt ab OpenCV 5 im Hauptpaket; `opencv-contrib-python` ist nicht nötig. Auch im **headless**-Rad vollständig vorhanden — das benutzt dieses Projekt, weil es nie ein `cv2`-Fenster öffnet. |
+| Pfade auf mitgelieferte Dateien | Immer über `config.resource_path()`. `Path(__file__).parent` zeigt in der gebauten `.exe` neben die Daten, und die Anwendung startet dann mit nackter Seite — ohne Schrift, ohne Logo, ohne Übersetzung. Das sieht wie ein Erfolg aus und ist deshalb der teuerste Fehler hier. |
+| Neue Datei unter `app/static/` | Kommt automatisch mit ins Bundle (der ganze Baum wird kopiert). Eine neue Datendatei **außerhalb** `app/static/` muss in `aruco-homographie.spec` eingetragen werden, sonst fehlt sie nur in der `.exe`. |
+| Unicode auf der Konsole | Der ASCII-QR-Code besteht aus Blockzeichen. Landet die Ausgabe in einer Pipe oder Datei statt in einer Windows-Konsole, gilt cp1252 und `print()` bricht ab. Verzierungen dürfen den Server nicht mitreißen — siehe `print_banner`. |
+| Tiefer Ablageort des Bundles | Die längste Datei im Bundle hat 101 Zeichen relativen Pfad. Über etwa 157 Zeichen Zielordner reißt MAX_PATH, und die `.exe` stirbt beim Start mit „DLL load failed … Dateiname oder Erweiterung ist zu lang". Kein Codefehler, aber es sieht wie einer aus. |
 | CSS-Spezifität | `#id { display: flex }` schlägt `.hidden { display: none }`. `.hidden` trägt deshalb `!important`. |
 | Rasterbild statt Vektor | Marker und Logo werden als Vektor gezeichnet. Ein eingebettetes Rasterbild kostet Kantenschärfe, und die braucht die Subpixel-Erkennung. |
 | Lange Heredocs | In dieser Shell brechen sehr lange Heredocs mitten im Dokument ab. Dateien mit dem Schreib-Werkzeug anlegen. |

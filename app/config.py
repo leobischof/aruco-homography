@@ -6,9 +6,33 @@ Module importieren aus diesem Modul, sie definieren nichts nach.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import cv2
+
+# --- Pfade zu mitgelieferten Dateien ------------------------------------------
+# `Path(__file__).parent` bedeutet in einer eingefrorenen .exe etwas anderes als im
+# Quellbaum: PyInstaller legt die Datendateien in ein eigenes Verzeichnis (im
+# One-Folder-Modus `_internal/`) und nennt es `sys._MEIPASS`. Der Modulpfad zeigt
+# dann daneben - die Anwendung startet, liefert aber eine Seite ohne Schrift, ohne
+# Logo und ohne Uebersetzung. Deshalb geht JEDER Pfad auf eine Datendatei durch
+# diesen einen Helfer, und er liefert in beiden Faellen dasselbe.
+_BUNDLE_DIR = getattr(sys, "_MEIPASS", None)   # nur im PyInstaller-Bundle gesetzt
+_PACKAGE_DIR = Path(_BUNDLE_DIR) / "app" if _BUNDLE_DIR else Path(__file__).resolve().parent
+
+
+def resource_path(*parts: str) -> Path:
+    """Pfad zu einer mitgelieferten Datei unterhalb von `app/`.
+
+    Bedingung an die Bauvorschrift: `aruco-homographie.spec` muss den Baum in
+    derselben Form ins Bundle legen (`app/static/...` bleibt `app/static/...`),
+    sonst zeigt dieser Helfer im Bundle ins Leere.
+    """
+    return _PACKAGE_DIR.joinpath(*parts)
+
+
+STATIC_DIR = resource_path("static")
 
 # --- Marke ---------------------------------------------------------------------
 # Die Farben stammen aus snow-service-free/src/main.css und sind dort als oklch
@@ -28,7 +52,7 @@ BRAND_SECONDARY = "#e2e8f0"      # --secondary
 BRAND_ACCENT = "#f0f3f3"         # --accent
 BRAND_DESTRUCTIVE = "#e7000b"    # --destructive
 
-BRAND_DIR = Path(__file__).parent / "static" / "brand"
+BRAND_DIR = STATIC_DIR / "brand"
 LOGO_INK_SVG = BRAND_DIR / "logo-dark.svg"      # #334155, fuers PDF
 LOGO_BLACK_SVG = BRAND_DIR / "logo-black.svg"
 LOGO_LIGHT_SVG = BRAND_DIR / "logo-light.svg"
@@ -126,7 +150,7 @@ SHEET_FORMATS = {"A4": (210.0, 297.0), "A3": (297.0, 420.0)}
 # Oberflaeche und PDF sprechen dieselben Kataloge. Sie liegen unter app/static/i18n/,
 # damit der Browser sie direkt laden kann UND Python sie lesen kann - eine Datei je
 # Sprache, keine zweite Fassung fuer den Server.
-LOCALE_DIR = Path(__file__).parent / "static" / "i18n"
+LOCALE_DIR = STATIC_DIR / "i18n"
 SUPPORTED_LOCALES = ("de", "en")
 DEFAULT_LOCALE = "de"
 # Schluessel, unter dem der Browser die zuletzt gewaehlte Sprache merkt. Der Name
@@ -159,7 +183,14 @@ ADJUST_EMPHASIS_HUES = {
 # --- Server -------------------------------------------------------------------
 SESSION_TTL_S = 3600
 HOST = "0.0.0.0"
+# BEVORZUGTER Port, keine Zusage. Auf einem Werkstattrechner haelt schnell irgendetwas
+# anderes die 8000, und ein Doppelklick, der mit "address already in use" abbricht,
+# ist kein Programm. app.main.choose_port() nimmt diesen Port, wenn er frei ist, und
+# sonst einen beliebigen freien - die stabile URL bleibt der Normalfall.
 PORT = 8000
+# Wie lange der Browser-Faden auf den Server wartet, bevor er aufgibt. Eine .exe auf
+# kaltem Dateisystem entpackt OpenCV beim ersten Start spuerbar lange.
+BROWSER_WAIT_S = 60.0
 
 # --- Einheiten ----------------------------------------------------------------
 PT_PER_MM = 72.0 / 25.4              # ReportLab rechnet in Punkt

@@ -12,6 +12,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
+# Hier landet auch das PyInstaller-Bundle: build/ die Zwischenstaende, dist/ den
+# fertigen Ordner mit der .exe. Beides ist Gebautes und wird nie versioniert -
+# die Bauvorschrift aruco-homographie.spec dagegen schon.
 /build/
 /dist/
 *.egg-info/

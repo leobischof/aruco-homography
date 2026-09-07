@@ -16,6 +16,7 @@
     ./dev.ps1 start-server       # Server starten (installiert bei Bedarf vorher)
     ./dev.ps1 run-tests          # Testsuite ausfuehren
     ./dev.ps1 build-markersheet  # Markerblatt-PDF nach out/ schreiben
+    ./dev.ps1 build-exe          # Windows-.exe nach dist/ bauen
     ./dev.ps1 help               # alle Kommandos auflisten
 #>
 
@@ -43,6 +44,8 @@ Set-Location $RepoRoot
 $VenvPython   = Join-Path $RepoRoot 'venv\Scripts\python.exe'
 $Requirements = Join-Path $RepoRoot 'requirements.txt'
 $DepsStamp    = Join-Path $RepoRoot 'venv\.deps-installed'
+$ExeSpec      = Join-Path $RepoRoot 'aruco-homographie.spec'
+$ExeDist      = Join-Path $RepoRoot 'dist\ArUco-Homographie'
 
 # --- Logging gateway (single source of truth for output formatting) ----------
 function Write-Step { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Cyan }
@@ -110,44 +113,21 @@ function Get-ServerPort {
     return [int]$port.Trim()
 }
 
-# Wartet im Hintergrund, bis der Port antwortet, und oeffnet dann den Browser.
-# So oeffnet sich nie eine Fehlerseite, weil der Server noch nicht bereit war.
-function Start-BrowserWhenReady {
-    param([string]$Url, [int]$Port)
-    Start-Job -ScriptBlock {
-        param($JobUrl, $JobPort)
-        for ($attempt = 0; $attempt -lt 75; $attempt++) {
-            try {
-                $client = New-Object System.Net.Sockets.TcpClient
-                $client.Connect('127.0.0.1', $JobPort)
-                $client.Close()
-                Start-Process $JobUrl
-                return
-            } catch {
-                Start-Sleep -Milliseconds 400
-            }
-        }
-    } -ArgumentList $Url, $Port | Out-Null
-}
-
 function Invoke-StartServer {
     Confirm-Deps
 
-    $port = Get-ServerPort
-    $localUrl = "http://127.0.0.1:$port"
-
     Write-Step 'Starting the ArUco-Homographie server'
     Write-Host ''
-    Write-Ok   "Weboberflaeche: $localUrl"
-    Write-Host '     Der Browser oeffnet sich gleich von selbst.' -ForegroundColor DarkGray
-    Write-Host '     Die Netzwerk-Adresse fuers Handy (samt QR-Code) gibt der Server unten aus.' -ForegroundColor DarkGray
+    Write-Ok   ("Bevorzugter Port: {0} - ist er belegt, weicht der Server aus." -f (Get-ServerPort))
+    Write-Host '     Die tatsaechliche Adresse, die Netzwerk-Adresse fuers Handy und den' -ForegroundColor DarkGray
+    Write-Host '     QR-Code gibt der Server unten aus; der Browser oeffnet sich von selbst.' -ForegroundColor DarkGray
     Write-Host '     Beenden mit Strg+C.' -ForegroundColor DarkGray
     Write-Host ''
 
-    if ($Rest -notcontains '--no-browser') { Start-BrowserWhenReady -Url $localUrl -Port $port }
-
-    $serverArgs = @($Rest | Where-Object { $_ -ne '--no-browser' })
-    Invoke-Native -What 'start-server' -Action { & $VenvPython -m app.main @serverArgs }
+    # Den Browser oeffnet app.main selbst - erst dort steht fest, welcher Port es
+    # geworden ist. Von hier aus geoeffnet traefe die URL daneben, sobald der
+    # bevorzugte Port belegt war. --no-browser wird durchgereicht, nicht abgefangen.
+    Invoke-Native -What 'start-server' -Action { & $VenvPython -m app.main @Rest }
 }
 
 function Invoke-RunTests {
@@ -162,14 +142,41 @@ function Invoke-BuildMarkersheet {
     Invoke-Native -What 'build-markersheet' -Action { & $VenvPython -m app.pdf.markersheet @Rest }
 }
 
+# Baut die Windows-.exe. Was mitmuss und warum, steht in aruco-homographie.spec -
+# hier wird sie nur aufgerufen, damit der Bau genauso selbstheilend ist wie jedes
+# andere Kommando. Zusatzargumente gehen an PyInstaller (z. B. --clean).
+function Invoke-BuildExe {
+    Confirm-Deps
+    Write-Step 'Building the Windows .exe (PyInstaller, one-folder)'
+    Invoke-Native -What 'build-exe' -Action {
+        & $VenvPython -m PyInstaller --noconfirm $ExeSpec @Rest
+    }
+
+    # PyInstaller meldet auch dann Erfolg, wenn nur Warnungen kamen - also
+    # nachsehen, ob die .exe wirklich dort liegt.
+    $exePath = Join-Path $ExeDist 'ArUco-Homographie.exe'
+    if (-not (Test-Path $exePath)) { throw "PyInstaller lief durch, aber $exePath fehlt." }
+
+    $bytes = (Get-ChildItem -Path $ExeDist -Recurse -File | Measure-Object -Property Length -Sum).Sum
+    Write-Ok "Fertig: $exePath"
+    Write-Host ("     {0:N0} MB in {1}" -f ($bytes / 1MB), $ExeDist) -ForegroundColor DarkGray
+    Write-Host '     Weitergegeben wird der GANZE Ordner, nicht nur die .exe darin.' -ForegroundColor DarkGray
+}
+
 # Stop only servers started FROM THIS REPOSITORY - never someone else's python.
+# Zwei Gestalten desselben Servers: aus dem venv (python.exe -m app.main) und als
+# gebaute .exe aus dist/. Beide tragen den Repo-Pfad in der Kommandozeile, und nur
+# darueber werden sie erkannt.
 function Invoke-KillServers {
     Write-Step 'Stopping servers started from this repository'
     $needle = $RepoRoot.ToLowerInvariant()
     $killed = 0
-    foreach ($proc in (Get-CimInstance Win32_Process -Filter "Name = 'python.exe'")) {
+    foreach ($proc in (Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'ArUco-Homographie.exe'")) {
         $cmd = $proc.CommandLine
-        if ($cmd -and $cmd.ToLowerInvariant().Contains($needle) -and $cmd.Contains('app.main')) {
+        if (-not $cmd) { continue }
+        $lower = $cmd.ToLowerInvariant()
+        if (-not $lower.Contains($needle)) { continue }
+        if ($lower.Contains('app.main') -or $lower.Contains('aruco-homographie.exe')) {
             Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
             $killed = $killed + 1
         }
@@ -179,7 +186,7 @@ function Invoke-KillServers {
 
 function Invoke-CleanAll {
     Write-Step 'Removing venv, outputs and caches'
-    foreach ($path in @('venv', 'out', '.pytest_cache')) {
+    foreach ($path in @('venv', 'out', 'build', 'dist', '.pytest_cache')) {
         $full = Join-Path $RepoRoot $path
         if (Test-Path $full) { Remove-Item -Recurse -Force $full }
     }
@@ -202,8 +209,9 @@ function Show-Help {
     Write-Cmd 'start-server'      'Webserver starten, Browser oeffnen, LAN-URL + QR ausgeben (--no-browser moeglich)'
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
+    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
     Write-Cmd 'kill-servers'      'Aus diesem Repo gestartete Server beenden'
-    Write-Cmd 'clean-all'         'venv, out/ und Caches entfernen'
+    Write-Cmd 'clean-all'         'venv, out/, build/, dist/ und Caches entfernen'
     Write-Cmd 'help'              'Diese Hilfe anzeigen'
     Write-Host ''
 }
@@ -214,6 +222,7 @@ switch ($Command.ToLowerInvariant()) {
     'start-server'      { Invoke-StartServer }
     'run-tests'         { Invoke-RunTests }
     'build-markersheet' { Invoke-BuildMarkersheet }
+    'build-exe'         { Invoke-BuildExe }
     'kill-servers'      { Invoke-KillServers }
     'clean-all'         { Invoke-CleanAll }
     'help'              { Show-Help }

@@ -22,10 +22,37 @@ Netzwerk-Adresse samt QR-Code aus — damit lädst du das Foto direkt vom Handy 
 | `.\dev.ps1 install-deps` | venv anlegen und `requirements.txt` installieren |
 | `.\dev.ps1 run-tests` | Testsuite (`pytest`) |
 | `.\dev.ps1 build-markersheet [mm] [abstand_x] [abstand_y]` | Markerblatt nach `out/markerblatt_A4.pdf` |
+| `.\dev.ps1 build-exe` | Windows-Programm nach `dist/ArUco-Homographie/` bauen |
 | `.\dev.ps1 kill-servers` | aus diesem Repo gestartete Server beenden |
-| `.\dev.ps1 clean-all` | venv, `out/` und Caches entfernen |
+| `.\dev.ps1 clean-all` | venv, `out/`, `build/`, `dist/` und Caches entfernen |
 
 Dieselben Kommandos liegen als VS-Code-Tasks bereit (`Strg+Shift+P` → *Tasks: Run Task*).
+
+Der Server nimmt Port 8000, wenn er frei ist, und sonst einen anderen — die Adresse, die
+wirklich gilt, steht im Startbanner.
+
+## Für die Werkstatt: ohne Python
+
+```powershell
+.\dev.ps1 build-exe
+```
+
+baut mit PyInstaller `dist\ArUco-Homographie\ArUco-Homographie.exe`. Doppelklick startet den
+Server und öffnet den Browser; auf dem Zielrechner muss **kein Python** installiert sein.
+
+Weitergegeben wird der **ganze Ordner**, nicht nur die `.exe` darin — daneben liegt
+`_internal\` mit OpenCV, den Schriften und der Oberfläche. Rund 290 MB.
+
+Zwei Dinge, die am Zielrechner schiefgehen können:
+
+- **Der Ablageort darf nicht zu tief sein.** Die längste Datei im Bundle hat einen
+  relativen Pfad von 101 Zeichen; ab einem Zielordner über ~157 Zeichen reißt Windows'
+  260-Zeichen-Grenze, und das Programm bricht beim Start mit „DLL load failed … Der
+  Dateiname oder die Erweiterung ist zu lang" ab. `C:\Programme\` oder der Desktop sind
+  unproblematisch, ein tief verschachtelter OneDrive-Ordner nicht.
+- **Die `.exe` ist nicht signiert.** Windows SmartScreen warnt beim ersten Start
+  („Weitere Informationen" → „Trotzdem ausführen"). Für den Eigengebrauch hinnehmbar,
+  für Weitergabe braucht es ein Code-Signing-Zertifikat.
 
 ## Markerblatt
 
@@ -113,7 +140,9 @@ docs/          Spezifikation
 Wer hier mit einem KI-Agenten arbeitet: [AGENTS.md](AGENTS.md) nennt die Invarianten, die nicht
 gebrochen werden dürfen. [CHANGELOG.md](CHANGELOG.md) hält fest, was sich wann geändert hat.
 
-`app/config.py` ist die einzige Stelle für Konstanten — auch `dev.ps1` liest den Port von dort.
+`app/config.py` ist die einzige Stelle für Konstanten — auch `dev.ps1` liest den bevorzugten
+Port von dort. Pfade auf mitgelieferte Dateien gehen über `config.resource_path()`, damit sie
+im Quellbaum und im gebauten Bundle dasselbe bedeuten.
 
 ## Tests
 

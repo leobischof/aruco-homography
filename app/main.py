@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import io
 import socket
-from pathlib import Path
+import sys
+import threading
+import time
+import webbrowser
 
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -20,8 +23,6 @@ from app.pipeline import run_adjust, run_export, run_solve, solve_response
 from app.schemas import AdjustRequest, ExportRequest, SolveRequest
 from app.session import store
 from app.vision.detect import load_photo
-
-STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="ArUco-Homographie", docs_url="/api/docs", redoc_url=None)
 
@@ -169,7 +170,7 @@ async def preview_endpoint(session_id: str, kind: str) -> Response:
     return FileResponse(path, media_type="image/jpeg")
 
 
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+app.mount("/", StaticFiles(directory=config.STATIC_DIR, html=True), name="static")
 
 
 def lan_address() -> str:
@@ -184,32 +185,95 @@ def lan_address() -> str:
         probe.close()
 
 
-def print_banner(url: str) -> None:
+def choose_port(preferred: int = config.PORT) -> int:
+    """Der bevorzugte Port, wenn er frei ist - sonst ein beliebiger freier.
+
+    Ein fester Port ist genau so lange richtig, wie ihn niemand sonst belegt; auf
+    einem Werkstattrechner ist das eine Wette. Ein Doppelklick, der mit "address
+    already in use" abbricht, sieht fuer den Bediener aus wie ein kaputtes Programm.
+    Deshalb wird zuerst der stabile Port versucht und erst dann ausgewichen.
+
+    Gebunden wird auf dieselbe Adresse wie spaeter von uvicorn, sonst wuerde der
+    Test die falsche Frage stellen. SO_REUSEADDR wird bewusst NICHT gesetzt: unter
+    Windows erlaubt das, sich auf einen bereits belegten Port zu setzen - die
+    Pruefung wuerde dann immer "frei" sagen.
+    """
+    for candidate in (preferred, 0):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((config.HOST, candidate))
+            except OSError:
+                continue
+            return int(probe.getsockname()[1])
+    raise OSError("Kein freier Port gefunden.")
+
+
+def open_browser_when_ready(url: str, port: int) -> None:
+    """Browser erst rufen, wenn der Server antwortet.
+
+    Sofort geoeffnet zeigt der Doppelklick eine Fehlerseite, weil uvicorn noch
+    startet. Der Faden ist ein Daemon - er darf das Beenden mit Strg+C nicht
+    aufhalten.
+    """
+
+    def wait_and_open() -> None:
+        deadline = time.monotonic() + config.BROWSER_WAIT_S
+        while time.monotonic() < deadline:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.settimeout(0.5)
+                if probe.connect_ex(("127.0.0.1", port)) == 0:
+                    webbrowser.open(url)
+                    return
+            time.sleep(0.2)
+
+    threading.Thread(target=wait_and_open, daemon=True).start()
+
+
+def print_banner(local_url: str, lan_url: str) -> None:
     """URL plus ASCII-QR-Code, damit man das Handy nur draufhalten muss."""
     print()
     print("  ArUco-Homographie laeuft")
-    print(f"  Lokal:      http://127.0.0.1:{config.PORT}")
-    print(f"  Im Netzwerk: {url}")
+    print(f"  Lokal:       {local_url}")
+    print(f"  Im Netzwerk: {lan_url}")
     print()
     try:
         import qrcode
 
         code = qrcode.QRCode(border=1)
-        code.add_data(url)
+        code.add_data(lan_url)
         code.make(fit=True)
         buffer = io.StringIO()
         code.print_ascii(out=buffer)
         print(buffer.getvalue())
     except ImportError:  # pragma: no cover - QR ist Komfort, kein Muss
         print("  (qrcode nicht installiert - URL bitte von Hand eintippen)")
+    except UnicodeEncodeError:  # pragma: no cover - haengt an der Konsole, nicht am Code
+        # Der QR-Code besteht aus Blockzeichen. Schreibt Python nicht in eine
+        # Windows-Konsole, sondern in eine Pipe oder Datei, nimmt es die
+        # Codepage des Systems (cp1252) - und print() bricht ab. In der .exe
+        # hiess das: der Server startete gar nicht erst, wegen einer Verzierung.
+        print("  (Konsole kann den QR-Code nicht darstellen - URL bitte eintippen)")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Server starten und den Browser aufmachen. Mit --no-browser nur den Server.
+
+    Der Browser wird HIER geoeffnet und nicht im Aufrufer: erst hier steht fest,
+    welcher Port es geworden ist. Ein Aufrufer, der vorher eine URL baut, trifft
+    die falsche, sobald ausgewichen werden musste.
+    """
     import uvicorn
 
-    url = f"http://{lan_address()}:{config.PORT}"
-    print_banner(url)
-    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="info")
+    args = sys.argv[1:] if argv is None else argv
+
+    port = choose_port()
+    local_url = f"http://127.0.0.1:{port}"
+    print_banner(local_url, f"http://{lan_address()}:{port}")
+
+    if "--no-browser" not in args:
+        open_browser_when_ready(local_url, port)
+
+    uvicorn.run(app, host=config.HOST, port=port, log_level="info")
     return 0
 
 

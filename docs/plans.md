@@ -16,48 +16,36 @@ ist `README.md` — die Eingangstür ist englisch mit deutscher Kurzfassung.
 |---|---|
 | 🔵 gewollt | Vom Auftraggeber ausdrücklich gewünscht |
 | ⚪ Kandidat | Beim Arbeiten am Code aufgefallen, nicht beauftragt |
+| ✅ erledigt | Gebaut. Der Eintrag bleibt nur stehen, wenn ein anderer auf ihn verweist |
 
 ---
 
-## 1 · 🔵 Als Windows-`.exe` ausliefern
+## 1 · ✅ Als Windows-`.exe` ausliefern
 
-**Warum.** Heute braucht der Rechner Python, ein venv und `dev.ps1`. In der Werkstatt soll
-eine Datei liegen, die man doppelklickt.
+> **Erledigt am 2026-09-07** (Stufe 1). `.\dev.ps1 build-exe` baut das One-Folder-Bundle;
+> beschrieben in [der Spezifikation](superpowers/specs/2026-09-06-aruco-homographie-design.md),
+> §10, und in [CHANGELOG.md](../CHANGELOG.md) unter 0.3.0. Die Überschrift bleibt stehen,
+> weil Punkt 3 auf „Punkt 1" verweist.
 
-### Weg
+**Zwei Annahmen von damals, gemessen widerlegt** — sie stehen hier, damit sie niemand
+noch einmal glaubt:
 
-PyInstaller im **One-Folder-Modus**, nicht One-File. One-File entpackt bei jedem Start
-OpenCV und NumPy in ein Temp-Verzeichnis; das kostet mehrere Sekunden Startzeit für nichts.
+- **Der Umstieg auf `opencv-python-headless` spart unter Windows nichts.** Erwartet waren
+  60–80 MB. Gemessen an OpenCV 5.0.0.93: die beiden Räder haben dieselbe Dateiliste, und
+  nur `cv2.pyd` unterscheidet sich — 117 862 428 gegen 117 418 175 Byte, **0,42 MB**. Qt
+  ist in keinem von beiden enthalten; die Windows-Räder von OpenCV 5 bringen es nicht mehr
+  mit. Der Wechsel ist trotzdem richtig (die Anwendung öffnet nie ein `cv2`-Fenster), aber
+  nicht aus Größengründen. `cv2.aruco` ist im Headless-Rad vollständig da.
+- **Die Paketgröße bleibt bei rund 290 MB** — der Brocken sind OpenCV (112 MB), SciPy
+  (67 MB mit `scipy.libs`) und NumPy (28 MB), nicht die GUI.
 
-Die Anwendung bleibt, was sie ist: ein lokaler Server. Zwei Ausbaustufen:
+**Offen bleibt Stufe 2** (`pywebview` als eigenes Fenster statt Browser-Tab) — nur bauen,
+wenn der Tab wirklich stört.
 
-1. **Klein:** `.exe` startet Uvicorn und öffnet den Standardbrowser — genau das, was
-   `main()` heute schon tut. Wenig Arbeit, funktioniert sofort.
-2. **Größer:** `pywebview` legt ein eigenes Fenster um die Oberfläche, damit es sich wie ein
-   Programm anfühlt und nicht wie ein Tab. Kostet ein zusätzliches Fenster-Toolkit.
-
-Stufe 1 zuerst; Stufe 2 nur, wenn der Browser-Tab wirklich stört.
-
-### Stolpersteine, die vorher bekannt sind
-
-| Punkt | Was zu tun ist |
-|---|---|
-| Paketgröße | `opencv-python` zieht Qt und die GUI-Fensterfunktionen mit. Die Anwendung öffnet **nie** ein `cv2`-Fenster → auf `opencv-python-headless` wechseln. Spart grob 60–80 MB. Vorher prüfen, dass `cv2.aruco` im Headless-Rad enthalten ist. |
-| Datendateien | `app/static/**` (Logo-SVGs, Montserrat-`.woff2`, die i18n-Kataloge) sind **keine** Python-Module. Sie müssen über `--add-data` mit; sonst startet die `.exe` und zeigt eine nackte Seite ohne Schrift und ohne Übersetzung. |
-| Pfade | `Path(__file__).parent` zeigt im Bundle woandershin. Einen Helfer bauen, der `sys._MEIPASS` berücksichtigt, und **alle** Pfade in `app/config.py` darüber auflösen. |
-| Fester Port | `config.PORT = 8000` ist belegt, sobald irgendetwas anderes darauf läuft. Freien Port suchen und ihn dem Browser übergeben. |
-| Versteckte Importe | ReportLab lädt Schriften und Renderer zur Laufzeit nach; PyInstaller findet das nicht von allein. |
-| SmartScheme/Defender | Eine unsignierte `.exe` aus dem Netz wird gewarnt. Für den Eigengebrauch hinnehmbar, für Weitergabe nicht — dann Code-Signing-Zertifikat. |
-
-### Prüfung
-
-Die `.exe` auf einem Rechner **ohne Python** starten, ein echtes Foto durchlaufen lassen,
-das PDF drucken und mit dem Messschieber nachmessen. Alles andere beweist nichts.
-
-### Aufwand
-
-Stufe 1: überschaubar, ein Arbeitstag inklusive der Pfad-Umstellung. Der Umstieg auf
-`headless` ist der einzige Teil, der die Testsuite anfassen kann.
+**Offen bleibt die eigentliche Prüfung:** die `.exe` auf einem Rechner **ohne Python**
+starten, ein echtes Foto durchlaufen lassen, das PDF drucken und mit dem Messschieber
+nachmessen. Bisher belegt ist nur, dass das Bundle außerhalb des Repos, ohne Python im
+`PATH` und ohne `PYTHON*`-Variablen läuft. Das ist etwas anderes als ein fremder Rechner.
 
 ---
 
