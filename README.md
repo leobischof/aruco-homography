@@ -31,11 +31,12 @@ server with Ctrl+C.
 
 | Command | What it does |
 |---|---|
-| `.\dev.ps1 start-server` | Start the server and open the browser (`--no-browser` suppresses that) |
+| `.\dev.ps1 start-server` | Start the server and open the browser (`--no-browser` suppresses that, `--port N` asks for a different port) |
 | `.\dev.ps1 install-deps` | Create the venv and install `requirements.txt` |
 | `.\dev.ps1 run-tests` | Run the test suite (`pytest`; extra arguments are forwarded) |
 | `.\dev.ps1 build-markersheet [mm] [spacing_x] [spacing_y]` | Write the marker sheet to `out/markerblatt_A4.pdf` |
 | `.\dev.ps1 build-exe` | Build the standalone Windows program into `dist/ArUco-Homographie/` |
+| `.\dev.ps1 build-installer` | Build the Windows installer — **one file** — into `dist/` |
 | `.\dev.ps1 kill-servers` | Stop servers started **from this repository** — nobody else's Python |
 | `.\dev.ps1 clean-all` | Remove the venv, `out/`, `build/`, `dist/` and the caches |
 | `.\dev.ps1 help` | List all commands |
@@ -48,27 +49,67 @@ that actually applies is printed in the start banner.
 
 ## Running it without Python
 
+Neither route below needs Python on the machine that runs the program. The first hands over
+**one file**; the second hands over a folder, for people who cannot or will not install
+anything.
+
+### The installer — one file, nothing to unpack
+
+```powershell
+.\dev.ps1 build-installer
+```
+
+builds `dist\ArUco-Homographie-Setup-<version>.exe` — one file, 78 MB, because `lzma2/max` with
+solid compression squeezes the 290 MB bundle harder than the zip did. Double-click it, click
+through, done: the program lands on the machine with a Start Menu entry, an optional desktop icon
+(offered unchecked, as Windows does it), and an uninstaller in *Apps & Features*. Nothing to
+unpack, nothing to move to the right place. About 292 MB on disk once installed.
+
+It installs **for the current user only**, into `%LOCALAPPDATA%\Programs\ArUco-Homographie`, and
+therefore needs **no administrator rights** — the person at a workshop PC often does not have
+them. That same choice removes the path-length trap the folder route has below: the installer
+picks a short target, so Windows' 260-character limit is nowhere near.
+
+Building it needs [Inno Setup 6](https://jrsoftware.org/isinfo.php), which
+`winget install --id JRSoftware.InnoSetup` installs. `dev.ps1` looks for `ISCC.exe` on the
+`PATH`, in the per-user location and in both `Program Files` locations, and names that winget
+command if it finds none. The build recipe is `installer\aruco-homographie.iss` — checked in,
+because it is source, not output. Version, publisher and URL are not typed into it: `dev.ps1`
+reads them out of `app/config.py` and passes them in, so there is one place to change them.
+
+### The folder — the alternative, without an installation
+
 ```powershell
 .\dev.ps1 build-exe
 ```
 
-builds `dist\ArUco-Homographie\ArUco-Homographie.exe` with PyInstaller. Double-clicking it
-starts the server and opens the browser, and **no Python has to be installed** on the machine
-that runs it.
+builds `dist\ArUco-Homographie\ArUco-Homographie.exe` with PyInstaller. Double-clicking it starts
+the server and opens the browser. This is what the release `.zip` contains, and what to use when
+installing is not an option — on a machine where nothing may be installed, or from a USB stick.
 
 Pass on the **whole folder**, not just the `.exe` inside it — `_internal\` sits beside it and
 holds OpenCV, the fonts and the interface. Around 290 MB.
 
-Two things can go wrong on the target machine, and both look like bugs when they are not:
+**Then the folder must not sit too deep.** The longest file in the bundle has a relative path of
+101 characters, so a target folder beyond roughly 157 characters runs into Windows'
+260-character limit and the program aborts at startup with *DLL load failed … The filename or
+extension is too long*. `C:\Program Files\` or the desktop are fine; a deeply nested OneDrive
+folder is not. It is not a bug, but it looks exactly like one — and it is the single best reason
+to prefer the installer.
 
-- **The folder must not sit too deep.** The longest file in the bundle has a relative path of
-  101 characters, so a target folder beyond roughly 157 characters runs into Windows'
-  260-character limit and the program aborts at startup with *DLL load failed … The filename
-  or extension is too long*. `C:\Program Files\` or the desktop are fine; a deeply nested
-  OneDrive folder is not.
-- **The `.exe` is not signed.** SmartScreen warns on first launch (*More info* → *Run
-  anyway*). Acceptable for personal use; passing it to other people needs a code-signing
-  certificate.
+### Either way: the file properties say who made it
+
+Right-click either `.exe` → *Properties* → *Details* and the publisher is there: company
+`Bischof Snowboards`, the product name, the version, and a copyright line. PyInstaller writes no
+version resource unless you give it one, so the application's comes from a `VSVersionInfo` block
+in `aruco-homographie.spec` and the setup's from the `VersionInfo*` directives in the `.iss` —
+both fed from `app/config.py`, neither retyped.
+
+**That is not a signature.** Neither binary is code-signed, so SmartScreen still warns on the
+first launch (*More info* → *Run anyway*) and still shows **Unknown publisher** — filled-in file
+properties are metadata anyone can write, and Windows knows it. Acceptable for personal use;
+handing it to other people without that warning needs a code-signing certificate, and nothing
+short of one will do.
 
 ---
 
@@ -569,14 +610,16 @@ app/vision/    detection, homography, camera pose, thickness correction,
 app/pdf/       page geometry, printed extras, branding, PDF build, marker sheet
 app/static/    the interface — css/ js/ i18n/ and brand/ with the logo and the font
 app/           config (SSOT for every constant), pipeline (orchestration), main (routes)
+installer/     aruco-homographie.iss — the Inno Setup recipe for the Windows installer
 tests/         synthetic scenes with known ground truth
 docs/          documentation — start at docs/README.md
 ```
 
-`app/config.py` is the only place constants are defined — even `dev.ps1` reads the preferred
-port from there rather than repeating it. Paths to bundled files go through
-`config.resource_path()`, so they mean the same thing in the source tree and inside the built
-bundle.
+`app/config.py` is the only place constants are defined — `dev.ps1` reads the preferred port,
+the version (`APP_VERSION`) and the brand strings from there rather than repeating them, and
+hands the last three to the installer recipe, which therefore contains no version of its own.
+Paths to bundled files go through `config.resource_path()`, so they mean the same thing in the
+source tree and inside the built bundle.
 
 ## Tests
 
@@ -629,6 +672,17 @@ Lineal: aus ihrer bekannten, **nachgemessenen** Größe folgt die Homographie un
 Beim ersten Mal richtet der Befehl venv und Abhängigkeiten selbst ein, startet dann den Server,
 öffnet den Browser und gibt die Netzwerk-Adresse samt QR-Code aus. Damit lässt sich der ganze
 Ablauf vom Handy aus bedienen. Die vollständige Befehlstabelle steht oben unter *Getting started*.
+
+**Auf einen Rechner ohne Python bringen.** `.\dev.ps1 build-installer` baut
+`dist\ArUco-Homographie-Setup-<Fassung>.exe` — **eine** Datei. Doppelklicken, durchklicken,
+fertig: Startmenü-Eintrag, wahlweise ein Schreibtischsymbol, Deinstallation über *Apps &
+Features*. Nichts entpacken, nichts an die richtige Stelle schieben. Installiert wird **ohne
+Administratorrechte** für den angemeldeten Benutzer nach `%LOCALAPPDATA%\Programs\`, und weil
+der Installer den Zielpfad wählt, ist die 260-Zeichen-Grenze von Windows kein Thema mehr — der
+Fehler, der beim Entpacken in einen tiefen OneDrive-Ordner zuschlug. Zum Bauen wird Inno Setup 6
+gebraucht (`winget install --id JRSoftware.InnoSetup`). Wer nichts installieren kann oder will,
+nimmt weiter `.\dev.ps1 build-exe` und gibt den **ganzen Ordner** weiter; Einzelheiten oben unter
+*Running it without Python*.
 
 **Das Wichtigste in drei Sätzen.** Das Markerblatt (DICT_4X4_50, IDs 0–3, 67 mm Kantenlänge,
 Mittelpunktabstände 121 × 171 mm auf A4 hoch) **nach dem Drucken mit dem Messschieber nachmessen**

@@ -41,6 +41,15 @@
       "problemMatcher": []
     },
     {
+      "label": "Build Windows installer",
+      "detail": "Inno-Setup-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "build-installer"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
       "label": "Run tests",
       "detail": "Testsuite ausfuehren",
       "type": "process",

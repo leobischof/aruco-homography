@@ -34,6 +34,26 @@ def resource_path(*parts: str) -> Path:
 
 STATIC_DIR = resource_path("static")
 
+# --- Fassung -------------------------------------------------------------------
+# Die Versionsnummer steht NUR hier. `dev.ps1 build-installer` liest sie von hier
+# und reicht sie als /D-Definition an Inno Setup weiter - genauso, wie der Port
+# schon von hier gelesen wird. Eine zweite Zahl in `installer/aruco-homographie.iss`
+# waere die Sorte Duplikat, die still veraltet: der Installer hiesse dann anders,
+# als die Anwendung von sich behauptet, und niemand merkte es.
+# Der Wert folgt der obersten veroeffentlichten Ueberschrift in CHANGELOG.md.
+APP_VERSION = "0.0.2-alpha"
+
+# Windows will in den BINAEREN Versionsfeldern seiner Dateieigenschaften vier ganze
+# Zahlen sehen und vertraegt kein "-alpha". Die Vorabkennung wird deshalb hier
+# EINMAL abgeschnitten und auf vier Stellen aufgefuellt; die PyInstaller-Vorschrift
+# und der Inno-Installer nehmen beide dieses Ergebnis, statt die Regel jeder fuer
+# sich noch einmal zu erfinden. Der lesbare Text bleibt daneben APP_VERSION - in den
+# Zeichenkettenfeldern ist er erlaubt, und dort will man ihn auch sehen.
+APP_VERSION_TUPLE = tuple(
+    int(part) for part in (APP_VERSION.split("-", 1)[0].split(".") + ["0"] * 4)[:4]
+)
+APP_VERSION_NUMERIC = ".".join(str(part) for part in APP_VERSION_TUPLE)
+
 # --- Marke ---------------------------------------------------------------------
 # Die Farben stammen aus snow-service-free/src/main.css und sind dort als oklch
 # notiert; hier stehen die umgerechneten sRGB-Werte, weil ReportLab und CSS im
@@ -42,6 +62,23 @@ STATIC_DIR = resource_path("static")
 BRAND_NAME = "Bischof Snowboards"
 BRAND_CLAIM = "Made with Bischof Snowboards Software"
 BRAND_URL = "https://bischof-snowboards.com"
+# Die Zeile, die in den Dateieigenschaften beider .exe unter "Copyright" steht.
+#
+# Bewusst OHNE Jahreszahl: sie veraltete sonst jeden Januar still, und ein
+# Urheberrechtsvermerk braucht keine.
+#
+# Bewusst mit "(C)" statt dem Zeichen (C-im-Kreis), obwohl im Ausdruck spaeter das
+# Zeichen steht. Der Wert reist ueber zwei Stellen, an denen ein Sonderzeichen von
+# der Codepage abhaengt: Python schreibt ihn auf die Standardausgabe, PowerShell
+# liest ihn zurueck (dev.ps1) und gibt ihn an ISCC weiter. Gemessen: auf DIESEM
+# Rechner steht die Konsole auf UTF-8 und es geht gut - auf einer Konsole mit
+# cp850, der Vorgabe, wuerde aus dem Zeichen lautlos ein anderes. Reines ASCII
+# ueberlebt jede dieser Stationen.
+#
+# Sichtbar wird trotzdem das richtige Zeichen: Inno Setup ersetzt "(C)" in
+# VersionInfoCopyright von sich aus (nachgemessen), und aruco-homographie.spec tut
+# im eigenen Prozess dasselbe. Beide .exe zeigen deshalb denselben Text.
+BRAND_COPYRIGHT = f"Copyright (C) {BRAND_NAME}"
 
 BRAND_INK = "#334155"            # --foreground, die Hausschrift-Tinte
 BRAND_PRIMARY = "#379992"        # --primary, das Petrol der Marke

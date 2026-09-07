@@ -4,6 +4,100 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.0.2-alpha] – 2026-09-07
+
+**Die Fassung, die einen richtigen Installer mitbringt.** 0.0.1-alpha kam als ZIP, das man selbst
+auspacken musste — und zwar an eine Stelle, die nicht zu tief liegen durfte, sonst starb das
+Programm beim Start an Windows' 260-Zeichen-Grenze. Hier gibt es stattdessen **eine Datei**:
+doppelklicken, durchklicken, fertig. Am Rechenweg hat sich **nichts** geändert; die Millimeter
+kommen aus demselben Code wie vorher.
+
+### Hinzugefügt
+
+- **Ein Windows-Installer — eine Datei, nichts zu entpacken.** `.\dev.ps1 build-installer` baut
+  mit Inno Setup `dist\ArUco-Homographie-Setup-<Fassung>.exe`: **81 780 869 Byte (78,0 MB)** statt
+  eines 114-MB-ZIPs, das man erst auspacken muss und dabei auch noch an der richtigen Stelle.
+  Doppelklicken, durchklicken, fertig — Startmenü-Eintrag, wahlweise ein Schreibtischsymbol
+  (unangehakt, wie es Windows macht) und ein Deinstallierer in *Apps & Features*.
+
+  Installiert wird **ohne Administratorrechte** für den angemeldeten Benutzer nach
+  `%LOCALAPPDATA%\Programs\ArUco-Homographie`. Zwei Gründe, und beide zählen an einem
+  Werkstattrechner: wer dort sitzt, ist oft kein Administrator — und weil jetzt der *Installer*
+  den Zielpfad wählt und nicht der Benutzer beim Entpacken, **ist die MAX_PATH-Falle für diesen
+  Weg weg**. Das war der Fehler, der wie ein Codefehler aussah und keiner war: ein zu tiefer
+  OneDrive-Ordner riss Windows' 260-Zeichen-Grenze, und die `.exe` starb beim Start mit
+  „DLL load failed … Dateiname oder Erweiterung ist zu lang".
+
+  **Das Bundle bleibt One-Folder.** Der Installer ersetzt es nicht, er umhüllt es. One-File
+  entpackte weiterhin bei jedem Start über 100 MB OpenCV, NumPy und SciPy in ein
+  Temp-Verzeichnis und kostete dafür Sekunden Startzeit — der Installer kopiert einmal.
+
+  Die Bauvorschrift `installer/aruco-homographie.iss` ist versioniert, denn sie ist Quelltext.
+  Sie enthält **keine** Fassungsnummer und keine Markenzeichenkette: `dev.ps1` liest beides aus
+  `app/config.py` und reicht es als `/D`-Definition hinein. Die `AppId` ist eine feste GUID und
+  darf nie geändert werden — sonst stellte die nächste Fassung sich daneben, statt zu ersetzen,
+  und es lägen zwei Bundles à 290 MB auf der Platte. `ISCC.exe` wird gesucht statt
+  festgeschrieben (`PATH`, Installation pro Benutzer, beide `Program Files`); fehlt sie, nennt
+  die Meldung `winget install --id JRSoftware.InnoSetup`.
+
+  Der ZIP-Weg (`.\dev.ps1 build-exe`, ganzer Ordner) bleibt dokumentiert — für Rechner, auf
+  denen nichts installiert werden darf.
+- **Die `.exe` sagt jetzt, von wem sie ist.** Rechtsklick → Eigenschaften → Details war bei der
+  Anwendung **vollständig leer** — PyInstaller legt von sich aus keine Versionsressource an, und
+  ohne die steht dort kein Herausgeber, keine Fassung, gar nichts. `aruco-homographie.spec` legt
+  sie nun an: `CompanyName` (Bischof Snowboards), `ProductName`, `FileDescription`,
+  `FileVersion`, `ProductVersion`, `LegalCopyright`, dazu `InternalName`, `OriginalFilename` und
+  die Adresse als `Comments`. Die Setup-`.exe` trug Herausgeber und Produkt schon, aber **keinen
+  Urheberrechtsvermerk**; die `VersionInfo*`-Anweisungen in der `.iss` setzen jetzt alle vier
+  ausdrücklich, statt sich auf Inno-Vorgaben zu verlassen.
+
+  Nichts davon ist abgetippt: die Vorschrift importiert `app/config.py` (sie ist selbst Python),
+  die `.iss` bekommt die Werte wie gehabt als `/D`-Definitionen. Die **Beschreibung** kommt aus
+  dem i18n-Katalog — es ist derselbe Satz, den die Kopfzeile der Oberfläche zeigt, denn eine
+  sichtbare Zeichenkette gehört in den Katalog (Invariante 7). Fehlt der Schlüssel, **bricht der
+  Bau ab**, statt „ui.header.subtitle" in die Eigenschaften der ausgelieferten `.exe` zu schreiben.
+
+  Der Urheberrechtsvermerk steht in `config.py` als reines ASCII (`Copyright (C) …`), weil er
+  auf dem Weg zu Inno Setup durch zwei Konsolen-Stationen muss und ein Sonderzeichen dort von
+  der Codepage abhinge. Gemessen: auf diesem Rechner steht die Konsole zufällig auf UTF-8 und
+  es ginge gut — auf cp850, der Vorgabe, würde aus dem Zeichen lautlos ein anderes. Sichtbar
+  wird trotzdem das richtige Zeichen: Inno ersetzt `(C)` von sich aus (nachgemessen), und die
+  Bauvorschrift tut im eigenen Prozess dasselbe. Auf beiden `.exe` steht derselbe Text.
+
+  **Das ersetzt keine Signatur.** SmartScreen zeigt weiterhin *Unbekannter Herausgeber*:
+  Dateieigenschaften kann jeder hineinschreiben, und Windows weiß das. Dagegen hilft nur ein
+  Code-Signing-Zertifikat.
+- **`APP_VERSION` in `app/config.py`.** Die Fassungsnummer stand bisher nirgends im Code, nur in
+  dieser Datei und im Git-Tag. Jetzt hat sie eine Stelle, und zwar die für Konstanten vorgesehene
+  (AGENTS.md, Invariante 4). `dev.ps1` liest sie von dort, wie es den Port schon las. Daneben
+  `APP_VERSION_TUPLE`/`APP_VERSION_NUMERIC` (`0.0.2.0`) und `BRAND_COPYRIGHT`. Die binären
+  Versionsfelder von Windows nehmen nur vier ganze Zahlen und weisen `0.0.2-alpha` ab —
+  abgeschnitten wird deshalb **einmal**, in `config.py`; Bauvorschrift und Installer nehmen beide
+  dieses Ergebnis, statt die Regel jeder für sich zu erfinden.
+- **`--port N` beim Start.** Verschiebt den *Wunsch*-Port; ausgewichen wird danach wie immer.
+  Gebraucht, sobald eine zweite Kopie danebenlaufen soll — etwa, wenn eine frisch installierte
+  Fassung neben dem Entwicklungsserver geprüft wird. Ein unbrauchbarer Wert bricht nicht ab,
+  sondern fällt auf `config.PORT` zurück: ein Doppelklick, der an einem Komfortargument
+  scheitert, wäre schlechter als einer auf dem Vorgabeport.
+
+### Geprüft
+
+Der Installer wurde nicht nur gebaut, sondern **still installiert, gestartet, benutzt und wieder
+entfernt**: 287 Dateien / 292 MB landeten unter `%LOCALAPPDATA%\Programs\ArUco-Homographie`, die
+installierte Fassung lieferte Oberfläche, Themen-Tokens, `main.js` und beide Sprachkataloge aus,
+gab ein echtes Markerblatt-PDF heraus und fuhr eine vollständige synthetische Szene durch Upload,
+Entzerrung (RMS 0,093 px) und Export (210,000 × 178,000 mm, eine Seite). Danach war nach der
+stillen Deinstallation weder das Verzeichnis noch die Verknüpfung noch der Eintrag in
+*Apps & Features* übrig.
+
+Die Dateieigenschaften wurden an **beiden** gebauten `.exe` zurückgelesen. Sie stimmen überein:
+Herausgeber `Bischof Snowboards`, Produkt `ArUco-Homographie`, Fassung `0.0.2-alpha`, binär
+`0.0.2.0`, `Copyright © Bischof Snowboards`.
+
+**Was damit nicht bewiesen ist:** die Maßhaltigkeit am Papier. Sie ist weiterhin ausschließlich
+gegen synthetische Szenen belegt, und geprüft wurde auf **diesem** Rechner, nicht auf einem
+fremden ohne Python.
+
 ## [0.0.1-alpha] – 2026-09-07
 
 **Die erste veröffentlichte Fassung.** Inhaltlich ist das der Stand von 0.3.0 — neue

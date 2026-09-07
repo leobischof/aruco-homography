@@ -61,8 +61,11 @@ Platte — und es gibt bewusst keine zweite Fassung für den Server (§7.2).
 ```
 ArUco-Homographie/
 ├─ dev.ps1                      # install-deps | start-server | run-tests | build-markersheet |
-│                               #   build-exe | kill-servers | clean-all | help  (§10)
+│                               #   build-exe | build-installer | kill-servers | clean-all |
+│                               #   help  (§10)
 ├─ aruco-homographie.spec       # PyInstaller-Bauvorschrift (One-Folder), versioniert
+├─ installer/
+│  └─ aruco-homographie.iss     # Inno-Setup-Bauvorschrift (eine Datei, pro Benutzer), versioniert
 ├─ requirements.txt
 ├─ pyproject.toml               # nur die pytest-Einstellungen (pythonpath, testpaths, -q)
 ├─ README.md · CHANGELOG.md · AGENTS.md · CLAUDE.md
@@ -882,6 +885,10 @@ Pydantic selbst mit 422 und `detail`, ohne `code`.
 ## 8 · Konstanten (SSOT `app/config.py`)
 
 ```python
+APP_VERSION              = "0.0.2-alpha"           # einzige Fassung; dev.ps1 gibt sie an den
+                                                   #   Installer weiter (§10), folgt CHANGELOG.md
+APP_VERSION_TUPLE        = (0, 0, 2, 0)            # dieselbe Fassung für Windows' BINÄRE
+APP_VERSION_NUMERIC      = "0.0.2.0"               #   Versionsfelder: vier Zahlen, kein "-alpha"
 ARUCO_DICT_NAME          = "DICT_4X4_50"
 ARUCO_DICT_ID            = cv2.aruco.DICT_4X4_50
 MARKER_MM_NOMINAL        = 67.0                    # am realen Blatt gemessen
@@ -924,6 +931,9 @@ GRID_LABEL_PT            = 6.5
 SCALEBAR_MM              = 100.0
 
 BRAND_NAME, BRAND_CLAIM, BRAND_URL                 # Herkunftszeile und Ziel (§4.6)
+BRAND_COPYRIGHT          = f"Copyright (C) {BRAND_NAME}"   # Dateieigenschaften beider .exe (§10);
+                                                   #   ohne Jahr (veraltet sonst) und rein ASCII
+                                                   #   (läuft über eine Kommandozeile)
 BRAND_INK                = "#334155"               # --foreground
 BRAND_PRIMARY            = "#379992"               # --primary
 BRAND_ACTION             = "#ffbf00"               # --action
@@ -1072,6 +1082,7 @@ Kurznamen des Nachbarprojekts):
 | `run-tests` | `pytest -q` |
 | `build-markersheet [mm] [x] [y]` | Markerblatt nach `out/markerblatt_A4.pdf` |
 | `build-exe` | Windows-Bundle nach `dist/ArUco-Homographie/` (PyInstaller, One-Folder) |
+| `build-installer` | Windows-Installer nach `dist/ArUco-Homographie-Setup-<Fassung>.exe` (Inno Setup) |
 | `kill-servers` | nur Server **aus diesem Verzeichnis** beenden — `app.main` wie gebaute `.exe` |
 | `clean-all` | venv, `out/`, `build/`, `dist/`, Caches entfernen |
 | `help` | die Liste ausgeben (auch die Vorgabe ohne Argument) |
@@ -1080,7 +1091,10 @@ Kurznamen des Nachbarprojekts):
 ihn an. Den **Browser öffnet `app.main` selbst**, in einem Daemon-Faden, der wartet, bis der Port
 antwortet — so erscheint nie eine Fehlerseite, weil der Server noch nicht bereit war. Es muss dort
 geschehen und nicht im Aufrufer: erst dort steht fest, welcher Port es geworden ist, denn beim
-Ausweichen wäre jede vorher gebaute URL falsch. `--no-browser` unterdrückt das.
+Ausweichen wäre jede vorher gebaute URL falsch. `--no-browser` unterdrückt das, `--port N`
+verschiebt den *Wunsch*-Port — ausgewichen wird danach wie immer. Ein unbrauchbarer Wert bricht
+nicht ab, sondern fällt auf `config.PORT` zurück: ein Doppelklick, der an einem
+Komfortargument scheitert, wäre schlechter als einer auf dem Vorgabeport.
 
 `build-exe` ruft die versionierte Bauvorschrift `aruco-homographie.spec` auf. **One-Folder, nicht
 One-File:** One-File entpackt bei jedem Start OpenCV, NumPy und SciPy in ein Temp-Verzeichnis und
@@ -1088,6 +1102,42 @@ kostet Sekunden Startzeit für nichts. Mit muss von Hand, weil die statische Ana
 findet: der ganze Baum `app/static/**` (Oberfläche, Logo-SVGs, Montserrat-`.woff2`,
 i18n-Kataloge) und die Datendateien von ReportLab. Weitergegeben wird der ganze Ordner, nicht nur
 die `.exe` darin.
+
+**Die Dateieigenschaften der Anwendung** entstehen ebenfalls dort, in einem `VSVersionInfo`-Block.
+Ohne ihn sind sie **leer** — PyInstaller legt von sich aus keine Versionsressource an, und
+Rechtsklick → Eigenschaften → Details zeigte dann nicht einmal einen Herausgeber. Gesetzt werden
+`CompanyName`, `ProductName`, `FileDescription`, `FileVersion`, `ProductVersion`,
+`LegalCopyright`, `InternalName`, `OriginalFilename` und `Comments`. Die Spec-Datei ist selbst
+Python, also **importiert** sie `app/config.py` und `app/i18n.py`, statt irgendetwas abzuschreiben;
+die Beschreibung ist `ui.header.subtitle` aus dem Katalog — derselbe Satz wie in der Kopfzeile,
+denn eine sichtbare Zeichenkette gehört in den Katalog (§7.2). Fehlt der Schlüssel, bricht der Bau
+ab, statt den Schlüsselnamen in die ausgelieferte `.exe` zu schreiben.
+
+**Ausgefüllte Eigenschaften sind keine Signatur.** SmartScreen nennt weiterhin keinen Herausgeber;
+dafür braucht es ein Code-Signing-Zertifikat und nichts sonst.
+
+`build-installer` verpackt genau diesen Ordner mit Inno Setup zu **einer** Datei
+(`dist/ArUco-Homographie-Setup-<Fassung>.exe`, rund 78 MB bei `lzma2/max` und
+`SolidCompression`). Der Modus bleibt One-Folder — der Installer ersetzt das Bundle nicht, er
+umhüllt es; One-File entpackte weiterhin bei jedem Start. Vier Entscheidungen, die dort begründet
+stehen (`installer/aruco-homographie.iss`):
+
+- **`PrivilegesRequired=lowest`, Ziel `{localappdata}\Programs\ArUco-Homographie`.** Wer an einem
+  Werkstattrechner sitzt, ist oft kein Administrator. Und weil der Installer den Pfad wählt statt
+  des Benutzers beim Entpacken, ist die MAX_PATH-Falle für diesen Weg ausgeräumt.
+- **`AppId` ist eine feste GUID und darf nie geändert werden** — daran erkennt Windows eine
+  vorhandene Installation. Eine neue Kennung stellte die nächste Fassung daneben, und dann lägen
+  zwei Bundles à 290 MB auf der Platte.
+- **Keine Zahl doppelt.** Fassung (`config.APP_VERSION`, dazu `APP_VERSION_NUMERIC` für das
+  binäre `VersionInfoVersion`), Herausgeber (`BRAND_NAME`), Adresse (`BRAND_URL`) und
+  Urheberrechtsvermerk (`BRAND_COPYRIGHT`) kommen als `/D`-Definitionen von `dev.ps1`, das sie aus
+  `app/config.py` liest. Inno Setup kann kein Python importieren; fehlt eine Definition, bricht
+  die Übersetzung mit einer Erklärung ab, statt still eine Vorgabe einzusetzen. Die
+  `VersionInfo*`-Anweisungen setzen die Eigenschaften der **Setup**-`.exe` — nicht zu verwechseln
+  mit denen der Anwendung, die aus `aruco-homographie.spec` kommen.
+- **`ISCC.exe` wird gesucht, nicht festgeschrieben** — `PATH`, dann die Installation pro Benutzer
+  (`%LOCALAPPDATA%\Programs\Inno Setup 6\`, die *nicht* im `PATH` steht), dann beide
+  `Program Files`. Fehlt sie, nennt die Fehlermeldung das winget-Paket `JRSoftware.InnoSetup`.
 
 Selbstheilung über einen Stempel: `venv/.deps-installed` enthält den SHA-256 von
 `requirements.txt`. Fehlt das venv oder ändert sich die Datei, installiert jedes Run-Kommando
@@ -1100,8 +1150,9 @@ aussperren** — in `app/static/` liegen echte Bildbestandteile (Favicons, Logos
 `*.png` hätte sie stillschweigend aus dem Repo geworfen. `.vscode/tasks.json` ist ausdrücklich
 versioniert.
 
-Die Bauvorschrift `aruco-homographie.spec` ist dagegen versioniert — sie ist Quelltext,
-nicht Erzeugnis.
+Die beiden Bauvorschriften sind dagegen versioniert — `aruco-homographie.spec` und
+`installer/aruco-homographie.iss` sind Quelltext, nicht Erzeugnis. `/dist/` fängt beides ab,
+was sie erzeugen: den Bundle-Ordner und die Setup-`.exe` daneben.
 
 ---
 

@@ -22,6 +22,7 @@ Tests aus `tests/` grün halten — sie sind der einzige Beweis, den dieses Proj
 .\dev.ps1 run-tests           # pytest
 .\dev.ps1 build-markersheet   # Markerblatt nach out/
 .\dev.ps1 build-exe           # Windows-Bundle nach dist/ (läuft ohne Python)
+.\dev.ps1 build-installer     # Windows-Installer nach dist/ — eine Datei, ohne Adminrechte
 .\dev.ps1 kill-servers        # nur Server aus DIESEM Verzeichnis (auch die gebaute .exe)
 .\dev.ps1 clean-all
 ```
@@ -36,7 +37,8 @@ Server, den der Benutzer gestartet hat, niemals beenden — `kill-servers` triff
 
 ```
 app/config.py        SSOT: jede Konstante, jede Markenfarbe, das Blattlayout. Auch
-                     dev.ps1 liest den Port von hier.
+                     dev.ps1 liest von hier — Port, Fassung (APP_VERSION) und
+                     Marke — und reicht die letzten beiden an den Installer weiter.
 app/notices.py       Vokabular für Warnungen und Abbrüche: Code + Parameter, KEIN
                      fertiger Satz. Der Text entsteht erst am Rand, aus dem Katalog.
 app/i18n.py          Katalog laden, übersetzen, Accept-Language aushandeln
@@ -49,6 +51,8 @@ app/static/          Oberfläche: css/ (Tokens + Stylesheets), js/ (ES-Module, k
 tests/               synthetische Szenen mit bekannter Grundwahrheit
 docs/                README.md ist der Index; docs/superpowers/specs/ die Spezifikation,
                      mit dem Code abgeglichen
+installer/           aruco-homographie.iss — Inno-Setup-Bauvorschrift für den
+                     Windows-Installer. Quelle, kein Erzeugnis: sie ist versioniert.
 aruco-homographie.spec   PyInstaller-Bauvorschrift für die Windows-.exe
 ```
 
@@ -120,8 +124,9 @@ und fiele sonst erst am realen Foto auf.
 | `cv2.aruco` | Steckt ab OpenCV 5 im Hauptpaket; `opencv-contrib-python` ist nicht nötig. Auch im **headless**-Rad vollständig vorhanden — das benutzt dieses Projekt, weil es nie ein `cv2`-Fenster öffnet. |
 | Pfade auf mitgelieferte Dateien | Immer über `config.resource_path()`. `Path(__file__).parent` zeigt in der gebauten `.exe` neben die Daten, und die Anwendung startet dann mit nackter Seite — ohne Schrift, ohne Logo, ohne Übersetzung. Das sieht wie ein Erfolg aus und ist deshalb der teuerste Fehler hier. |
 | Neue Datei unter `app/static/` | Kommt automatisch mit ins Bundle (der ganze Baum wird kopiert). Eine neue Datendatei **außerhalb** `app/static/` muss in `aruco-homographie.spec` eingetragen werden, sonst fehlt sie nur in der `.exe`. |
-| Unicode auf der Konsole | Der ASCII-QR-Code besteht aus Blockzeichen. Landet die Ausgabe in einer Pipe oder Datei statt in einer Windows-Konsole, gilt cp1252 und `print()` bricht ab. Verzierungen dürfen den Server nicht mitreißen — siehe `print_banner`. |
-| Tiefer Ablageort des Bundles | Die längste Datei im Bundle hat 101 Zeichen relativen Pfad. Über etwa 157 Zeichen Zielordner reißt MAX_PATH, und die `.exe` stirbt beim Start mit „DLL load failed … Dateiname oder Erweiterung ist zu lang". Kein Codefehler, aber es sieht wie einer aus. |
+| Dateieigenschaften der `.exe` | PyInstaller legt **von sich aus keine Versionsressource an** — ohne den `version_info`-Block in `aruco-homographie.spec` sind Rechtsklick → Eigenschaften → Details komplett leer, ohne Herausgeber. Die binären Felder (`filevers`, `prodvers`, Inno-`VersionInfoVersion`) nehmen nur vier ganze Zahlen; `0.0.2-alpha` weist Windows ab. Deshalb `config.APP_VERSION_NUMERIC`. **Ausgefüllte Eigenschaften sind keine Signatur** — SmartScreen nennt weiterhin keinen Herausgeber. |
+| Unicode auf der Konsole | Der ASCII-QR-Code besteht aus Blockzeichen. Landet die Ausgabe in einer Pipe oder Datei statt in einer Windows-Konsole, gilt cp1252 und `print()` bricht ab. Verzierungen dürfen den Server nicht mitreißen — siehe `print_banner`. Dieselbe Falle beim Bauen: was `dev.ps1` per `Get-ConfigValue` aus `config.py` liest und an ISCC weitergibt, läuft durch zwei Codepage-Stationen. Werte, die diesen Weg nehmen, bleiben **reines ASCII** (siehe `BRAND_COPYRIGHT`); das Sonderzeichen entsteht erst am Ziel. |
+| Tiefer Ablageort des Bundles | Die längste Datei im Bundle hat 101 Zeichen relativen Pfad. Über etwa 157 Zeichen Zielordner reißt MAX_PATH, und die `.exe` stirbt beim Start mit „DLL load failed … Dateiname oder Erweiterung ist zu lang". Kein Codefehler, aber es sieht wie einer aus. Gilt nur noch für den **entpackten Ordner**: der Installer wählt den Zielpfad selbst (`%LOCALAPPDATA%\Programs\`) und kann gar nicht zu tief landen. |
 | CSS-Spezifität | `#id { display: flex }` schlägt `.hidden { display: none }`. `.hidden` trägt deshalb `!important`. |
 | Rasterbild statt Vektor | Marker und Logo werden als Vektor gezeichnet. Ein eingebettetes Rasterbild kostet Kantenschärfe, und die braucht die Subpixel-Erkennung. |
 | Lange Heredocs | In dieser Shell brechen sehr lange Heredocs mitten im Dokument ab. Dateien mit dem Schreib-Werkzeug anlegen. |
