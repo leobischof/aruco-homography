@@ -4,6 +4,113 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.3.0] – 2026-09-07
+
+Der Tag, an dem die Oberfläche zweisprachig, umschaltbar hell/dunkel, auf dem Handy
+bedienbar und um eine Bildaufbereitung reicher wurde. Am Rechenweg hat sich **nichts**
+geändert: die Homographie wird nach wie vor am unberührten Foto gemessen.
+
+### Hinzugefügt
+
+- **Deutsch und Englisch aus einem Katalog.** Jede sichtbare Zeichenkette kommt aus
+  `app/static/i18n/`, einer Datei je Sprache — dieselben Dateien für den Browser, für die
+  Warnungen und Fehler des Servers und für den PDF-Aufdruck. Keine zweite Fassung, kein
+  Nachpflegen an drei Stellen. Warnungen und Fehler tragen jetzt einen Code plus Parameter
+  statt eines fertigen Satzes; der Satz entsteht erst am Rand. 184 Schlüssel je Sprache, und
+  `tests/test_i18n.py` besteht darauf, dass die Schlüsselmengen gleich bleiben, dass jeder
+  Platzhalter auf beiden Seiten existiert und dass jeder in `app/` erhobene Code auch einen
+  Text hat.
+- **Sprachumschalter in der Kopfzeile.** Der Wechsel rendert die Seite ohne Neuladen, schreibt
+  `<html lang>` und `document.title` um und schickt `Accept-Language` an jede Anfrage, damit
+  Servermeldungen der App folgen und nicht dem Browser.
+- **Der Ausdruck folgt der gewählten Sprache.** `ExportRequest` hat ein `locale`-Feld, über
+  `i18n.normalise` normalisiert — ein Export scheitert niemals an einer Sprachangabe, er
+  kommt dann eben in der Vorgabesprache. Das Markerblatt nimmt die Sprache als `?locale=`
+  entgegen, weil ein einfacher Anker keine Kopfzeile mitschicken kann.
+- **Helles und dunkles Thema**, mit einer Schaltfläche in der Kopfzeile. Es gibt **drei**
+  Zustände: ausdrücklich hell, ausdrücklich dunkel, und gar keine gespeicherte Wahl — dann
+  gilt die Systemvorgabe, auch wenn sie mitten in der Sitzung umschaltet. Die Tokennamen
+  stammen aus `snow-service-free`, damit die Werkzeuge des Hauses dieselbe Sprache sprechen.
+- **Bildaufbereitung vor dem Druck** (`app/vision/enhance.py`): Schwarzweiß, Negativ,
+  Helligkeit, Kontrast, Sättigung, lokaler Kontrast (CLAHE), Kantenanhebung, aufgelegte
+  Kantenzeichnung, Farbbetonung und Schwelle. Live-Vorschau über `POST /api/adjust`, dieselben
+  Regler im Export.
+  **Sie greift ausschließlich am bereits entzerrten Bild an, nie vor der Markererkennung** —
+  ein Schärferegler vor dem Detektor würde die Markerecken und damit die Millimeter
+  verschieben. `tests/test_enhance.py` misst die Subpixel-Lage einer Kante vor und nach jedem
+  einzelnen Eingriff: Schwarzweiß, Schwelle und Kantenanhebung verschieben sie um exakt
+  0,000000 px; der lokale Kontrast um 0,11 px, weil CLAHE die Flanke kachelweise kippt — bei
+  300 dpi sind das 0,009 mm.
+- **Das Zuschnitt-Rechteck lässt sich endlich ändern.** Acht Griffe (vier Ecken, vier
+  Kantenmitten), Ziehen im Inneren verschiebt, Ziehen auf freier Fläche zieht wie bisher ein
+  neues auf, Pfeiltasten schieben um 1 mm und mit Shift um 10 mm. Vorher gab es genau eine
+  Geste: neu aufziehen.
+- **Bedienbar auf dem Handy.** Eine Spalte, Berührungsziele von mindestens 44 px, kein
+  waagerechter Überlauf bei 360 und 390 px Breite, und die Zuschnittfläche bleibt benutzbar.
+  Das Handy, das das Foto gemacht hat, kann damit den ganzen Ablauf über die LAN-Adresse
+  fahren.
+- **[`docs/plans.md`](docs/plans.md)**: die Vorhaben, an denen niemand arbeitet, die aber
+  gebaut werden sollen — Windows-`.exe`, Android-`.apk`, ein geteilter Rechenkern, DXF-Export
+  für die Fräse. Mit Weg, bekannten Stolpersteinen und offenen Fragen, damit sie nicht bei
+  jedem Gespräch neu hergeleitet werden.
+- **[`docs/design/design-system.md`](docs/design/design-system.md)** und
+  [`docs/design/README.md`](docs/design/README.md): das Designsystem des Hauses und seine
+  Herkunft, samt der drei Tokens, die gegenüber `free` bewusst korrigiert sind, weil sie dort
+  auf ihrem eigenen Untergrund unsichtbar wären.
+- **[`docs/contributing/git.md`](docs/contributing/git.md)**: die verbindlichen Git-Regeln,
+  einmal aufgeschrieben statt in drei Fassungen verstreut.
+- **[`docs/README.md`](docs/README.md)**: das Inhaltsverzeichnis der Dokumentation. Jede Datei
+  unter `docs/` mit Zweck, Zielgruppe und Stand — und ein YAML-Frontmatter-Schema, an dem ein
+  Skript den Baum aufzählen und prüfen kann.
+
+### Geändert
+
+- **Die Vorgabe des Exports ist die Kachelung auf A4 mit Klebeplan**, nicht mehr die
+  Einzelseite. Eine Schablone in Originalgröße passt auf keinen Drucker, den hier jemand hat;
+  die alte Vorgabe erzeugte also verlässlich etwas Undruckbares und musste vor jedem Gebrauch
+  von Hand korrigiert werden. Der Wert steht in `config.LAYOUT_DEFAULT`. Bewusst **nicht**
+  mitgezogen wurde `ExportOptions` in der PDF-Schicht: dort ist „eine Seite" der schlichte
+  Fall und Kachelung eine Betriebsart, die ein Aufrufer verlangt.
+- **Die Oberfläche ist auf Design-Token und i18n-Schlüssel neu gebaut.** Aus einer
+  388-Zeilen-`app.js` und einem nur dunklen Stylesheet mit handgeschriebenen Farben wurden
+  ES-Module über HTTP, ohne Build-Schritt: `i18n`, `theme`, `api`, `header`, `crop-geometry`,
+  `crop-rect`, `crop-info`, `adjust`, `report`, `main` — das Stylesheet entlang derselben
+  Linien geteilt. Jede Farbe, jeder Radius und jeder Abstand kommt aus `tokens.css`; im neuen
+  CSS steht kein einziges Farbliteral.
+- **Committen braucht keine Rückfrage mehr, Pushen immer.** Die Erlaubnisse sind bewusst
+  asymmetrisch: ein Commit ist örtlich und umkehrbar, ein Push ist sofort öffentlich. Fertig
+  **und geprüft** ist nicht die Erlaubnis zu committen, sondern der Auslöser. Diese Regel
+  weicht bewusst von der globalen Fassung in `~/.claude/CLAUDE.md` ab.
+- **Testartefakte und Screenshots bleiben aus dem Verzeichnisbaum.** Die Regeln sind an die
+  Projektwurzel geheftet, damit ein pauschales `*.png` nicht die Favicons und Logos unter
+  `app/static/` verschluckt; `.vscode/` ist ausgeschlossen, `.vscode/tasks.json` ausdrücklich
+  wieder hereingeholt, weil die Tasks zum Projekt gehören.
+
+### Behoben
+
+- **Der Hinweis am Zuschnitt nannte eine Farbe, die es nicht mehr gibt** („grüne Fläche"). Die
+  Marker-Hülle leitet ihre Füllung seit dem Umzug auf die Token aus `--primary` ab und ist
+  petrol. Ein Satz, der in einer Oberfläche mit zwei Themen auf eine Farbe zeigt, veraltet mit
+  der nächsten Nachjustierung — der neue Text benennt die Fläche statt ihrer Farbe. Er ist
+  zugleich das `aria-label` der Zeichenfläche.
+- **Das Overlay der Zuschnittfläche ignorierte `devicePixelRatio`** und war auf jedem Handy
+  und jedem HiDPI-Schirm weichgezeichnet — ausgerechnet über einer Schnittkante.
+- **Die Farben des Overlays waren fest verdrahtet** und konnten dem Thema nicht folgen. Ein
+  Canvas löst `var()` nicht auf; die Tokens werden jetzt mit `getComputedStyle` gelesen und
+  bei jedem Themenwechsel neu.
+- **Der Cache-Buster der Vorschau hatte Sekundenauflösung.** Ein Regler überschreibt dieselbe
+  Datei mehrmals je Sekunde, der Browser bekam also dieselbe URL und hätte ein veraltetes Bild
+  gezeigt. Jetzt in Millisekunden.
+
+### Weiterhin offen
+
+- **Die Maßhaltigkeit ist nach wie vor nur gegen synthetische Szenen belegt.** Der Beweis am
+  echten Ausdruck — drucken, den 100-mm-Maßstab mit dem Messschieber nachmessen, das Ergebnis
+  aufschreiben — steht weiter aus. Von allem, was dieses Projekt noch vorhat, ist das das
+  Wichtigste; es steht als erster Punkt in [`docs/plans.md`](docs/plans.md), Abschnitt 5.
+- Objektivverzeichnung unkorrigiert, gewölbte Objekte prinzipiell nicht möglich, Sitzungen nur
+  im Arbeitsspeicher — unverändert gegenüber 0.1.0.
+
 ## [0.2.0] – 2026-09-06
 
 ### Hinzugefügt
