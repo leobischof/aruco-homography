@@ -141,6 +141,296 @@ than exactly the millimetres you cropped — that was always the only promise.
 
 ---
 
+## Worked example: a panel that fits an irregular opening
+
+There is a hole in the workshop wall where a cellar window used to sit. Roughly 470 × 600 mm,
+not one straight edge on it, one corner rounded off where the render broke away. It needs a
+12 mm plywood panel that drops in flush.
+
+The usual method is cardboard, a pencil and three trips back to the saw. This is the other one:
+photograph the opening beside the marker sheet, print that photograph back out at true size,
+glue it to the plywood, saw along the edge of the opening as it appears in the picture, peel the
+paper off. What follows is that job from start to finish — including the handful of places where
+a good template still turns into a bad panel.
+
+### Before the photo
+
+**1 · Print the marker sheet, then measure what came out.**
+
+Press **Print marker sheet (A4)** in the header (or run `.\dev.ps1 build-markersheet`) and print
+it at 100 %, no scaling. Then take a caliper to the paper and read three numbers off it: the
+edge length of one marker including its black border (nominally 67 mm), the horizontal centre
+spacing (nominally 121 mm), and the vertical centre spacing (nominally 171 mm). Those three
+measured numbers are the ruler for everything that follows. The nominal ones are not.
+
+Centre-to-centre is easier to measure than it sounds: measure the same feature on both markers.
+Left edge of the left marker to left edge of the right marker *is* the centre spacing, and a
+caliper finds a printed edge far more reliably than an imagined centre.
+
+Print on matte paper if you have it — gloss throws a highlight that can swallow a marker corner
+— and keep the sheet flat. A curled sheet is not a plane, and one plane is the whole basis of
+the method. The detail is in [The marker sheet](#the-marker-sheet).
+
+**2 · Put the sheet in the plane of the opening.**
+
+This is the step that decides whether the panel fits, and it is the one that goes wrong first. A
+homography is exact for exactly one plane. The tool measures the plane the markers lie in, and
+then treats the whole photograph as though it lay in that plane. So the markers have to lie in
+the plane you are going to cut to.
+
+Work out which plane that is before you reach for the tape: the seat in the rebate if the panel
+drops in behind the frame, the face of the wall if it covers over. Then get the sheet there —
+taped to a straight batten laid across the opening flush with that face, or taped flat to the
+wall right beside the opening if that is the plane you want. Tape all four corners; a sheet that
+bows in the middle has stopped being one plane too.
+
+What it must not do is lie on the sill, 60 mm in front of the opening. That looks close enough,
+and it is not. Photographed from 1.5 m, a 60 mm offset makes everything in the opening come out
+3.9 % too small — 19 mm across a 500 mm span, in both directions. From 900 mm it is 6.3 %, over
+30 mm. Nothing warns you, either, because from the tool's side nothing is wrong: it measured a
+plane exactly. Just not yours.
+
+If the sheet has to sit on top of something whose thickness you know — laid on a 19 mm board
+beside the opening, say — enter that number as **Object thickness (mm)** in step 2 of the
+interface and the tool takes the offset back out. It needs the camera height to do that, which
+it reads from the EXIF focal length, or asks you for as a camera distance when the photo carries
+no EXIF. The correction is forgiving about the distance and unforgiving about the thickness:
+10 % out on the distance leaves about 0.2 % of error, while a thickness that is wrong leaves all
+of the error it was meant to remove.
+
+One thing no setting fixes: the opening has to be flat. If its edge runs around a curved wall,
+or the panel has to follow a bulge, one homography cannot describe it — and no care with the
+photograph will change that.
+
+**3 · Take the photograph.** One frame, containing the whole opening and all four markers.
+
+- **Use the tele lens (1× or 2×) and stand well back.** Lens distortion is not corrected, and it
+  cannot be: four coplanar markers cannot separate it from the homography. At the edge of a
+  wide-angle frame a straight line bends by several millimetres, and this tool will faithfully
+  print that bend at 1:1.
+- **Keep the opening in the middle of the frame.** Distortion is smallest at the centre, and the
+  middle is also where you have the most pixels to spend.
+- **Get it sharp.** Marker corners are found to a fraction of a pixel, and that is where the
+  accuracy comes from. Tap to focus on the sheet, brace yourself, take a second frame.
+- **Light it evenly.** A hard shadow edge across the opening becomes a convincing false edge on
+  the template.
+- **Square-on beats steep.** The homography handles perspective, but a steep angle spends
+  resolution and pushes the far side of the opening out towards the part of the lens that bends
+  most.
+- **Do not crop it and do not send it through a messenger.** Re-compression softens the marker
+  edges, and forwarding strips the EXIF focal length. Move the file across, or open the app on
+  the phone that took the picture — `.\dev.ps1 start-server` prints a LAN address and a QR code
+  for exactly that.
+
+### At the screen
+
+**4 · Photo.** Upload the file: JPEG, PNG or HEIC straight off the phone, up to 60 MB. The step
+reports the pixel size and whether an EXIF focal length came with it.
+
+**5 · Scale.** Type in the three numbers from step 1 — **Marker size (mm)**, **Centre spacing,
+horizontal (mm)**, **Centre spacing, vertical (mm)** — exactly as measured. All three, because a
+printer that stretches x by 0.4 % need not stretch y by the same amount, and nothing here is
+derived from anything else. Leave **Mode** on *Marker sheet*, leave **Object thickness** at 0 if
+the sheet lay in the plane of the opening, and press **Rectify**.
+
+**6 · Quality.** Read the report before you trust the picture.
+
+- **Residual error** — how well the four markers fit one single homography. A good photograph
+  lands well under the warning thresholds of 2 px and 1 mm. Above them the app names the usual
+  causes: lens distortion, an unsharp photo, or a sheet that is not flat.
+- **Measured edges** — every marker measured back and held against the 67 mm you typed. If three
+  read 67.0 and one reads 65.2, that one marker is the problem: a lifted corner, a curl in the
+  paper, or a marker sitting far out at the edge of the frame. The app warns past 2 % deviation.
+- **Source resolution**, in millimetres per pixel — how fine the photograph really is in the
+  plane. At 0.30 mm/px, printing at 600 dpi (0.042 mm/px) adds no information whatsoever. 300 dpi
+  is plenty for a line you are going to saw along.
+- **Camera** and **Thickness correction** — height, tilt, and the factor k that was applied. With
+  a thickness of 0 it says *none* and k is 1.
+
+**7 · Image adjustment.** The line you are going to cut is the edge of the opening: usually the
+shadow boundary between wall and dark hole, sometimes a pencil line you drew yourself. Either
+way it has to become unmistakable. A starting combination that works on most photographs:
+
+- **Grayscale** on. Colour has nothing to offer a cutting line, and everything else behaves more
+  predictably without it.
+- **Local contrast** about a third up. CLAHE pulls detail out of evenly lit areas — the shaded
+  inside of an opening — where a global curve only crushes it.
+- **Edge boost** about a quarter. An unsharp mask: the edge gets steeper, it does not move.
+- **Contrast** a little, and **brightness** last, once the two above have done their work.
+- **Edge overlay** if the transition is still soft — it draws the detected edges on top of the
+  image as lines. It is also the control that most eagerly finds edges you did not want, so raise
+  it slowly.
+- **Threshold** only when the edge is genuinely unambiguous. It reduces everything to black and
+  white, which is the hardest line you can follow, and throws away every trace of the edges it
+  decided were not edges.
+- **Colour emphasis** if you marked the outline in a colour: pick the hue, raise the strength,
+  and the pencil comes forward while the wood falls back.
+
+None of this can move a millimetre — it all runs on the already rectified image, never before
+marker detection, and the movement is measured rather than asserted; see
+[Image adjustment, and why it cannot move the millimetres](#image-adjustment-and-why-it-cannot-move-the-millimetres).
+If you want the outline printed as a vector cutting line (*Outline as a cutting line*, in step
+6), it is found on the adjusted image — on exactly what you are looking at here. Making the edge
+visible in this step is what makes that option work at all.
+
+**8 · Crop.** The rectangle you drag is what gets printed, in millimetres. Its coordinates count
+from the top left corner of the marker sheet, so negative values are perfectly normal — they
+just mean "left of the sheet" or "above it".
+
+Grab the rectangle by a corner or an edge midpoint to resize it, drag inside it to move it, or
+type x0/y0/x1/y1 into the four fields; the arrow keys nudge by 1 mm, 10 mm with Shift. Give the
+opening about 40 mm of air all round — paper to hold on to while gluing, and margin for the fact
+that the outline is not the last word until the panel has been offered up. For our 470 × 600 mm
+hole that is **550 × 680 mm**.
+
+Then read the extrapolation figure, and do not panic at it. The shaded area is the marker hull —
+188 × 238 mm, the rectangle the four markers actually span. A 550 × 680 mm crop lies about 88 %
+outside it, and the app says so, because that is the truth: out there the homography is being
+extended beyond anything that was measured, and the uncorrected lens distortion has nothing
+holding it in check. That is a risk, not a verdict. Three things reduce it:
+
+1. **Put the sheet in the middle of the opening**, not off to one side. The extrapolation is then
+   short and even in every direction instead of long in one.
+2. **Stand further back with the tele**, so the opening sits well inside the frame.
+3. **Switch to free mode with more markers** if the opening is much larger than about two sheets.
+   Print a second marker sheet and cut its four markers apart — they are all printed the same way
+   up, which is exactly what free mode requires — and tape them around the opening. Free mode
+   estimates their positions along with the homography, so the hull covers what you are cutting.
+   The price is that the scale then rests on the 67 mm marker edge alone instead of on the 121 mm
+   and 171 mm spacings as well, so measure that edge with real care.
+
+Whatever you choose, check it against the world: run a tape measure across the widest part of the
+real opening, and measure the same run on the printed template. Those two numbers agreeing is
+worth more than every figure on this page.
+
+**9 · Print.** 300 dpi, **Tiling onto standard paper** (the default), A4, 10 mm overlap. Leave
+the 100 mm control scale, the 50 mm grid, the cut and glue marks and the assembly plan switched
+on — every one of them earns its ink in the next three steps. Press **Create PDF** and
+`schablone.pdf` downloads. For 550 × 680 mm that is eight A4 sheets plus the assembly plan, nine
+pages in all; the app turns the paper landscape by itself, because for this shape that needs
+fewer sheets than portrait.
+
+### On paper
+
+**10 · Print at 100 %, and measure the bar before you cut anything.**
+
+Choose **100 % / no scaling** in the print dialogue, and check the PDF viewer as well — most of
+them have a scale setting of their own, and "Fit" is a common default.
+
+Then put the caliper on the printed 100 mm control scale. If it reads 100.0, carry on. If it
+reads 99.2, stop. The print is 0.8 % short, a 600 mm panel would come out 5 mm small, and nothing
+at the saw gets that back. In order:
+
+1. **Do not fix it in the app.** The marker numbers describe the sheet you measured. Bending them
+   to compensate for a print scaling puts a second, invisible factor into the chain — the one
+   thing this tool is built to avoid.
+2. **Find the setting.** Scale or zoom at anything but 100 %; "fit to printable area"; "shrink
+   oversized pages"; poster or tile modes in the driver; and the classic, an A4 page sent to a
+   printer loaded with Letter, which most drivers quietly shrink to about 94 %.
+3. **Check both directions.** The control scale is horizontal, so it only proves x. The 50 mm
+   grid proves both: four squares across and four down should each measure 200 mm. Printers do
+   not always scale the two axes alike.
+4. **Print one sheet, measure, repeat** — then print the rest.
+
+If nothing gets that printer to 100 %, it cannot print a template. Use another one, or a copy
+shop, and tell them 1:1 with no fitting.
+
+**11 · Assemble the sheets.**
+
+Page one is the assembly plan: the whole template drawn small, the sheets numbered in their grid,
+with the overall size, the sheet count and the overlap written above it. Each sheet also repeats
+its own place in the strip below the image — *Sheet 5/8 - Column 1, row 3*.
+
+Lay them all out on the floor in that order before any tape comes out. Every sheet carries corner
+ticks marking the cut line of its usable area, and where it has a neighbour to the right or
+below, a dashed line 10 mm in from that edge. That dashed line is where the neighbour's picture
+starts again: lay the neighbour's leading edge exactly on it, so the doubled 10 mm strip lies
+underneath. Always put the higher-numbered sheet on top, and every joint is made the same way.
+
+**Align by numbers, not by eye.** The 50 mm grid is labelled with its absolute position in the
+template, and the same line carries the same number on both sheets — line up "300" with "300" and
+the joint is right, however featureless the photograph happens to be at that spot. Tape from the
+back, so the front stays flat and nothing lies across the line you are about to cut.
+
+When the sheet is whole, measure it once end to end using those same grid numbers: 0 to 500
+should be 500 mm. That one measurement catches a bad joint, a missing sheet, and a print that was
+scaling after all.
+
+**12 · Glue the template to the board — dry.**
+
+Trim the assembled template roughly to shape first, a hand's width outside the line, so you are
+handling something manageable. Then use a **repositionable** adhesive: a light coat of spray
+mount on the back of the paper — not on the wood — left half a minute to go tacky before it goes
+down. That is enough to hold paper flat under a saw and little enough to peel off afterwards
+without lifting veneer with it. Low-tack masking tape laid over the board with the paper sprayed
+onto the tape does the same job and comes off even more kindly.
+
+What not to use: anything wet. PVA, glue stick and wallpaper paste all put water into the paper,
+and wet paper grows — easily a percent across a long sheet. That is millimetres, at the very last
+step, after everything else was done carefully.
+
+Lay it down from one edge and sweep it flat as you go, so no bubble is trapped. A bubble is a
+local stretch, and it will sit exactly where you are about to saw.
+
+### At the saw
+
+**13 · Cut on the correct side of the line.**
+
+This is where a good template still produces a bad panel. A saw does not cut *at* the line, it
+removes a slot of material — the kerf. Roughly 1.2 to 1.5 mm for a jigsaw, 0.6 to 1 mm for a
+bandsaw, 2.5 to 3 mm for a circular saw. Where you put that slot decides the size of the panel:
+
+| Blade runs | Panel comes out |
+|---|---|
+| Centred on the line | half a kerf smaller all round |
+| Entirely outside the line (waste side) | at the drawn size |
+| Entirely inside the line | a full kerf smaller all round |
+
+**Mark the waste side before you start.** For a panel that fills an opening, the panel is inside
+the line and the waste is outside — hatch the outside with a pencil, all the way round. On a
+freeform curve, with the template covering the board and sawdust covering the template, it is
+genuinely easy to lose track halfway round, and half a lap on the wrong side is not recoverable.
+
+**The recommendation: run the blade centred on the line, and know your kerf.** A panel cut
+exactly to the drawn size is a zero-clearance panel and will not drop into anything — real
+openings are not straight and wood moves with the season. Centring the blade gives up half a kerf
+per side, which is 0.6 to 0.75 mm with a jigsaw and about 0.4 mm with a bandsaw: near enough the
+clearance a drop-in panel wants anyway, given away deliberately instead of by accident.
+
+Two cases where that is the wrong choice. With a wide kerf — a circular saw at 3 mm — half a kerf
+per side is 1.5 mm of gap on every edge, too much: run just on the waste side of the line and
+take the rest off with a plane. And when the fit has to be tight and gap-free, cut on the waste
+side as well, so the panel leaves the saw deliberately a shade oversize, then bring it down to
+the line with a block plane or a sanding block, offering it up as you go. Fitting by hand is slow
+and cannot overshoot; the saw is fast and cannot be undone.
+
+The error to prefer is the small panel. A millimetre under drops in and takes a bead of filler or
+a strip of trim. A millimetre over does not go in at all, and by then the outer half of your line
+is sawdust.
+
+Keep the blade square to the face. A blade leaning two degrees through 12 mm ply takes 0.4 mm off
+the back edge that you never see until the panel binds — and jigsaw blades lean under load in a
+tight curve more than anyone expects. Go slowly through the curves and let the blade do it.
+
+**14 · Peel it off and offer it up.**
+
+Peel while the adhesive is fresh; spray mount only gets harder to remove. Pull the paper back on
+itself at a shallow angle rather than straight up, and warm it gently if it resists. Residue
+comes off with a rag and a little white spirit.
+
+Then offer the panel up. Cut centred on the line, it should drop in with a hair of clearance all
+round. If it binds, rub a pencil along the opening edge to find the spot, take that spot down
+with a sanding block, and try again — a two-minute job, not a re-cut.
+
+**And on the first panel you make this way, check the tool.** Measure one long dimension of the
+finished panel and compare it with the same dimension on the template and with the opening
+itself. The dimensional accuracy of this chain has so far been proven only against synthetic
+scenes: a virtual camera with a known pose, checked against the numbers that went into it. That
+is a good foundation and it is not a measurement on paper — nothing in this repository has ever
+seen a printer. See [Limits](#limits).
+
+---
+
 ## Printing correctly
 
 **Choose 100 % / no scaling in the print dialogue.** "Fit to page" and "shrink oversized pages"
@@ -323,6 +613,56 @@ gewählten Sprache), hat ein **helles und ein dunkles Thema** (ohne gespeicherte
 Systemvorgabe), und das Zuschnitt-Rechteck lässt sich an Ecken und Kanten anfassen und
 verschieben. Die **Bildaufbereitung** greift ausschließlich am bereits entzerrten Bild an, nie vor
 der Markererkennung — sie kann die Millimeter deshalb nicht verschieben.
+
+**Ein Beispiel von Anfang bis Ende.** In der Werkstattwand klafft ein Loch, wo einmal ein
+Kellerfenster saß: rund 470 × 600 mm, keine gerade Kante daran. Hinein soll eine
+12-mm-Sperrholzplatte, die bündig sitzt. Ausführlich steht der Durchgang oben unter
+[Worked example](#worked-example-a-panel-that-fits-an-irregular-opening) — hier in Kurzform:
+
+1. **Markerblatt drucken** (100 %, keine Skalierung) und **nachmessen**: Kantenlänge sowie
+   waagerechter und senkrechter Mittelpunktabstand. Kniff: von linker Kante zu linker Kante
+   messen — das ist derselbe Mittelpunktabstand, und eine gedruckte Kante trifft der
+   Messschieber viel sicherer als einen gedachten Mittelpunkt.
+2. **Das Blatt in die Ebene der Öffnung** legen, nicht auf die Fensterbank davor. Eine
+   Homographie ist für genau eine Ebene exakt: 60 mm Versatz, aus 1,5 m fotografiert, machen die
+   Öffnung 3,9 % zu klein — 19 mm auf 500 mm, und nichts warnt davor. Liegt das Blatt auf einer
+   Fläche bekannter Dicke, trägt man diese als **Objektdicke** ein. Gewölbte Öffnungen gehen
+   prinzipiell nicht.
+3. **Ein Foto:** Tele (1× oder 2×), großer Abstand, Öffnung mittig und scharf, gleichmäßiges
+   Licht, alle vier Marker im Bild. Weitwinkel biegt die Ränder, und diese Verzeichnung wird
+   nicht korrigiert. Das Bild weder beschneiden noch durch einen Messenger schicken — das kostet
+   Schärfe und EXIF.
+4. **Foto → Maßstab → Qualität:** die drei gemessenen Zahlen eintragen, *Entzerren*, dann den
+   Bericht lesen. Restfehler unter 2 px / 1 mm, und jede zurückgerechnete Markerkante nahe an den
+   eingetragenen 67 mm.
+5. **Bildaufbereitung:** Graustufen an, lokaler Kontrast etwa ein Drittel, Kantenanhebung etwa
+   ein Viertel, Helligkeit und Kontrast zuletzt. Kein Regler verschiebt Millimeter.
+6. **Zuschnitt:** rund 40 mm Luft um die Öffnung, hier also 550 × 680 mm. Der
+   Extrapolationsanteil ist dabei hoch — die Marker-Hülle misst nur 188 × 238 mm. Das Blatt
+   deshalb **mittig in die Öffnung** legen — und zur Gegenprobe eine lange Strecke der echten
+   Öffnung mit dem Bandmaß messen und mit derselben Strecke auf der Schablone vergleichen.
+7. **Druck:** 300 dpi, Kachelung auf A4, 10 mm Überlappung, Klebeplan an. Aus 550 × 680 mm werden
+   acht A4-Blätter quer plus Klebeplan.
+8. **Mit 100 % drucken, dann den aufgedruckten 100-mm-Maßstab nachmessen.** Steht dort 99,2 mm,
+   liegt es am Druck und nicht am Werkzeug: Skalierung, „an Seitengröße anpassen", oder
+   A4-Inhalt auf Letter-Papier. Beide Achsen prüfen — der Maßstab belegt nur die waagerechte, das
+   50-mm-Raster beide.
+9. **Blätter zusammensetzen** nach dem Klebeplan. Die gestrichelte Linie markiert den
+   Überlappungsstreifen; ausgerichtet wird über die **beschrifteten Rasterlinien** („300" auf
+   „300"), nicht nach Augenmaß. Von hinten kleben.
+10. **Schablone trocken aufkleben.** Sprühkleber, repositionierbar, dünn auf das Papier und kurz
+    ablüften lassen. Nassleim, Klebestift und Kleister quellen das Papier auf — aufgequollenes
+    Papier ist genau der Fehler, den dieses Werkzeug vermeiden soll.
+11. **Auf der richtigen Seite der Linie sägen.** Die Abfallseite vorher schraffieren; sie liegt
+    außerhalb der Linie. Das Sägeblatt nimmt Material weg (Stichsäge 1,2–1,5 mm), deshalb **mittig
+    auf der Linie sägen**: dann fehlt je Seite eine halbe Schnittfuge, und genau dieses Spiel
+    braucht eine Platte, die hineinfallen soll. Bei breiter Fuge (Handkreissäge, 3 mm) knapp auf
+    der Abfallseite bleiben und den Rest mit dem Hobel wegnehmen. Zu klein ist zu retten, zu groß
+    heißt zurück an die Säge.
+12. **Papier abziehen und einpassen.** Flach abziehen, solange der Kleber frisch ist. Klemmt es,
+    die Stelle anzeichnen und mit dem Schleifklotz wegnehmen. **Beim ersten Stück mit dem
+    Messschieber gegenprüfen** — die Maßhaltigkeit ist bislang nur gegen synthetische Szenen
+    belegt.
 
 **Grenzen, offen gesagt.** Die Objektivverzeichnung bleibt unkorrigiert. Gewölbte Objekte gehen
 prinzipiell nicht — eine Homographie beschreibt genau eine Ebene. Und: **die Maßhaltigkeit ist
