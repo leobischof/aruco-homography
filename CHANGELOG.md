@@ -4,6 +4,31 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.0.1-alpha] – 2026-09-07
+
+**Die erste veröffentlichte Fassung.** Inhaltlich ist das der Stand von 0.3.0 — neue
+Funktionen kommen hier keine dazu. Die Nummern 0.1.0 bis 0.3.0 darunter sind
+Entwicklungsschritte, zu denen es nie ein veröffentlichtes Erzeugnis und keinen Tag gab;
+die Zählung der *Veröffentlichungen* fängt deshalb bei 0.0.1 neu an, statt eine Herkunft
+vorzutäuschen, die es nicht gibt.
+
+**Warum `alpha`:** weil die zentrale Zusage dieses Projekts noch offen ist. Die
+Maßhaltigkeit ist bis heute **ausschließlich gegen synthetische Szenen** belegt — eine
+virtuelle Kamera, gerenderte Marker, bekannte Grundwahrheit. Der Beweis am echten
+Ausdruck steht aus: drucken, mit dem Messschieber nachmessen, das Ergebnis festhalten.
+Bis das passiert ist, gilt: **jede Schablone vor dem Sägen am aufgedruckten
+100-mm-Maßstab nachmessen.**
+
+### Beigelegt
+
+`ArUco-Homographie-v0.0.1-alpha-win64.zip` — das One-Folder-Bundle für Windows x64.
+Entpacken, `ArUco-Homographie.exe` doppelklicken; auf dem Zielrechner muss **kein Python**
+installiert sein. Es wird der **ganze Ordner** gebraucht, nicht nur die `.exe` darin.
+
+Zwei bekannte Grenzen, beide keine Codefehler, beide sehen aber wie welche aus: der
+Zielordner darf nicht zu tief liegen (Windows' 260-Zeichen-Grenze, siehe README), und die
+`.exe` ist nicht signiert, weshalb SmartScreen beim ersten Start warnt.
+
 ## [0.3.0] – 2026-09-07
 
 Der Tag, an dem die Oberfläche zweisprachig, umschaltbar hell/dunkel, auf dem Handy
