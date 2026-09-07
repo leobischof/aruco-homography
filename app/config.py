@@ -48,7 +48,7 @@ APP_NAME = "ArUco-Homographie"
 # waere die Sorte Duplikat, die still veraltet: der Installer hiesse dann anders,
 # als die Anwendung von sich behauptet, und niemand merkte es.
 # Der Wert folgt der obersten veroeffentlichten Ueberschrift in CHANGELOG.md.
-APP_VERSION = "0.0.2-alpha"
+APP_VERSION = "0.0.3-alpha"
 
 # Windows will in den BINAEREN Versionsfeldern seiner Dateieigenschaften vier ganze
 # Zahlen sehen und vertraegt kein "-alpha". Die Vorabkennung wird deshalb hier

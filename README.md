@@ -517,10 +517,15 @@ with a sanding block, and try again — a two-minute job, not a re-cut.
 
 **And on the first panel you make this way, check the tool.** Measure one long dimension of the
 finished panel and compare it with the same dimension on the template and with the opening
-itself. The dimensional accuracy of this chain has so far been proven only against synthetic
-scenes: a virtual camera with a known pose, checked against the numbers that went into it. That
-is a good foundation and it is not a measurement on paper — nothing in this repository has ever
-seen a printer. See [Limits](#limits).
+itself.
+
+The printing half of the chain has now been checked on paper: the printed 100 mm control scale
+and the 50 mm grid were both measured with a caliper and both were right. What that proves is
+that the PDF reaches the paper at true size and the printer is not scaling. What it does *not*
+prove is the half before it — photo to markers to millimetres — because the scale bar and the
+grid are drawn from the same millimetre figures the crop is specified in. If the homography were
+off, the template would come out the wrong size and those two would still measure perfectly.
+That is why you measure the finished panel. See [Limits](#limits).
 
 ---
 
@@ -616,11 +621,18 @@ Stated plainly, because a tool that measures things should not overstate itself.
   later as another unknown.
 - **Curved objects cannot work.** A homography describes exactly one plane. No amount of care
   with the photo changes that.
-- **Dimensional accuracy has so far been proven only against synthetic scenes.** The test suite
-  renders a virtual camera with a known pose and checks that the pipeline recovers the numbers
-  that were put in. **The proof on a real printout — print it, measure the 100 mm scale with a
-  caliper, write down what you got — is still outstanding.** Until that has happened, the central
-  promise of this project stands unverified.
+- **Half the chain is proven on paper, half is not.** On 2026-09-07 a printed sheet was measured
+  with a caliper: the 100 mm control scale and the 50 mm grid were both correct. **That proves
+  PDF → printer → paper** — the page geometry is exact and the printer does not scale.
+
+  **It does not prove photo → markers → millimetres.** The scale bar and the grid are drawn by
+  the PDF layer out of the same millimetre figures the crop is specified in, so a wrong
+  homography would produce a wrongly sized template on which both still measure perfectly. They
+  cannot see that error.
+
+  **What would close it:** put an object of *known* length in the photo beside the markers, print
+  the template, and measure **that object** on the paper. Until then, measure your first panel
+  against the opening before you trust the tool.
 - **Sessions live one hour in memory.** Restarting the server throws away work in progress;
   nothing is stored on disk.
 
@@ -773,14 +785,18 @@ Kellerfenster saß: rund 470 × 600 mm, keine gerade Kante daran. Hinein soll ei
     der Abfallseite bleiben und den Rest mit dem Hobel wegnehmen. Zu klein ist zu retten, zu groß
     heißt zurück an die Säge.
 12. **Papier abziehen und einpassen.** Flach abziehen, solange der Kleber frisch ist. Klemmt es,
-    die Stelle anzeichnen und mit dem Schleifklotz wegnehmen. **Beim ersten Stück mit dem
-    Messschieber gegenprüfen** — die Maßhaltigkeit ist bislang nur gegen synthetische Szenen
-    belegt.
+    die Stelle anzeichnen und mit dem Schleifklotz wegnehmen. **Beim ersten Stück eine lange
+    Strecke am fertigen Teil nachmessen** und mit der Öffnung vergleichen.
 
 **Grenzen, offen gesagt.** Die Objektivverzeichnung bleibt unkorrigiert. Gewölbte Objekte gehen
-prinzipiell nicht — eine Homographie beschreibt genau eine Ebene. Und: **die Maßhaltigkeit ist
-bislang nur gegen synthetische Szenen belegt; der Beweis am echten Ausdruck, mit dem Messschieber
-nachgemessen, steht noch aus.**
+prinzipiell nicht — eine Homographie beschreibt genau eine Ebene.
+
+Und zur Maßhaltigkeit, genau: **die Hälfte ist am Papier belegt.** Am 07.09.2026 wurden am
+Ausdruck der 100-mm-Kontrollmaßstab und das 50-mm-Raster mit dem Messschieber nachgemessen,
+beide richtig — damit stimmt der Weg **PDF → Drucker → Papier**. Der Weg **Foto → Marker →
+Millimeter** ist damit *nicht* belegt: Maßstab und Raster zeichnet die PDF-Schicht aus denselben
+Millimeterzahlen, in denen der Zuschnitt steht. Läge die Homographie daneben, käme die Schablone
+falsch groß heraus und beide mäßen trotzdem stimmig. **Deshalb am fertigen Teil nachmessen.**
 
 **Weiterlesen.** [docs/README.md](docs/README.md) ist das Inhaltsverzeichnis der Dokumentation —
 dort steht jedes Dokument mit Zweck, Zielgruppe und Stand. Die Invarianten für Agenten stehen in

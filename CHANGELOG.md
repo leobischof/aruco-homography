@@ -4,9 +4,36 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.0.3-alpha] – 2026-09-08
 
-**Das Programm bekommt ein eigenes Fenster.** Bis hierher öffnete ein Doppelklick den
+**Die erste Fassung, die keine Vorabversion mehr ist** — und die erste, an der ein Messschieber
+war. Dazu bekommt das Programm ein eigenes Fenster.
+
+### Am Papier nachgemessen
+
+**Der gedruckte 100-mm-Kontrollmaßstab misst 100 mm. Das 50-mm-Raster misst 50 mm.** Nachgemessen
+am 07.09.2026 mit dem Messschieber an einem echten Ausdruck. Seit dem ersten Tag stand in jeder
+Fassung dieses Protokolls derselbe Vorbehalt — „belegt nur gegen synthetische Szenen, der Beweis
+am Papier steht aus". Er steht nicht mehr aus.
+
+**Was damit belegt ist: `PDF → Drucker → Papier`.** Die Seitengeometrie stimmt, und der Drucker
+skaliert nicht. Das war eine der beiden Hälften, an denen dieses Werkzeug scheitern konnte, und
+sie ist zu.
+
+**Was damit nicht belegt ist: `Foto → Marker → Millimeter`.** Und das gehört genauso deutlich
+hierher, denn der Unterschied ist nicht offensichtlich: Maßstab und Raster zeichnet die
+PDF-Schicht aus **denselben** Millimeterzahlen, in denen der Zuschnitt angegeben ist. Läge die
+Homographie daneben, käme die Schablone falsch groß heraus — und Maßstab und Raster mäßen darauf
+trotzdem tadellos. Sie können diesen Fehler nicht sehen.
+
+Was ihn sähe: einen Gegenstand **bekannter** Länge mit aufs Foto legen, die Schablone drucken und
+**diesen Gegenstand** auf dem Ausdruck nachmessen. Das steht weiter aus.
+
+Deshalb bleibt `alpha` im Namen, obwohl diese Fassung **nicht mehr als Vorabversion**
+veröffentlicht wird: geprüft genug, um sie zu benutzen, nicht geprüft genug, um sich das Messen
+am fertigen Teil zu sparen.
+
+### Das Programm bekommt ein eigenes Fenster Bis hierher öffnete ein Doppelklick den
 Standardbrowser: die Anwendung war ein Reiter zwischen zwanzig anderen, wurde beim Aufräumen des
 Browsers mitgeschlossen und sah dann verschwunden aus, obwohl ihr Server weiterlief. Ein Fenster
 mit eigenem Namen in der Taskleiste ist ein Programm. Am Rechenweg ändert sich **nichts** — es
@@ -77,8 +104,7 @@ Markerblatt-PDF; `--browser` ruft den Browser und öffnet kein Fenster.
 
 **Was damit nicht bewiesen ist:** der Rückfall auf den Browser auf einem Rechner, dem die
 WebView2-Laufzeit wirklich fehlt. Dieser Rechner hat sie (v152), also ist dieser Weg nur im Test
-belegt, nicht am echten Windows 10. Und die Maßhaltigkeit am Papier bleibt weiterhin
-ausschließlich gegen synthetische Szenen belegt.
+belegt, nicht am echten Windows 10.
 
 ## [0.0.2-alpha] – 2026-09-07
 

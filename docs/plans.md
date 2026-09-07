@@ -61,12 +61,15 @@ QR-Code kommen weiter, und das Handy erreicht ihn, während das Fenster offen st
 WebView2-Laufzeit, sagt das Programm das und öffnet den Browser, statt abzubrechen. Beschrieben
 in [der Spezifikation](superpowers/specs/2026-09-06-aruco-homographie-design.md), §10.
 
-**Offen bleibt die eigentliche Prüfung:** die `.exe` auf einem Rechner **ohne Python**
-starten, ein echtes Foto durchlaufen lassen, das PDF drucken und mit dem Messschieber
-nachmessen. Belegt ist inzwischen, dass der Installer durchläuft und die installierte Fassung
-außerhalb des Repos die ganze Kette leistet — Oberfläche, Kataloge, Markerblatt und ein
-vollständiger Export mit richtiger Seitengröße. Das ist immer noch **dieser** Rechner, und es
-ist immer noch eine synthetische Szene. Ein fremder Rechner und ein Ausdruck sind etwas anderes.
+**Der Ausdruck ist inzwischen nachgemessen** (07.09.2026): 100-mm-Maßstab und 50-mm-Raster
+stimmen, damit ist `PDF → Drucker → Papier` belegt. Belegt ist außerdem, dass der Installer
+durchläuft und die installierte Fassung außerhalb des Repos die ganze Kette leistet.
+
+**Offen bleiben zwei Dinge**, und sie sind verschieden: ein Rechner **ohne Python** (dieser hat
+einen, auch wenn der Lauf nichts aus dem Repo erreichte) — und vor allem `Foto → Marker →
+Millimeter`, das der Maßstab gar nicht prüfen *kann*, weil die PDF-Schicht ihn aus denselben
+Millimeterzahlen zeichnet wie den Zuschnitt. Dafür braucht es einen Gegenstand bekannter Länge
+mit im Bild, dessen Abbild man auf dem Ausdruck nachmisst.
 
 ---
 
@@ -272,10 +275,18 @@ Qualität der Vektorisierung steht und fällt mit dem Kantenbild. Neue Abhängig
 Beim Lesen des Codes aufgefallen, **nicht beauftragt** — hier notiert, damit sie nicht
 verloren gehen.
 
-- **Der Beweis am echten Ausdruck fehlt.** `CLAUDE.md` sagt es selbst: die Maßhaltigkeit ist
-  bislang nur gegen synthetische Szenen belegt. Einmal drucken, mit dem Messschieber
-  nachmessen, das Ergebnis dokumentieren. Bis das passiert ist, steht die zentrale Zusage
-  des Projekts ungeprüft im Raum. Von allem in dieser Datei ist das das Wichtigste.
+- **Der zweite Teil des Beweises am Ausdruck fehlt.** Der erste ist erbracht (07.09.2026:
+  100-mm-Maßstab und 50-mm-Raster nachgemessen, beide richtig) — das belegt `PDF → Drucker →
+  Papier`. Der Weg `Foto → Marker → Millimeter` ist damit **nicht** belegt und kann es durch
+  Maßstab oder Raster auch nicht werden: beide zeichnet die PDF-Schicht aus denselben
+  Millimeterzahlen, in denen der Zuschnitt steht, und mäßen auf einer falsch großen Schablone
+  genauso stimmig.
+
+  **Der fehlende Versuch:** einen Gegenstand bekannter Länge — Stahlmaßstab, oder ein zweites
+  Markerblatt mit seinen bekannten 121 × 171 mm — mit aufs Foto legen, exportieren, drucken,
+  **diesen Gegenstand** auf dem Papier nachmessen. Eine Viertelstunde Arbeit, und danach ist die
+  zentrale Zusage des Projekts ganz belegt statt halb. Von allem in dieser Datei ist das das
+  Wichtigste.
 - **Sitzungen leben nur im Arbeitsspeicher** (`app/session.py`, `SESSION_TTL_S`). Ein
   Neustart des Servers wirft eine laufende Arbeit weg.
 - **Objektivverzeichnung.** In `AGENTS.md` als bewusst offen vermerkt. Der Solver ist als
