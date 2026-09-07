@@ -128,6 +128,27 @@ DEFAULT_LOCALE = "de"
 LOCALE_STORAGE_KEY = "aruco-language"
 THEME_STORAGE_KEY = "aruco-theme"
 
+# --- Bildaufbereitung ---------------------------------------------------------
+# Die Aufbereitung greift AUSSCHLIESSLICH am entzerrten Bild an, niemals vor der
+# Markererkennung: die Homographie wird am unveraenderten Foto gemessen. Sonst
+# wuerde ein Schaerferegler die Millimeter verschieben - und Millimeter sind hier
+# das Produkt (siehe AGENTS.md, Invarianten).
+ADJUST_CLAHE_TILES = 8               # Kachelraster fuer den lokalen Kontrast
+ADJUST_CLAHE_CLIP_MAX = 4.0          # Obergrenze des CLAHE-Clip-Limits bei Staerke 1.0
+ADJUST_UNSHARP_SIGMA_PX = 2.0        # Radius der Unschaerfemaske fuer die Kantenanhebung
+ADJUST_UNSHARP_MAX = 2.0             # Maximaler Anteil der Maske bei Staerke 1.0
+ADJUST_EDGE_CANNY = (60, 160)        # Schwellen fuer die aufgelegte Kantenzeichnung
+ADJUST_EMPHASIS_SIGMA_DEG = 25.0     # Halbe Breite des betonten Farbtonfensters (HSV-Grad)
+# Farbtonmitten in OpenCV-HSV (0..179) fuer die waehlbaren Farbbetonungen.
+ADJUST_EMPHASIS_HUES = {
+    "red": 0,
+    "yellow": 22,
+    "green": 60,
+    "cyan": 90,
+    "blue": 120,
+    "magenta": 150,
+}
+
 # --- Server -------------------------------------------------------------------
 SESSION_TTL_S = 3600
 HOST = "0.0.0.0"
