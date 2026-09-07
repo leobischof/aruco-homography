@@ -1,0 +1,190 @@
+// Uebersetzung von app/vision/detect.py:113-155.
+//
+// Jede Zeile hier hat ein Gegenstueck dort, und die Reihenfolge ist dieselbe.
+// Das ist Absicht: solange beide Kerne nebeneinander laufen, ist die
+// Python-Fassung die geprueft masshaltige Referenz (docs/cpp-migration/README.md),
+// und ein Leser muss beide Seiten nebeneinanderlegen koennen.
+
+#include "aruco/detect.hpp"
+
+#include <algorithm>
+#include <cstddef>
+#include <map>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include <opencv2/core.hpp>
+// contourArea steht in OpenCV 5 im Modul `geometry`, nicht mehr in `imgproc`.
+#include <opencv2/geometry.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect/aruco_detector.hpp>
+#include <opencv2/objdetect/aruco_dictionary.hpp>
+
+#include "aruco/constants.hpp"
+
+namespace aruco {
+namespace {
+
+// ARUCO_DICT_NAME ist ein NAME, keine Zahl. Python leitet die OpenCV-Kennung mit
+// getattr(cv2.aruco, NAME) daraus ab (app/config.py:178-182); C++ kennt keine
+// Reflexion, also steht die Tabelle hier. Sie ersetzt getattr - und sie WIRFT bei
+// einem unbekannten Namen, statt still auf ein Vorgabewoerterbuch zu fallen. Ein
+// falsches Woerterbuch findet einfach keine Marker; das saehe nach einem
+// schlechten Foto aus und nicht nach einem Tippfehler in einer Konstanten.
+struct DictionaryName {
+    std::string_view name;
+    cv::aruco::PredefinedDictionaryType id;
+};
+
+constexpr DictionaryName kDictionaries[] = {
+    {"DICT_4X4_50", cv::aruco::DICT_4X4_50},
+    {"DICT_4X4_100", cv::aruco::DICT_4X4_100},
+    {"DICT_4X4_250", cv::aruco::DICT_4X4_250},
+    {"DICT_4X4_1000", cv::aruco::DICT_4X4_1000},
+    {"DICT_5X5_50", cv::aruco::DICT_5X5_50},
+    {"DICT_5X5_100", cv::aruco::DICT_5X5_100},
+    {"DICT_5X5_250", cv::aruco::DICT_5X5_250},
+    {"DICT_5X5_1000", cv::aruco::DICT_5X5_1000},
+    {"DICT_6X6_50", cv::aruco::DICT_6X6_50},
+    {"DICT_6X6_100", cv::aruco::DICT_6X6_100},
+    {"DICT_6X6_250", cv::aruco::DICT_6X6_250},
+    {"DICT_6X6_1000", cv::aruco::DICT_6X6_1000},
+    {"DICT_7X7_50", cv::aruco::DICT_7X7_50},
+    {"DICT_7X7_100", cv::aruco::DICT_7X7_100},
+    {"DICT_7X7_250", cv::aruco::DICT_7X7_250},
+    {"DICT_7X7_1000", cv::aruco::DICT_7X7_1000},
+    {"DICT_ARUCO_ORIGINAL", cv::aruco::DICT_ARUCO_ORIGINAL},
+    {"DICT_APRILTAG_16h5", cv::aruco::DICT_APRILTAG_16h5},
+    {"DICT_APRILTAG_25h9", cv::aruco::DICT_APRILTAG_25h9},
+    {"DICT_APRILTAG_36h10", cv::aruco::DICT_APRILTAG_36h10},
+    {"DICT_APRILTAG_36h11", cv::aruco::DICT_APRILTAG_36h11},
+    {"DICT_ARUCO_MIP_36h12", cv::aruco::DICT_ARUCO_MIP_36h12},
+};
+
+cv::aruco::PredefinedDictionaryType dictionary_id(std::string_view name) {
+    for (const DictionaryName& entry : kDictionaries) {
+        if (entry.name == name) {
+            return entry.id;
+        }
+    }
+    throw std::invalid_argument("Unbekanntes ArUco-Woerterbuch: " + std::string(name));
+}
+
+// Die Parameter stehen hier als Zahlen, weil sie auch in app/vision/detect.py als
+// Zahlen stehen: sie sind keine Aussage ueber das PRODUKT (das waeren Millimeter),
+// sondern ueber den Detektor. Damit sind sie die einzige Stelle, an der die beiden
+// Kerne auseinanderlaufen koennen, ohne dass ein Uebersetzer es merkt - wer dort
+// etwas aendert, aendert es hier mit. Der Quervergleich in tests/test_backend.py
+// faellt sonst um, und das ist der Zweck jenes Tests.
+cv::aruco::ArucoDetector build_detector() {
+    const cv::aruco::Dictionary dictionary =
+        cv::aruco::getPredefinedDictionary(dictionary_id(constants::ARUCO_DICT_NAME));
+    cv::aruco::DetectorParameters params;
+
+    // Subpixel-Refinement: der wichtigste Genauigkeitsschalter dieses Projekts.
+    params.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+    params.cornerRefinementWinSize = 5;
+    params.cornerRefinementMaxIterations = 50;
+    params.cornerRefinementMinAccuracy = 0.01;
+
+    // Ein 12-MP-Foto braucht deutlich groessere Schwellwertfenster als die
+    // Defaults, weil ein 50-mm-Marker darin mehrere hundert Pixel breit ist.
+    params.adaptiveThreshWinSizeMin = 3;
+    params.adaptiveThreshWinSizeMax = 53;
+    params.adaptiveThreshWinSizeStep = 10;
+    params.minMarkerPerimeterRate = 0.01;
+
+    return cv::aruco::ArucoDetector(dictionary, params);
+}
+
+/// Die ImageView als cv::Mat lesen, ohne sie zu kopieren.
+cv::Mat as_mat(const ImageView& image) {
+    if (image.data == nullptr) {
+        throw std::invalid_argument("ImageView ohne Daten");
+    }
+    if (image.width <= 0 || image.height <= 0) {
+        throw std::invalid_argument("ImageView ohne Flaeche");
+    }
+    if (image.channels != 1 && image.channels != 3) {
+        throw std::invalid_argument("ImageView: nur 1 (grau) oder 3 (BGR) Kanaele");
+    }
+    if (image.stride < image.width * image.channels) {
+        throw std::invalid_argument("ImageView: Schrittweite kleiner als eine Zeile");
+    }
+
+    // const_cast, weil cv::Mat keinen lesenden Konstruktor hat. Geschrieben wird
+    // in diesen Puffer nie: cvtColor und CLAHE bekommen beide ein eigenes Ziel.
+    //
+    // CV_8UC1/CV_8UC3 als MAKRO, nie als Zahl. Die Werte haben sich zwischen
+    // OpenCV 4 und 5 geaendert (CV_8UC3: 16 -> 64, CV_32FC2: 13 -> 37; hier
+    // nachgemessen an 5.0.0). Das Speicherbild ist dasselbe geblieben, nur die
+    // Konstante nicht - eine abgetippte 16 naehme in einem Bau gegen ein anderes
+    // OpenCV lautlos den falschen Zweig. Und "lautlos" ist die teure Sorte,
+    // denn Stufe 4 uebersetzt genau diesen Quelltext gegen NDK und Emscripten.
+    return cv::Mat(image.height, image.width, image.channels == 1 ? CV_8UC1 : CV_8UC3,
+                   const_cast<std::uint8_t*>(image.data), static_cast<std::size_t>(image.stride));
+}
+
+}  // namespace
+
+std::vector<Marker> detect_markers(const ImageView& image, bool enhance_contrast) {
+    const cv::Mat view = as_mat(image);
+
+    cv::Mat gray;
+    if (image.channels == 3) {
+        cv::cvtColor(view, gray, cv::COLOR_BGR2GRAY);
+    } else {
+        gray = view;  // teilt sich den Puffer des Aufrufers; wird nur gelesen
+    }
+
+    if (enhance_contrast) {
+        cv::Mat equalised;
+        cv::createCLAHE(2.0, cv::Size(8, 8))->apply(gray, equalised);
+        gray = equalised;
+    }
+
+    std::vector<std::vector<cv::Point2f>> quads;
+    std::vector<int> ids;
+    build_detector().detectMarkers(gray, quads, ids);
+
+    // Bei mehrfach erkannter ID gewinnt der Marker mit der groesseren Bildflaeche.
+    // std::map haelt die IDs nebenbei sortiert - genau das, was Pythons
+    // `sorted(best)` tut. Bei Gleichstand gewinnt der zuerst gefundene, auch das
+    // wie in Python (dort steht ein striktes `>`).
+    std::map<int, Marker> best;
+    std::map<int, double> areas;
+    const std::size_t found = std::min(ids.size(), quads.size());
+    for (std::size_t index = 0; index < found; ++index) {
+        const std::vector<cv::Point2f>& quad = quads[index];
+        // contourArea auf den float32-Ecken, die OpenCV geliefert hat. Python
+        // rechnet dieselbe Flaeche aus denselben Bits (`.astype(np.float32)`).
+        const double area = cv::contourArea(quad);
+
+        const int id = ids[index];
+        const auto known = areas.find(id);
+        if (known != areas.end() && area <= known->second) {
+            continue;
+        }
+
+        Marker marker;
+        marker.id = id;
+        for (int corner = 0; corner < 4; ++corner) {
+            marker.corners[corner][0] = static_cast<double>(quad[corner].x);
+            marker.corners[corner][1] = static_cast<double>(quad[corner].y);
+        }
+        best[id] = marker;
+        areas[id] = area;
+    }
+
+    std::vector<Marker> markers;
+    markers.reserve(best.size());
+    for (const std::pair<const int, Marker>& entry : best) {
+        markers.push_back(entry.second);
+    }
+    return markers;
+}
+
+}  // namespace aruco
