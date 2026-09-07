@@ -50,11 +50,16 @@ Zwei Sätze, die den Rest erklären:
 **free** ist eine Vue-3-SPA mit Vite, Tailwind 4 und shadcn-vue. Sie hat einen
 Build-Schritt, und ein großer Teil ihres Aussehens entsteht erst darin.
 
-**Dieses Repo** ist FastAPI mit statischen Dateien: ein `<link>` auf ein Stylesheet,
-eine `app.js`, kein Node, kein Bundler, kein Framework. Das ist keine Zwischenstufe,
-die später ersetzt wird, sondern die Bauform — ein Werkzeug, das man auf einem
-Werkstattrechner mit `dev.ps1 start-server` startet, darf keine Node-Installation
-voraussetzen.
+**Dieses Repo** ist FastAPI mit statischen Dateien: `<link>`-Verweise auf die
+Stylesheets in `app/static/css/` und ES-Module unter `app/static/js/`, die der
+Browser selbst auflöst — kein Node, kein Bundler, kein Framework. Das ist keine
+Zwischenstufe, die später ersetzt wird, sondern die Bauform: ein Werkzeug, das man
+auf einem Werkstattrechner mit `dev.ps1 start-server` startet, darf keine
+Node-Installation voraussetzen.
+
+Der Verzicht auf den Bundler kostet hier nichts, weil er nichts zu tun hätte.
+Module ohne Bauschritt sind der Grund, warum die Oberfläche trotzdem in zehn
+Dateien mit je einer Aufgabe zerfallen kann statt in eine grosse Datei.
 
 Daraus folgt die wichtigste Regel dieses Dokuments: **die Werte werden übernommen,
 die Mechanik nicht.** Welche Muster als reines CSS tragen und welche nicht, steht
@@ -206,9 +211,9 @@ Drei Entscheidungen darin sind erklärungsbedürftig:
 **Die Hülle ist Petrol, das Rechteck ist Bernstein.** Die Marker-Hülle sagt „hier ist
 gemessen, dort wird fortgeschrieben“ — eine Vertrauensaussage, also Identität, also
 Petrol. Das Zuschnitt-Rechteck **ist** die Handlung der Seite: der Benutzer zieht
-daran, und was darin liegt, wird gedruckt. Also Bernstein. Bisher stand in
-`app/static/app.js` ein fest verdrahtetes `rgba(78, 201, 122, …)` — ein Grün, das zu
-keiner Marke gehört und aus keinem Token stammt.
+daran, und was darin liegt, wird gedruckt. Also Bernstein. Früher stand im inzwischen
+entfernten `app/static/app.js` ein fest verdrahtetes `rgba(78, 201, 122, …)` — ein
+Grün, das zu keiner Marke gehört und aus keinem Token stammt.
 
 **Die Naht (`--crop-halo`).** `AGENTS.md`, Invariante 5, verlangt für das Raster im
 PDF einen weißen Saum unter der dunklen Kernlinie, weil es auf hellem *und* dunklem
@@ -331,8 +336,9 @@ In free: `free/src/assets/fonts/Montserrat/Montserrat-VariableFont_wght.woff2`
 `format('woff2')` zusammen mit dem Bereich `100 900` ist die richtige Schreibweise.
 `format('woff2-variations')` ist eine Sackgasse aus der Anfangszeit variabler
 Schriften: Browser, die den String nicht kennen, verwerfen die ganze `@font-face`-Regel
-und fallen wortlos auf die Ersatzschrift zurück. (Dieses Repo hatte genau das in
-`app/static/style.css` stehen.)
+und fallen wortlos auf die Ersatzschrift zurück. (Dieses Repo hatte genau das im
+inzwischen entfernten `app/static/style.css` stehen; `app/static/css/tokens.css`
+schreibt es richtig.)
 
 `font-display: swap` heißt: erst die Ersatzschrift, dann tauschen. Für eine Oberfläche
 richtig — Text, den man nicht lesen kann, ist schlimmer als Text im falschen Schnitt.
