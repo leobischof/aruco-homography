@@ -10,6 +10,7 @@ import io
 
 from app import config
 from app.main import app
+from app.schemas import CropMm, ExportRequest
 
 
 @pytest.fixture(scope="module")
@@ -27,6 +28,21 @@ def uploaded(client, scene):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.fixture(scope="module")
+def solved(client, uploaded, scene):
+    """Entzerrte Sitzung - der Zustand, den jeder Export voraussetzt.
+
+    Einmal je Modul, weil die Entzerrung die teuerste Rechnung der Kette ist und
+    jeder Export danach denselben Zustand vorfindet.
+    """
+    response = client.post(
+        "/api/solve",
+        json={"session_id": uploaded["session_id"], "marker_mm": scene.marker_mm, "mode": "sheet"},
+    )
+    assert response.status_code == 200, response.text
+    return uploaded["session_id"]
 
 
 def test_upload_liefert_sitzung_und_bildmasse(uploaded, scene):
@@ -53,16 +69,11 @@ def test_solve_liefert_bericht_und_vorschau(client, uploaded, scene):
     assert preview.headers["content-type"] == "image/jpeg"
 
 
-def test_export_liefert_pdf_mit_exakter_seitengroesse(client, uploaded, scene):
-    client.post(
-        "/api/solve",
-        json={"session_id": uploaded["session_id"], "marker_mm": scene.marker_mm, "mode": "sheet"},
-    )
-
+def test_export_liefert_pdf_mit_exakter_seitengroesse(client, solved):
     response = client.post(
         "/api/export",
         json={
-            "session_id": uploaded["session_id"],
+            "session_id": solved,
             "crop_mm": {"x0": 0.0, "y0": 0.0, "x1": 200.0, "y1": 150.0},
             "dpi": 150,
             "layout": "single",
@@ -114,6 +125,27 @@ def test_startseite_wird_ausgeliefert(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "ArUco-Homographie" in response.text
+
+
+def _export_in(client, session_id: str, locale: str):
+    """Einzelseiten-Export in einer bestimmten Sprache."""
+    response = client.post(
+        "/api/export",
+        json={
+            "session_id": session_id,
+            "crop_mm": {"x0": 0.0, "y0": 0.0, "x1": 200.0, "y1": 150.0},
+            "dpi": 150,
+            "layout": "single",
+            "locale": locale,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response
+
+
+def _page_text(response) -> str:
+    """Der Text der ersten Seite - die Aufdrucke sind echter Text, kein Bild."""
+    return PdfReader(io.BytesIO(response.content)).pages[0].extract_text() or ""
 
 
 def _tiny_jpeg() -> bytes:

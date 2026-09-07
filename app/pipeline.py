@@ -10,14 +10,16 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
+import cv2
 import numpy as np
 
 from app import config, i18n
 from app.notices import AppError, NoticeList
 from app.pdf.build import BuildResult, ExportOptions, build_footer_lines, build_pdf
-from app.schemas import ExportRequest, SolveRequest
+from app.schemas import AdjustRequest, ExportRequest, SolveRequest
 from app.session import Session
 from app.vision import contour as contour_module
+from app.vision import enhance
 from app.vision import rectify as rectify_module
 from app.vision.camera import CameraPose, resolve_pose
 from app.vision.detect import detect_markers, draw_detection
@@ -101,14 +103,43 @@ def run_solve(session: Session, request: SolveRequest) -> SolveResult:
     return result
 
 
+def run_adjust(session: Session, request: AdjustRequest) -> dict[str, object]:
+    """Regler auf die entzerrte Vorschau anwenden - die Antwort fuer den Live-Regler.
+
+    Gearbeitet wird auf dem bereits geschriebenen Vorschau-JPEG, nicht auf einer
+    frischen Entzerrung: der Regler soll waehrend des Ziehens antworten, und eine
+    Entzerrung des vollen Fotos dauert um Groessenordnungen laenger. Erlaubt ist
+    die Abkuerzung, weil die Aufbereitung kosmetisch ist (app/vision/enhance.py) -
+    sie taugt am kleinen Bild genau wie am grossen. Verbindlich fuer den Druck ist
+    trotzdem allein der Export: der wendet dieselben Regler auf das volle Raster an.
+    """
+    solved = session.state.get("solve")
+    if not isinstance(solved, SolveResult):
+        raise AppError("not_solved", "session_id")
+
+    options = request.adjust.to_enhance()
+    if options.is_identity:
+        # Nichts zu tun: die unveraenderte Vorschau liegt bereits auf der Platte.
+        # Eine zweite, Pixel fuer Pixel gleiche Datei waere nur ein Umweg.
+        return {"preview": _preview_payload(session, "rectified", solved)}
+
+    rectified = cv2.imread(str(session.preview_path("rectified")))
+    if rectified is None:
+        raise AppError("preview_missing")
+
+    session.write_preview("adjusted", enhance.adjust(rectified, options))
+    return {"preview": _preview_payload(session, "adjusted", solved)}
+
+
 def run_export(session: Session, request: ExportRequest) -> BuildResult:
     """Vom gewaehlten Zuschnitt zum druckfertigen PDF."""
     solved = session.state.get("solve")
     if not isinstance(solved, SolveResult):
         raise AppError("not_solved", "session_id")
 
-    # Die Sprache des Ausdrucks kommt aus der Anfrage. getattr, weil ExportRequest das
-    # Feld erst bekommt, wenn app/schemas.py nachzieht - bis dahin gilt die Vorgabe.
+    # ExportRequest kennt noch kein locale-Feld - bis es das tut, druckt der Export
+    # in der Vorgabesprache. getattr statt einer Abfrage, damit dieselbe Zeile auch
+    # dann noch stimmt, wenn das Feld hinzukommt.
     locale = i18n.normalise(getattr(request, "locale", config.DEFAULT_LOCALE))
 
     crop = Extent(request.crop_mm.x0, request.crop_mm.y0, request.crop_mm.x1, request.crop_mm.y1)
@@ -125,8 +156,25 @@ def run_export(session: Session, request: ExportRequest) -> BuildResult:
         source_px_per_mm=solved.solution.px_per_mm,
     )
 
+    # Aufbereiten NACH dem Entzerren und VOR allem anderen: die Homographie wurde
+    # am unberuehrten Foto gemessen, ab hier aendert sich nur noch Farbe und Ton.
+    # Die is_identity-Abkuerzung spart bei neutralen Reglern eine vollstaendige
+    # Kopie des Rasters - das sind am oberen Ende des Budgets mehrere hundert MB.
+    adjust_options = request.adjust.to_enhance()
+    if not adjust_options.is_identity:
+        rectified = enhance.adjust(rectified, adjust_options)
+
     contour_mm = None
     if request.contour:
+        # Gesucht wird auf dem AUFBEREITETEN Bild - also auf genau dem, das gleich
+        # gedruckt wird. Der Benutzer stellt die Regler ja gerade deshalb, damit
+        # eine blasse Bleistiftlinie ueberhaupt als Kante erkennbar wird; auf dem
+        # rohen Bild fiele sie durch und die Kontur bliebe leer. Umgekehrt waere
+        # eine Kontur aus dem rohen Bild auf dem aufbereiteten Ausdruck eine
+        # zweite, andere Wahrheit auf demselben Blatt.
+        # Millimeter kostet das nichts: die Aufbereitung faerbt Pixel, sie
+        # verschiebt keine - welche Kante gefunden wird, aendert sich, wo sie
+        # liegt, nicht (nachgewiesen in tests/test_enhance.py).
         contour_mm = contour_module.find_contour_mm(rectified, px_per_mm)
 
     options = ExportOptions(
@@ -209,6 +257,30 @@ def _footer_meta(
     }
 
 
+def _preview_payload(session: Session, kind: str, result: SolveResult) -> dict[str, object]:
+    """Die Angaben zu einer Vorschau: wo sie liegt und wie sie in mm zu lesen ist.
+
+    Eine Stelle fuer beide Wege - /api/solve und /api/adjust liefern dieselbe Form,
+    sodass die Oberflaeche nach dem Regeln nichts anderes auszuwerten hat als nach
+    dem Entzerren.
+    """
+    return {
+        "url": f"/api/preview/{session.session_id}/{kind}?t={_cache_buster()}",
+        "extent_mm": result.extent.as_dict(),
+        "px_per_mm": round(result.preview_px_per_mm, 5),
+    }
+
+
+def _cache_buster() -> int:
+    """Ein bei jedem Aufruf neuer Wert fuer die Vorschau-URL.
+
+    Millisekunden, nicht Sekunden: die Vorschau wird unter demselben Dateinamen
+    ueberschrieben, und der Regler tut das mehrmals je Sekunde. Mit sekundengenauem
+    Stempel bekaeme der Browser zweimal dieselbe URL - und zeigte das alte Bild.
+    """
+    return time.time_ns() // 1_000_000
+
+
 def solve_response(
     session: Session, result: SolveResult, locale: str = config.DEFAULT_LOCALE
 ) -> dict[str, object]:
@@ -249,10 +321,8 @@ def solve_response(
             extrapolation_fraction(crop, solution.hull_mm), 4
         ),
         "preview": {
-            "url": f"/api/preview/{session.session_id}/rectified?t={int(time.time())}",
-            "detected_url": f"/api/preview/{session.session_id}/detected?t={int(time.time())}",
-            "extent_mm": result.extent.as_dict(),
-            "px_per_mm": round(result.preview_px_per_mm, 5),
+            **_preview_payload(session, "rectified", result),
+            "detected_url": f"/api/preview/{session.session_id}/detected?t={_cache_buster()}",
         },
         "limits": {
             "dpi_choices": list(config.DPI_CHOICES),

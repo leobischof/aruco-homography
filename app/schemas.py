@@ -7,6 +7,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app import config
+from app.vision import enhance
+
+# Waehlbare Farbbetonungen: "keine" plus jeder Farbton, den config kennt. Aus dem
+# Woerterbuch gebaut und nicht abgeschrieben - ein neuer Farbton in config.py ist
+# damit sofort gueltig, statt still an der Validierung zu scheitern.
+EMPHASIS_CHOICES = ("none", *config.ADJUST_EMPHASIS_HUES)
 
 
 class CropMm(BaseModel):
@@ -40,6 +46,46 @@ class OverlayFlags(BaseModel):
     marks: bool = True
 
 
+class AdjustOptions(BaseModel):
+    """Die Drahtform der Bildaufbereitung - der HTTP-Spiegel der Dataclass.
+
+    SSOT der Namen, Vorgaben und Wertebereiche ist `app.vision.enhance.AdjustOptions`;
+    dieses Modell spiegelt sie und erfindet nichts dazu. Hier steht ausschliesslich,
+    wie die Regler ueber die Leitung kommen und welche Werte ueberhaupt zugelassen
+    sind - gerechnet wird allein in enhance.py. Wer dort einen Regler hinzufuegt,
+    ergaenzt ihn hier, und `test_adjust_api.py` besteht darauf, dass beide Fassungen
+    Feld fuer Feld und Vorgabe fuer Vorgabe uebereinstimmen.
+    """
+
+    grayscale: bool = False
+    invert: bool = False
+    brightness: float = Field(default=0.0, ge=-1.0, le=1.0)
+    contrast: float = Field(default=0.0, ge=-1.0, le=1.0)
+    saturation: float = Field(default=0.0, ge=-1.0, le=1.0)
+    local_contrast: float = Field(default=0.0, ge=0.0, le=1.0)
+    edge_boost: float = Field(default=0.0, ge=0.0, le=1.0)
+    edge_overlay: float = Field(default=0.0, ge=0.0, le=1.0)
+    color_emphasis: Literal[EMPHASIS_CHOICES] = "none"
+    emphasis_strength: float = Field(default=0.0, ge=0.0, le=1.0)
+    threshold: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    def to_enhance(self) -> enhance.AdjustOptions:
+        """In die Dataclass umsetzen, mit der die Aufbereitung rechnet.
+
+        Feldweise Zuweisung waere eine zweite Liste derselben Namen - genau die,
+        die auseinanderlaufen wuerde. Ein fehlendes oder ueberzaehliges Feld
+        scheitert hier sofort mit TypeError, statt sich lautlos zu verlieren.
+        """
+        return enhance.AdjustOptions(**self.model_dump())
+
+
+class AdjustRequest(BaseModel):
+    """Live-Vorschau: dieselben Regler wie beim Export, nur auf dem Vorschaubild."""
+
+    session_id: str
+    adjust: AdjustOptions = Field(default_factory=AdjustOptions)
+
+
 class ExportRequest(BaseModel):
     session_id: str
     crop_mm: CropMm
@@ -53,4 +99,7 @@ class ExportRequest(BaseModel):
     overlays: OverlayFlags = Field(default_factory=OverlayFlags)
     tile_overview: bool = config.TILE_OVERVIEW_DEFAULT
     contour: bool = False
+    # Die Aufbereitung des Ausdrucks. Neutral gestellt heisst: das entzerrte Bild
+    # geht unveraendert ins PDF.
+    adjust: AdjustOptions = Field(default_factory=AdjustOptions)
     filename: str = "schablone.pdf"

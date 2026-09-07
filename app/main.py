@@ -16,8 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from app import config, i18n
 from app.notices import AppError
 from app.pdf.markersheet import build_markersheet
-from app.pipeline import run_export, run_solve, solve_response
-from app.schemas import ExportRequest, SolveRequest
+from app.pipeline import run_adjust, run_export, run_solve, solve_response
+from app.schemas import AdjustRequest, ExportRequest, SolveRequest
 from app.session import store
 from app.vision.detect import load_photo
 
@@ -93,6 +93,13 @@ async def solve_endpoint(request: SolveRequest, http_request: Request) -> dict[s
     )
 
 
+@app.post("/api/adjust")
+async def adjust_endpoint(request: AdjustRequest) -> dict[str, object]:
+    """Regler auf die entzerrte Vorschau anwenden, ohne neu zu entzerren."""
+    session = store.get(request.session_id)
+    return run_adjust(session, request)
+
+
 @app.post("/api/export")
 async def export_endpoint(request: ExportRequest) -> Response:
     """Druckfertiges PDF erzeugen."""
@@ -148,8 +155,8 @@ async def markersheet_endpoint(
 
 @app.get("/api/preview/{session_id}/{kind}")
 async def preview_endpoint(session_id: str, kind: str) -> Response:
-    """Vorschau-JPEGs (original, detected, rectified)."""
-    if kind not in {"original", "detected", "rectified"}:
+    """Vorschau-JPEGs (original, detected, rectified, adjusted)."""
+    if kind not in {"original", "detected", "rectified", "adjusted"}:
         raise AppError("bad_preview", kind=kind)
 
     session = store.get(session_id)
