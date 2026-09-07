@@ -63,6 +63,25 @@ geändert: die Homographie wird nach wie vor am unberührten Foto gemessen.
   unter `docs/` mit Zweck, Zielgruppe und Stand — und ein YAML-Frontmatter-Schema, an dem ein
   Skript den Baum aufzählen und prüfen kann.
 
+- **Auslieferung als Windows-`.exe`.** `.\dev.ps1 build-exe` baut mit PyInstaller ein
+  One-Folder-Bundle nach `dist/ArUco-Homographie/`. Doppelklick startet den Server und
+  öffnet den Browser; Python muss auf dem Rechner nicht installiert sein. Weitergegeben
+  wird der ganze Ordner, nicht nur die `.exe` darin. Bewusst **nicht** One-File: das
+  entpackt bei jedem Start OpenCV, NumPy und SciPy in ein Temp-Verzeichnis und kostet
+  Sekunden Startzeit für nichts.
+- **`aruco-homographie.spec`** — die Bauvorschrift ist versioniert, nicht eine
+  Kommandozeile, die mit dem Terminalfenster verlorengeht. Sie trägt, was die statische
+  Analyse von PyInstaller nicht findet: den ganzen Baum `app/static/**` und die
+  Datendateien von ReportLab.
+- **`config.resource_path()`** löst jeden Pfad auf eine mitgelieferte Datei auf —
+  `sys._MEIPASS` im Bundle, `app/` im Quellbaum. Ohne den Helfer startet die `.exe` und
+  liefert eine nackte Seite ohne Schrift, ohne Logo und ohne Übersetzung: der gefährliche
+  Fehler, weil er wie ein Erfolg aussieht.
+- `tests/test_startup.py` prüft die drei Dinge, die sonst erst am Werkstattrechner
+  auffallen: Ausweichen auf einen freien Port, ein Banner, das eine Konsole ohne
+  Blockzeichen überlebt, und Datenpfade, die dem Bundle folgen.
+- VS-Code-Task **„Build Windows .exe"** — ruft wie alle Tasks nur `dev.ps1` auf.
+
 ### Geändert
 
 - **Die Vorgabe des Exports ist die Kachelung auf A4 mit Klebeplan**, nicht mehr die
@@ -86,6 +105,21 @@ geändert: die Homographie wird nach wie vor am unberührten Foto gemessen.
   `app/static/` verschluckt; `.vscode/` ist ausgeschlossen, `.vscode/tasks.json` ausdrücklich
   wieder hereingeholt, weil die Tasks zum Projekt gehören.
 
+- **`config.PORT` ist jetzt der *bevorzugte* Port, keine Zusage.** Ist 8000 belegt — auf
+  einem Werkstattrechner eine Frage der Zeit —, weicht der Server auf einen freien aus,
+  statt mit „address already in use" abzubrechen. Die stabile URL bleibt der Normalfall.
+- **Den Browser öffnet `app.main` selbst**, nicht mehr `dev.ps1`. Erst dort steht fest,
+  welcher Port es geworden ist; eine vorher gebaute URL wäre nach dem Ausweichen falsch.
+  `--no-browser` wird jetzt an den Server durchgereicht statt vom Skript abgefangen.
+- **`opencv-python` → `opencv-python-headless`.** Die Anwendung öffnet nie ein
+  `cv2`-Fenster. `cv2.aruco` ist im Headless-Rad vollständig enthalten (geprüft:
+  `ArucoDetector`, `getPredefinedDictionary`, `generateImageMarker`,
+  `CORNER_REFINE_SUBPIX`, Erzeugen-und-Wiedererkennen, gesamte Testsuite). Anders als in
+  `docs/plans.md` vermutet spart das unter Windows **nicht** 60–80 MB: die
+  OpenCV-5-Räder für Windows bringen gar kein Qt mit, gemessener Unterschied 0,42 MB.
+- `kill-servers` beendet auch die gebaute `.exe` aus diesem Verzeichnis, nicht nur
+  `python -m app.main`. `clean-all` räumt zusätzlich `build/` und `dist/`.
+
 ### Behoben
 
 - **Der Hinweis am Zuschnitt nannte eine Farbe, die es nicht mehr gibt** („grüne Fläche"). Die
@@ -101,6 +135,19 @@ geändert: die Homographie wird nach wie vor am unberührten Foto gemessen.
 - **Der Cache-Buster der Vorschau hatte Sekundenauflösung.** Ein Regler überschreibt dieselbe
   Datei mehrmals je Sekunde, der Browser bekam also dieselbe URL und hätte ein veraltetes Bild
   gezeigt. Jetzt in Millisekunden.
+
+- **Der ASCII-QR-Code riss den Start mit, wenn die Ausgabe kein Unicode konnte.** Der Code
+  besteht aus Blockzeichen; schreibt Python nicht in eine Windows-Konsole, sondern in eine
+  Pipe oder Datei, nimmt es die Codepage des Systems (cp1252) und `print()` bricht mit
+  `UnicodeEncodeError` ab. In der `.exe` hieß das: der Server startete wegen einer
+  Verzierung gar nicht erst. Jetzt kommt an dieser Stelle ein Hinweis, und der Server läuft.
+
+### Bekannte Grenze
+
+- Der Bundle-Ordner darf nicht zu tief liegen: die längste enthaltene Datei hat 101
+  Zeichen relativen Pfad, ab etwa 157 Zeichen Zielordner reißt Windows'
+  260-Zeichen-Grenze und die `.exe` bricht beim Start mit „DLL load failed … Der
+  Dateiname oder die Erweiterung ist zu lang" ab. Kein Codefehler — sieht aber wie einer aus.
 
 ### Weiterhin offen
 

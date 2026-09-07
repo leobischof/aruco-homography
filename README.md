@@ -35,12 +35,40 @@ server with Ctrl+C.
 | `.\dev.ps1 install-deps` | Create the venv and install `requirements.txt` |
 | `.\dev.ps1 run-tests` | Run the test suite (`pytest`; extra arguments are forwarded) |
 | `.\dev.ps1 build-markersheet [mm] [spacing_x] [spacing_y]` | Write the marker sheet to `out/markerblatt_A4.pdf` |
+| `.\dev.ps1 build-exe` | Build the standalone Windows program into `dist/ArUco-Homographie/` |
 | `.\dev.ps1 kill-servers` | Stop servers started **from this repository** — nobody else's Python |
-| `.\dev.ps1 clean-all` | Remove the venv, `out/` and the caches |
+| `.\dev.ps1 clean-all` | Remove the venv, `out/`, `build/`, `dist/` and the caches |
 | `.\dev.ps1 help` | List all commands |
 
 The same commands are available as VS Code tasks (`Ctrl+Shift+P` → *Tasks: Run Task*). They
 only call into `dev.ps1`; the script is the single source of truth for what a command does.
+
+The server takes port 8000 when it is free and a different one when it is not — the address
+that actually applies is printed in the start banner.
+
+## Running it without Python
+
+```powershell
+.\dev.ps1 build-exe
+```
+
+builds `dist\ArUco-Homographie\ArUco-Homographie.exe` with PyInstaller. Double-clicking it
+starts the server and opens the browser, and **no Python has to be installed** on the machine
+that runs it.
+
+Pass on the **whole folder**, not just the `.exe` inside it — `_internal\` sits beside it and
+holds OpenCV, the fonts and the interface. Around 290 MB.
+
+Two things can go wrong on the target machine, and both look like bugs when they are not:
+
+- **The folder must not sit too deep.** The longest file in the bundle has a relative path of
+  101 characters, so a target folder beyond roughly 157 characters runs into Windows'
+  260-character limit and the program aborts at startup with *DLL load failed … The filename
+  or extension is too long*. `C:\Program Files\` or the desktop are fine; a deeply nested
+  OneDrive folder is not.
+- **The `.exe` is not signed.** SmartScreen warns on first launch (*More info* → *Run
+  anyway*). Acceptable for personal use; passing it to other people needs a code-signing
+  certificate.
 
 ---
 
@@ -545,8 +573,10 @@ tests/         synthetic scenes with known ground truth
 docs/          documentation — start at docs/README.md
 ```
 
-`app/config.py` is the only place constants are defined — even `dev.ps1` reads the port from
-there rather than repeating it.
+`app/config.py` is the only place constants are defined — even `dev.ps1` reads the preferred
+port from there rather than repeating it. Paths to bundled files go through
+`config.resource_path()`, so they mean the same thing in the source tree and inside the built
+bundle.
 
 ## Tests
 

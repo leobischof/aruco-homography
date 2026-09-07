@@ -43,9 +43,14 @@ Handy/Browser ──upload──▶ /api/upload   ──▶ Session (Temp-Verzei
                           /api/markersheet ──▶ A4-Markerblatt-PDF
 ```
 
-Der Server bindet auf `0.0.0.0:8000` und gibt beim Start die LAN-URL plus ASCII-QR-Code auf der
-Konsole aus, damit das Foto direkt vom Handy hochgeladen werden kann. Er läuft im Vordergrund
-(`dev.ps1 start-server` blockiert); `dev.ps1 kill-servers` beendet hängengebliebene Instanzen.
+Der Server bindet auf `0.0.0.0` und **bevorzugt** Port 8000; ist der belegt, weicht er auf einen
+freien aus (`app.main.choose_port`). Ein fester Port wäre auf einem Werkstattrechner eine Wette,
+und ein Start, der mit „address already in use" abbricht, sieht aus wie ein kaputtes Programm.
+Beim Start gibt er die LAN-URL plus ASCII-QR-Code auf der Konsole aus, damit das Foto direkt vom
+Handy hochgeladen werden kann, und öffnet den Browser auf dem Port, der es tatsächlich geworden
+ist. Er läuft im Vordergrund (`dev.ps1 start-server` blockiert); `dev.ps1 kill-servers` beendet
+hängengebliebene Instanzen.
+
 
 Oberfläche **und** Server sprechen Deutsch und Englisch aus **denselben** Katalogdateien
 (`app/static/i18n/`). Sie werden zweimal gelesen — vom Browser über HTTP, von Python von der
@@ -56,7 +61,8 @@ Platte — und es gibt bewusst keine zweite Fassung für den Server (§7.2).
 ```
 ArUco-Homographie/
 ├─ dev.ps1                      # install-deps | start-server | run-tests | build-markersheet |
-│                               #   kill-servers | clean-all | help  (§10)
+│                               #   build-exe | kill-servers | clean-all | help  (§10)
+├─ aruco-homographie.spec       # PyInstaller-Bauvorschrift (One-Folder), versioniert
 ├─ requirements.txt
 ├─ pyproject.toml               # nur die pytest-Einstellungen (pythonpath, testpaths, -q)
 ├─ README.md · CHANGELOG.md · AGENTS.md · CLAUDE.md
@@ -102,7 +108,8 @@ ArUco-Homographie/
    ├─ test_detect.py · test_solve.py · test_camera.py · test_thickness.py
    ├─ test_extent.py · test_rectify.py · test_enhance.py
    ├─ test_layout.py · test_markersheet.py · test_pdf_size.py · test_branding.py
-   └─ test_api.py · test_adjust_api.py · test_i18n.py
+   ├─ test_api.py · test_adjust_api.py · test_i18n.py
+   └─ test_startup.py
 ```
 
 `app/static/js/` ist bewusst kein einzelnes `app.js` mehr und `app/static/css/` kein einzelnes
@@ -949,7 +956,8 @@ ADJUST_EMPHASIS_HUES     = {red 0, yellow 22, green 60,
                             cyan 90, blue 120, magenta 150}   # OpenCV-HSV, 0..179
 
 SESSION_TTL_S            = 3600
-HOST, PORT               = "0.0.0.0", 8000
+HOST, PORT               = "0.0.0.0", 8000   # PORT ist der BEVORZUGTE Port, keine Zusage
+BROWSER_WAIT_S           = 60.0              # wie lange der Browser-Faden auf den Server wartet
 PT_PER_MM                = 72 / 25.4               # ReportLab rechnet in Punkt
 MM_PER_INCH              = 25.4
 ```
@@ -963,13 +971,19 @@ Außerhalb von `config.py` steht nur, was keine frei gewählte Größe ist: der 
 Eine Ausnahme ist `MAX_SESSIONS = 8` in `session.py` — eine Obergrenze für den Speicherbedarf,
 die nichts außerhalb dieses Moduls sieht.
 
+`sys._MEIPASS` voran, wenn das Programm als PyInstaller-Bundle läuft, und liefert sonst
+`app/`. Ohne ihn zeigt `Path(__file__).parent` in der `.exe` neben die Daten, und die
+Anwendung startet mit nackter Seite — ohne Schrift, ohne Logo, ohne Übersetzung. Davon
+abgeleitet: `STATIC_DIR`, `BRAND_DIR`, `LOGO_*_SVG`, `LOCALE_DIR`.
+
 `requirements.txt`:
 
 ```
 fastapi
 uvicorn[standard]
 python-multipart
-opencv-python>=5.0          # cv2.aruco liegt ab OpenCV 5 im Hauptpaket (geprüft: 5.0.0.93)
+opencv-python-headless>=5.0 # cv2.aruco liegt ab OpenCV 5 im Hauptpaket (geprüft: 5.0.0.93);
+                            # headless, weil nie ein cv2-Fenster geöffnet wird
 numpy
 scipy
 Pillow
@@ -981,6 +995,7 @@ pytest
 pypdf
 pymupdf                     # rastert das Markerblatt für den Detektortest (§9.2)
 httpx                       # von fastapi.testclient für die Ende-zu-Ende-Tests gebraucht
+pyinstaller                 # baut die Windows-.exe (dev.ps1 build-exe)
 ```
 
 ---
@@ -1028,8 +1043,9 @@ verschiebt Kanten daher nicht.
 | `test_adjust_api` | die Regler über die Leitung: Pydantic-Modell spiegelt die Dataclass **Feld für Feld und Vorgabe für Vorgabe**; jeder Farbton aus `config` wird angenommen, ein fremder abgelehnt; Negativ schlägt bis in die Bildpunkte durch; **ein Export mit Aufbereitung hat dieselbe Seitengröße, dasselbe Bildrechteck und dieselbe Seitenzahl wie einer ohne** | Geometrie identisch, Inhalt verschieden |
 | `test_i18n` | beide Kataloge tragen dieselben Schlüssel und je Schlüssel dieselben Platzhalter; jeder im Quelltext benutzte Fehler- und Warncode hat einen Eintrag; `negotiate`/`normalise` über neun bzw. vier Fälle; Rückfall Englisch → Deutsch → Schlüssel; Umlaute wirklich im Katalog | exakt |
 
+
 Erst wenn diese Tests grün sind, gilt die Maßhaltigkeit als belegt.
-**Stand 2026-09-07: 148 Tests, alle grün** (`.\dev.ps1 run-tests`).
+**Stand 2026-09-07: 153 Tests, alle grün** (`.\dev.ps1 run-tests`).
 
 ### 9.3 Manuelle Abschlussprobe
 
@@ -1055,13 +1071,23 @@ Kurznamen des Nachbarprojekts):
 | `start-server` | Server im **Vordergrund** starten, URL ausgeben, Browser öffnen, LAN-URL + QR |
 | `run-tests` | `pytest -q` |
 | `build-markersheet [mm] [x] [y]` | Markerblatt nach `out/markerblatt_A4.pdf` |
-| `kill-servers` | nur `app.main`-Prozesse **aus diesem Verzeichnis** beenden |
-| `clean-all` | venv, `out/`, Caches entfernen |
+| `build-exe` | Windows-Bundle nach `dist/ArUco-Homographie/` (PyInstaller, One-Folder) |
+| `kill-servers` | nur Server **aus diesem Verzeichnis** beenden — `app.main` wie gebaute `.exe` |
+| `clean-all` | venv, `out/`, `build/`, `dist/`, Caches entfernen |
 | `help` | die Liste ausgeben (auch die Vorgabe ohne Argument) |
 
-`start-server` liest den Port aus `app/config.py` (keine zweite Wahrheit) und startet einen
-Hintergrund-Job, der wartet, bis der Port antwortet, und dann den Browser öffnet — so erscheint
-nie eine Fehlerseite, weil der Server noch nicht bereit war. `--no-browser` unterdrückt das.
+`start-server` liest den bevorzugten Port aus `app/config.py` (keine zweite Wahrheit) und zeigt
+ihn an. Den **Browser öffnet `app.main` selbst**, in einem Daemon-Faden, der wartet, bis der Port
+antwortet — so erscheint nie eine Fehlerseite, weil der Server noch nicht bereit war. Es muss dort
+geschehen und nicht im Aufrufer: erst dort steht fest, welcher Port es geworden ist, denn beim
+Ausweichen wäre jede vorher gebaute URL falsch. `--no-browser` unterdrückt das.
+
+`build-exe` ruft die versionierte Bauvorschrift `aruco-homographie.spec` auf. **One-Folder, nicht
+One-File:** One-File entpackt bei jedem Start OpenCV, NumPy und SciPy in ein Temp-Verzeichnis und
+kostet Sekunden Startzeit für nichts. Mit muss von Hand, weil die statische Analyse es nicht
+findet: der ganze Baum `app/static/**` (Oberfläche, Logo-SVGs, Montserrat-`.woff2`,
+i18n-Kataloge) und die Datendateien von ReportLab. Weitergegeben wird der ganze Ordner, nicht nur
+die `.exe` darin.
 
 Selbstheilung über einen Stempel: `venv/.deps-installed` enthält den SHA-256 von
 `requirements.txt`. Fehlt das venv oder ändert sich die Datei, installiert jedes Run-Kommando
@@ -1073,6 +1099,9 @@ mit `/` an (`out/` finge auch ein `app/out/` mit ein), und **nie nach Dateiendun
 aussperren** — in `app/static/` liegen echte Bildbestandteile (Favicons, Logos), ein pauschales
 `*.png` hätte sie stillschweigend aus dem Repo geworfen. `.vscode/tasks.json` ist ausdrücklich
 versioniert.
+
+Die Bauvorschrift `aruco-homographie.spec` ist dagegen versioniert — sie ist Quelltext,
+nicht Erzeugnis.
 
 ---
 

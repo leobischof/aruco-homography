@@ -32,6 +32,15 @@
       "problemMatcher": []
     },
     {
+      "label": "Build Windows .exe",
+      "detail": "PyInstaller-Bundle nach dist/ArUco-Homographie/ bauen - laeuft ohne Python",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "build-exe"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
       "label": "Run tests",
       "detail": "Testsuite ausfuehren",
       "type": "process",
