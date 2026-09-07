@@ -29,6 +29,7 @@ import numpy as np
 from PIL import Image
 
 from app import config
+from app.notices import AppError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BRIDGE_JS = REPO_ROOT / "tools" / "pdf_js_bridge.mjs"
@@ -94,10 +95,27 @@ def _run_node(request: dict, workspace: Path) -> dict:
         encoding="utf-8",
     )
     if completed.returncode != 0:
-        raise RuntimeError(
-            f"Der JavaScript-PDF-Bau ist abgebrochen:\n{completed.stderr.strip()}"
-        )
+        raise _failure(completed.stderr)
     return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def _failure(stderr: str) -> Exception:
+    """Aus dem Abbruch von Node denselben Fehler machen, den Python geworfen haette.
+
+    Ein AppError ist ein Code mit Parametern, kein Satz - und er kommt in der
+    Oberflaeche als uebersetzte Meldung mit Feldbezug an. Ginge er hier als nackter
+    RuntimeError verloren, verhielte sich der Pruefstand in genau der Hinsicht anders
+    als der geprüfte Bau, und eine kuenftige Pruefung auf `overlap_too_large`
+    schluege unter ARUCO_PDF=js fehl, ohne dass am PDF irgendetwas falsch waere.
+    """
+    for line in reversed(stderr.strip().splitlines()):
+        try:
+            payload = json.loads(line).get("app_error")
+        except (ValueError, AttributeError):
+            continue
+        if payload:
+            return AppError(payload["code"], payload.get("field"), **(payload.get("params") or {}))
+    return RuntimeError(f"Der JavaScript-PDF-Bau ist abgebrochen:\n{stderr.strip()}")
 
 
 def build_markersheet_via_node(

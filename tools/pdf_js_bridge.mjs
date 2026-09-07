@@ -70,6 +70,16 @@ async function doMarkersheet(request) {
 }
 
 main().catch((error) => {
+    // Ein AppError traegt einen Code und benannte Parameter, keinen fertigen Satz.
+    // Der muss den Uebergang ueberleben, sonst kaeme drueben ein RuntimeError an, wo
+    // die Python-Fassung einen AppError wirft - und eine Pruefung auf "overlap_too_large"
+    // schluege unter ARUCO_PDF=js fehl, ohne dass am PDF-Bau irgendetwas falsch waere.
+    if (error && error.name === "AppError") {
+        process.stderr.write(
+            `${JSON.stringify({ app_error: { code: error.code, field: error.fieldName, params: error.params } })}\n`,
+        );
+        process.exit(2);
+    }
     process.stderr.write(`${error && error.stack ? error.stack : String(error)}\n`);
     process.exit(1);
 });
