@@ -166,7 +166,7 @@ Handyfoto **unter einer Sekunde**.
 
 **Was der Spike ausdrücklich nicht zeigt:** nur die *Erkennung* wurde geprüft, gegen
 eine *synthetische* Szene, in *einem* Browser. Homographie, Kamerazerlegung,
-Dickenkorrektur und `least_squares → cv::LMSolver` sind unberührt.
+Dickenkorrektur und `least_squares → cv::LevMarq` sind unberührt.
 
 ### Stufe 1 · `shared/` — eine Wahrheit, sprachneutral — Tage
 

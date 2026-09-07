@@ -277,11 +277,23 @@ Ebenfalls **nicht** an der JS-Oberfläche: `cornerSubPix`, `calibrateCamera`,
 
 **Diese Abwesenheiten binden nur, was *JavaScript* aufrufen kann.** Der C++-Kern wird
 **in** das wasm hineinübersetzt und bindet gegen `imgproc` und `calib` — beide sind
-gebaut. `cv::LMSolver` und `cv::cornerSubPix` stehen ihm also zur Verfügung, auf allen
+gebaut. `cv::LevMarq` und `cv::cornerSubPix` stehen ihm also zur Verfügung, auf allen
 drei Zielen.
 
+**Berichtigung zum Namen.** Hier stand zuerst `cv::LMSolver`. Diesen Namen gibt es
+in OpenCV 5.0.0 **nicht** — nachgemessen am SDK dieses Projekts: keine einzige
+Fundstelle, auch nicht ohne Rücksicht auf Groß- und Kleinschreibung. Bis OpenCV 4
+hieß die Klasse so und lag in `calib3d`; in 5.0.0 heißt sie **`cv::LevMarq`** und
+steht in `opencv2/geometry/3d.hpp:512`. Der Weg ist offen, der Name war falsch —
+abgeleitet aus einer Symbolliste, statt im Kopf-Verzeichnis nachgeschlagen.
+
+**Und eine Verschiebung, die daran hängt:** `cv::contourArea` ist von `imgproc` in
+das neue Modul **`geometry`** gewandert (`opencv2/geometry/2d.hpp`). Zusammen mit
+`LevMarq` heißt das: **`geometry` muss auf jede WASM-Modul-Whitelist** — sonst
+fehlen beide Hälften der Messung.
+
 Das ist für Stufe 2 unmittelbar wichtig: der Fahrplan ersetzt
-`scipy.optimize.least_squares` durch `cv::LMSolver`, und dieser Weg ist damit offen.
+`scipy.optimize.least_squares` durch `cv::LevMarq`, und dieser Weg ist damit offen.
 
 **Die echte Schranke bleibt das abgeschaltete Modul:** `imgcodecs` ist gar nicht erst
 gelinkt. `cv::imread`/`imwrite` fehlen deshalb **auch dem C++-Kern**, nicht nur
@@ -314,7 +326,7 @@ Damit niemand mehr hineinliest, als drinsteht:
   wie die Python-Suite. Der Messschieber-Beleg (100 mm = 100 mm) hängt weiterhin an
   der Python-Kette; die Browser-Kette erbt ihn erst, wenn sie ganz steht.
 - Geprüft wurde **nur die Erkennung**. Homographie, Kamerazerlegung,
-  Dickenkorrektur, `least_squares` → `cv::LMSolver` — alles ungeprüft. Der Spike hat
+  Dickenkorrektur, `least_squares` → `cv::LevMarq` — alles ungeprüft. Der Spike hat
   die Frage beantwortet, die gestellt war, und keine weitere.
 - Ein **Browser**, ein Gerät: Chrome 152 auf Windows 11. Safari und Android-Chrome sind
   nicht angefasst. Bei einer reinen WASM-Rechnung ohne Threads und ohne SIMD ist wenig
