@@ -33,6 +33,12 @@ Aufnahmeregeln aus §3.5 eingehalten werden.
 Lokaler **FastAPI**-Server + statisches Browser-Frontend. Rechenkern in Python
 (OpenCV / NumPy / SciPy), PDF-Erzeugung mit ReportLab.
 
+Die **Markererkennung** gibt es seit Stufe 2 zweimal: in Python als geprüft maßhaltige
+Referenz und in C++ unter `core/`, damit dieselbe Messtechnik später auf Android und im
+Browser rechnet (`docs/cpp-migration/`). Welche läuft, entscheidet `ARUCO_CORE` beim Import
+(`app/vision/backend.py`); die Aufrufer merken davon nichts, und es gibt **keine zweite
+Testsuite** — die vorhandene läuft gegen beide Kerne.
+
 ```
 Handy/Browser ──upload──▶ /api/upload   ──▶ Session (Temp-Verzeichnis, TTL 1 h)
               ──solve───▶ /api/solve    ──▶ Marker, Homographie, Kamerapose, Qualitätsbericht,
@@ -82,6 +88,13 @@ ArUco-Homographie/
 ├─ shared/                      # sprachneutral, geteilt mit C++ und JS (docs/cpp-migration/)
 │  ├─ constants.json            # die Produktkonstanten selbst (§8)
 │  └─ fixtures/                 # eingefrorene Prüfszenen samt Grundwahrheit
+├─ core/                        # der C++-Rechenkern (Stufe 2, docs/cpp-migration/)
+│  ├─ CMakeLists.txt            # ein Bau: das Python-Modul + der Prüfstand
+│  ├─ include/aruco/            # types.hpp (die Grenze) · detect.hpp · constants.hpp.in
+│  ├─ src/detect.cpp            # ArUco + Subpixel, Übersetzung von app/vision/detect.py
+│  ├─ bindings/python.cpp       # pybind11 → Modul `aruco_core`, ohne Kopie des Bildes
+│  ├─ tests/conformance.cpp     # gegen shared/fixtures/, dieselben Toleranzen
+│  └─ tools/                    # gen_constants.py · make_fixture_pack.py (beides erzeugend)
 ├─ app/
 │  ├─ __init__.py
 │  ├─ main.py                   # FastAPI-App, Routen, Static-Mount, Startbanner (LAN-URL + QR)
@@ -94,6 +107,7 @@ ArUco-Homographie/
 │  ├─ session.py                # Upload-/Ergebnis-Store im Temp-Verzeichnis, TTL-Aufräumung
 │  ├─ vision/
 │  │  ├─ __init__.py
+│  │  ├─ backend.py             # welcher Rechenkern misst: Python oder C++ (ARUCO_CORE)
 │  │  ├─ geometry.py            # projektive Grundrechenarten, von mehreren Modulen geteilt
 │  │  ├─ detect.py              # EXIF-Rotation, HEIC, CLAHE, ArUco + Subpixel-Refinement
 │  │  ├─ solve.py               # Homographie: Blatt-Modus + Frei-Modus, Residuen, Hülle
@@ -123,6 +137,7 @@ ArUco-Homographie/
    ├─ test_extent.py · test_rectify.py · test_enhance.py
    ├─ test_layout.py · test_markersheet.py · test_pdf_size.py · test_branding.py
    ├─ test_api.py · test_adjust_api.py · test_i18n.py
+   ├─ test_conformance.py · test_shared_constants.py · test_backend.py
    ├─ test_startup.py
    └─ test_window.py
 ```
@@ -1086,11 +1101,13 @@ verschiebt Kanten daher nicht.
 | `test_api` | Ende-zu-Ende über HTTP: Upload → Solve → Export; Kopfzeilen gegen die berechnete Geometrie; Vorgabe ist die Kachelung auf A4; der Ausdruck folgt der mitgeschickten Sprache; Fehlerpfade (`not_solved`, `session_expired`) | exakt |
 | `test_adjust_api` | die Regler über die Leitung: Pydantic-Modell spiegelt die Dataclass **Feld für Feld und Vorgabe für Vorgabe**; jeder Farbton aus `config` wird angenommen, ein fremder abgelehnt; Negativ schlägt bis in die Bildpunkte durch; **ein Export mit Aufbereitung hat dieselbe Seitengröße, dasselbe Bildrechteck und dieselbe Seitenzahl wie einer ohne** | Geometrie identisch, Inhalt verschieden |
 | `test_i18n` | beide Kataloge tragen dieselben Schlüssel und je Schlüssel dieselben Platzhalter; jeder im Quelltext benutzte Fehler- und Warncode hat einen Eintrag; `negotiate`/`normalise` über neun bzw. vier Fälle; Rückfall Englisch → Deutsch → Schlüssel; Umlaute wirklich im Katalog | exakt |
+| `test_backend` | der Umschalter zwischen den Kernen und der **Quervergleich** zwischen ihnen: beide finden auf den eingefrorenen Szenen dieselben Ecken, mit und ohne CLAHE; der Kontrastschalter bewegt in **beiden** Kernen die Ecken (ein still ignorierter Schalter sähe im Vergleich wie Einigkeit aus); der C++-Kern kennt die Konstanten aus `shared/constants.json`; ein Tippfehler in `ARUCO_CORE` wird abgewiesen statt still zu Python | Kerne ≤ 1e-3 px (gemessen 0,0 px — Ecke für Ecke bitgleich) |
 | `test_window` | die Wahl der Betriebsart aus der Kommandozeile: Vorgabe Fenster, `--browser`, `--no-browser`, beide zusammen, jeweils mit und ohne `--port`; und der Rückfall auf den Browser in **allen drei** Sorten von Fehlschlag — pywebview fehlt, die Anzeige-Maschine wäre MSHTML, das Aufbauen wirft. Das Fenster selbst zu öffnen ist hier nicht prüfbar; die Entscheidung davor ist es, und sie ist der Teil, der still falsch wird | exakt |
 
 
 Erst wenn diese Tests grün sind, gilt die Maßhaltigkeit als belegt.
-**Stand 2026-09-07: 153 Tests, alle grün** (`.\dev.ps1 run-tests`).
+**Stand 2026-09-08: 183 Tests, alle grün** — mit dem Python-Kern (`.\dev.ps1 run-tests`)
+und mit dem C++-Kern (`.\dev.ps1 run-tests-cpp`), **dieselbe Zahl in beiden Läufen**.
 
 ### 9.3 Manuelle Abschlussprobe
 
