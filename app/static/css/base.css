@@ -1,0 +1,154 @@
+/* ==========================================================================
+   base.css - Ruecksetzung, Grundschrift, Fokus, Bildlaufleisten.
+
+   Hier steht nur, was fuer JEDES Element gilt. Ein Bedienelement gehoert nach
+   components.css, eine Flaechenaufteilung nach layout.css, das Zuschnittbild
+   nach crop.css.
+
+   JEDER Farb-, Radius-, Schrift- und Zeitwert kommt aus tokens.css. Ein Hex-Wert
+   in dieser Datei waere eine zweite Stelle, an der die Oberflaeche entsteht.
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* Kein scroll-behavior: smooth. Diese Seite hat keine Sprungmarken, also gaebe
+   es nichts zu glaetten - es verzoegerte nur jedes Scrollen, das ein Skript
+   ausloest (etwa das Anfassen des Zuschnitt-Canvas). Eine Blende ohne Aussage
+   ist Dekoration. */
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+
+    background: var(--background);
+    color: var(--foreground);
+
+    font-family: var(--font-sans);
+    /* text-sm ist die Arbeitsgroesse dieses Hauses, nicht text-base:
+       docs/design/design-system.md 4.3 zaehlt in free 49x text-sm gegen 2x base. */
+    font-size: var(--text-sm);
+    font-weight: var(--weight-normal);
+    line-height: var(--leading-normal);
+    -webkit-text-size-adjust: 100%;
+}
+
+h1, h2, h3 {
+    margin: 0;
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-tight);
+}
+
+h1 { font-size: var(--text-lg); }
+h2 { font-size: var(--text-base); }
+
+p {
+    margin: 0;
+}
+
+img,
+svg {
+    max-width: 100%;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* --------------------------------------------------------------------------
+   Sichtbarkeit
+   --------------------------------------------------------------------------
+   Das native hidden-Attribut statt einer eigenen Klasse: AGENTS.md haelt fest,
+   dass `#id { display: flex }` eine Klasse `.hidden { display: none }` schlaegt.
+   Mit !important auf dem Attributselektor gibt es diesen Streit nicht mehr, und
+   im Skript heisst es schlicht `element.hidden = true`.
+   -------------------------------------------------------------------------- */
+[hidden] {
+    display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Themenabhaengige Zwillinge
+   --------------------------------------------------------------------------
+   Manches gibt es zweimal und nur eines darf zu sehen sein: das Logo in heller
+   und dunkler Tinte, Sonne und Mond im Themenknopf. Ein <img src> laesst sich in
+   CSS nicht umschalten, also stehen beide im Markup und CSS blendet aus.
+
+   Die drei Zustaende sind dieselben wie in tokens.css und muessen es auch sein:
+   hell auf blankem :root, dunkel per Systemvorgabe im @media-Block, die
+   ausdrueckliche Wahl dahinter - sonst koennte sie die Systemvorgabe nicht
+   schlagen.
+   -------------------------------------------------------------------------- */
+/* Das fuehrende :root ist kein Zierat, sondern Spezifitaet. Ohne es steht diese
+   Regel bei (0,1,0) und verliert gegen jede Regel, die einem Element eine
+   Anzeigeart gibt - `.brand-mark img { display: block }` in layout.css reicht
+   schon, und dann stehen BEIDE Logos nebeneinander: das falsche davon in der
+   Tinte des anderen Themas, also fast unsichtbar und entsprechend schwer zu
+   bemerken. Mit :root sind es (0,2,0), genau wie bei den Regeln darunter, die
+   wieder einblenden - und die stehen dahinter, gewinnen also den Gleichstand. */
+:root [data-theme-only="dark"] {
+    display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) [data-theme-only="light"] { display: none; }
+    :root:not([data-theme="light"]) [data-theme-only="dark"] { display: block; }
+}
+
+:root[data-theme="dark"] [data-theme-only="light"] { display: none; }
+:root[data-theme="dark"] [data-theme-only="dark"] { display: block; }
+
+/* --------------------------------------------------------------------------
+   Fokus - die eine Regel, die ueberall gleich ist
+   --------------------------------------------------------------------------
+   Ein 3px breiter Ring in --ring (Petrol) mit halber Deckkraft, dazu der Rahmen
+   in voller. Auf :focus-visible, nicht auf :focus: der Mausklick soll keinen Ring
+   hinterlassen, die Tabulatortaste schon.
+
+   Nicht verhandelbar - ein Werkzeug, das man mit der Tastatur nicht durchlaufen
+   kann, ist auf einem Werkstattrechner ohne Maus nicht bedienbar.
+   -------------------------------------------------------------------------- */
+:focus-visible {
+    outline: none;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px var(--ring-soft);
+}
+
+::selection {
+    background: var(--primary);
+    color: var(--action-foreground);
+}
+
+/* --------------------------------------------------------------------------
+   Bildlaufleisten - beide Schreibweisen, weil die eine Firefox bedient und die
+   andere den Rest. Der Greifer folgt dem Thema, statt mit festem Grau gemalt zu
+   werden. 1:1 aus free/src/main.css.
+   -------------------------------------------------------------------------- */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
+*::-webkit-scrollbar-thumb { background-color: var(--border); border-radius: var(--radius-lg); }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--foreground); }
+
+/* Nur fuer Screenreader: Text, der gelesen, aber nicht gezeigt wird. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}

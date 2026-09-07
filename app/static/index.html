@@ -1,146 +1,334 @@
 <!DOCTYPE html>
+<!--
+  Das lang-Attribut ist hier nur die BAUZEIT-Vorgabe. Die wirkliche Sprache haengt
+  von localStorage und navigator.language ab und steht erst fest, wenn js/i18n.js
+  gelaufen ist - das schreibt lang dann um. Bliebe hier ein falscher Wert stehen,
+  boete Chrome an, die bereits deutsche Oberflaeche aus dem Englischen ins Deutsche
+  zu uebersetzen, und Screenreader laesen deutschen Text mit englischer Stimme
+  (docs/design/design-system.md, 8.3).
+-->
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <!--
+    Der Titel steht hier auf Deutsch, weil das die Vorgabesprache ist und weil der
+    Browser den Tab beschriften muss, bevor ein Modul geladen ist. i18n.js setzt
+    document.title bei jedem Sprachwechsel neu; sichtbar wird dieser Wert nur im
+    Bruchteil davor.
+  -->
   <title>ArUco-Homographie</title>
+
   <!-- Das Original-Favicon aus snow-service-free, unveraendert uebernommen. -->
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/style.css">
+
+  <!-- Die Hausschrift kommt aus dem eigenen Verzeichnis; ohne preload laedt sie
+       erst, nachdem der Browser tokens.css geparst hat. -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="/brand/fonts/Montserrat-VariableFont_wght.woff2">
+
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/forms.css">
+  <link rel="stylesheet" href="/css/crop.css">
+
+  <!--
+    Der Themen-Vorspann. Er muss SYNCHRON und VOR dem ersten Zeichnen laufen, sonst
+    blitzt die Seite hell auf und kippt erst mit dem Modul ins Dunkle. Mehr als das
+    Attribut zu setzen ist nicht noetig: ohne gespeicherte Wahl macht der
+    @media-Block in tokens.css von allein das Richtige.
+  -->
+  <script>
+    try {
+      var stored = localStorage.getItem("aruco-theme");
+      if (stored === "dark" || stored === "light") {
+        document.documentElement.dataset.theme = stored;
+      }
+    } catch (error) {
+      /* Privater Modus verbietet localStorage - dann eben Systemvorgabe. */
+    }
+  </script>
 </head>
+
 <body>
-<header>
-  <a class="brandlink" href="https://bischof-snowboards.com" target="_blank" rel="noopener"
-     title="bischof-snowboards.com">
-    <img class="mark" src="/brand/logo-light.svg" alt="Bischof Snowboards">
+
+<header class="app-header">
+  <a class="brand-mark" href="https://bischof-snowboards.com" target="_blank" rel="noopener"
+     data-i18n-attr="title:ui.header.brand_link_title">
+    <!-- logo-dark.svg traegt die Tinte #334155 und gehoert auf hellen Grund,
+         logo-light.svg ist weiss und gehoert auf dunklen. Welches sichtbar ist,
+         entscheidet [data-theme-only] in base.css. -->
+    <img data-theme-only="light" src="/brand/logo-dark.svg" alt=""
+         data-i18n-attr="alt:ui.header.logo_alt">
+    <img data-theme-only="dark" src="/brand/logo-light.svg" alt=""
+         data-i18n-attr="alt:ui.header.logo_alt">
   </a>
-  <div class="titles">
-    <a class="brandlink brandline" href="https://bischof-snowboards.com" target="_blank" rel="noopener">
-      Bischof Snowboards
-    </a>
-    <h1>ArUco-Homographie</h1>
-    <p class="sub">Handyfoto entzerren und als masshaltiges PDF in Originalgroesse drucken.</p>
+
+  <div class="header-titles">
+    <a class="brand-line" href="https://bischof-snowboards.com" target="_blank" rel="noopener"
+       data-i18n="ui.header.brand"
+       data-i18n-attr="title:ui.header.brand_link_title"></a>
+    <h1 data-i18n="ui.header.title"></h1>
+    <p class="header-sub" data-i18n="ui.header.subtitle"></p>
   </div>
-  <a class="ghost" id="sheet-link" href="/api/markersheet" target="_blank" rel="noopener">Markerblatt drucken (A4)</a>
+
+  <div class="header-actions">
+    <!-- Ein Anker kann keinen Accept-Language-Kopf mitschicken, deshalb traegt das
+         Markerblatt die Sprache als ?locale= (main.js haelt sie nach). -->
+    <a class="btn btn-outline" id="sheet-link" href="/api/markersheet" target="_blank"
+       rel="noopener" data-i18n="ui.header.markersheet"></a>
+
+    <div class="lang-switch" role="group" data-i18n-attr="aria-label:ui.language.label">
+      <button type="button" class="lang-option" data-locale="de"
+              data-i18n-attr="title:ui.language.de,aria-label:ui.language.de">DE</button>
+      <button type="button" class="lang-option" data-locale="en"
+              data-i18n-attr="title:ui.language.en,aria-label:ui.language.en">EN</button>
+    </div>
+
+    <button type="button" class="btn-icon" id="theme-toggle">
+      <!-- Mond im hellen Thema ("auf dunkel schalten"), Sonne im dunklen. -->
+      <svg data-theme-only="light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>
+      </svg>
+      <svg data-theme-only="dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>
+      </svg>
+    </button>
+  </div>
 </header>
 
-<main>
-  <!-- 1 - Foto -->
-  <section id="step-upload">
-    <h2><span class="num">1</span> Foto</h2>
-    <input type="file" id="file" accept="image/*,.heic,.heif">
-    <p class="hint">
-      Tipp fuers Ergebnis: Tele (1x oder 2x), grosser Abstand, Objekt mittig. Weitwinkel
-      biegt die Raender und diese Verzeichnung wird nicht korrigiert.
-    </p>
-    <div id="upload-info" class="info hidden"></div>
+<main class="app-main">
+
+  <!-- 1 - Foto ------------------------------------------------------------- -->
+  <section class="step" id="step-upload">
+    <h2><span class="step-num" aria-hidden="true">1</span>
+      <span data-i18n="ui.steps.upload.title"></span></h2>
+
+    <!--
+      Ohne capture-Attribut: das Auswahlblatt des Handys bietet dann Kamera UND
+      Galerie an. Mit capture="environment" waere die Galerie gesperrt, und ein
+      schon geschossenes Foto liesse sich nicht mehr hochladen.
+    -->
+    <input class="file-input" type="file" id="file" accept="image/*,.heic,.heif">
+
+    <p class="hint" data-i18n="ui.steps.upload.hint"></p>
+    <div class="info" id="upload-info" role="status" hidden></div>
+    <div class="notice-slot" id="upload-error" role="alert"></div>
   </section>
 
-  <!-- 2 - Parameter -->
-  <section id="step-params" class="hidden">
-    <h2><span class="num">2</span> Massstab</h2>
-    <div class="grid">
-      <label>Markergroesse (mm)
-        <input type="number" id="marker-mm" value="67" step="0.1" min="1">
-        <small>Am Ausdruck gemessene Kantenlaenge inkl. schwarzem Rand.</small>
+  <!-- 2 - Massstab --------------------------------------------------------- -->
+  <section class="step" id="step-params" hidden>
+    <h2><span class="step-num" aria-hidden="true">2</span>
+      <span data-i18n="ui.steps.params.title"></span></h2>
+
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.params.marker_mm_label"></span>
+        <input type="number" id="marker-mm" value="67" step="0.1" min="1" inputmode="decimal">
+        <small class="field-hint" data-i18n="ui.steps.params.marker_mm_hint"></small>
       </label>
-      <label>Modus
+
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.params.mode_label"></span>
         <select id="mode">
-          <option value="sheet">Markerblatt (IDs 0-3, bekanntes Layout)</option>
-          <option value="free">Frei platzierte Marker</option>
+          <option value="sheet" data-i18n="ui.steps.params.mode_sheet"></option>
+          <option value="free" data-i18n="ui.steps.params.mode_free"></option>
         </select>
-        <small>Das Markerblatt ist genauer, weil die Abstaende bekannt sind.</small>
+        <small class="field-hint" data-i18n="ui.steps.params.mode_hint"></small>
       </label>
-      <label class="sheet-only">Mittelpunktabstand waagerecht (mm)
-        <input type="number" id="spacing-x" value="121" step="0.1" min="1">
-        <small>Abstand der beiden nebeneinanderliegenden Marker.</small>
+
+      <label class="field sheet-only">
+        <span class="field-label" data-i18n="ui.steps.params.spacing_x_label"></span>
+        <input type="number" id="spacing-x" value="121" step="0.1" min="1" inputmode="decimal">
+        <small class="field-hint" data-i18n="ui.steps.params.spacing_x_hint"></small>
       </label>
-      <label class="sheet-only">Mittelpunktabstand senkrecht (mm)
-        <input type="number" id="spacing-y" value="171" step="0.1" min="1">
-        <small>Abstand der beiden untereinanderliegenden Marker.</small>
+
+      <label class="field sheet-only">
+        <span class="field-label" data-i18n="ui.steps.params.spacing_y_label"></span>
+        <input type="number" id="spacing-y" value="171" step="0.1" min="1" inputmode="decimal">
+        <small class="field-hint" data-i18n="ui.steps.params.spacing_y_hint"></small>
       </label>
-      <label>Objektdicke (mm)
-        <input type="number" id="thickness" value="0" step="0.5" min="0">
-        <small>0, wenn das Blatt auf der Objektoberflaeche liegt.</small>
+
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.params.thickness_label"></span>
+        <input type="number" id="thickness" value="0" step="0.5" min="0" inputmode="decimal">
+        <small class="field-hint" data-i18n="ui.steps.params.thickness_hint"></small>
       </label>
-      <label>Kameraabstand (mm, optional)
-        <input type="number" id="camera-height" placeholder="aus EXIF" step="10" min="1">
-        <small>Nur noetig, wenn EXIF keine Brennweite hat und die Dicke &gt; 0 ist.</small>
+
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.params.camera_height_label"></span>
+        <input type="number" id="camera-height" step="10" min="1" inputmode="decimal"
+               data-i18n-attr="placeholder:ui.steps.params.camera_height_placeholder">
+        <small class="field-hint" data-i18n="ui.steps.params.camera_height_hint"></small>
       </label>
     </div>
-    <button id="solve">Entzerren</button>
-  </section>
 
-  <!-- 3 - Bericht -->
-  <section id="step-report" class="hidden">
-    <h2><span class="num">3</span> Qualitaet</h2>
-    <div id="report" class="report"></div>
-    <div id="warnings"></div>
-  </section>
-
-  <!-- 4 - Zuschnitt -->
-  <section id="step-crop" class="hidden">
-    <h2><span class="num">4</span> Zuschnitt</h2>
-    <p class="hint">Rechteck im Bild aufziehen. Die gruene Flaeche ist die Marker-Huelle -
-      alles weit ausserhalb wird extrapoliert und damit unsicher.</p>
-    <div id="stage">
-      <img id="preview" alt="Entzerrte Vorschau">
-      <canvas id="overlay"></canvas>
+    <div class="step-actions">
+      <button type="button" class="btn btn-action" id="solve" data-i18n="ui.steps.params.solve"></button>
     </div>
-    <div class="grid four">
-      <label>x0 (mm)<input type="number" id="x0" step="1"></label>
-      <label>y0 (mm)<input type="number" id="y0" step="1"></label>
-      <label>x1 (mm)<input type="number" id="x1" step="1"></label>
-      <label>y1 (mm)<input type="number" id="y1" step="1"></label>
-    </div>
-    <div id="crop-info" class="info"></div>
+    <div class="notice-slot" id="params-error" role="alert"></div>
   </section>
 
-  <!-- 5 - Druck -->
-  <section id="step-export" class="hidden">
-    <h2><span class="num">5</span> Druck</h2>
-    <div class="grid">
-      <label>Aufloesung
+  <!-- 3 - Qualitaet -------------------------------------------------------- -->
+  <section class="step" id="step-report" hidden>
+    <h2><span class="step-num" aria-hidden="true">3</span>
+      <span data-i18n="ui.steps.report.title"></span></h2>
+    <div class="report-grid" id="report"></div>
+    <div class="notice-slot" id="warnings"></div>
+  </section>
+
+  <!-- 4 - Bildaufbereitung -------------------------------------------------
+       Steht bewusst UEBER dem Zuschnitt: die Regler veraendern genau das Bild,
+       das im Schritt darunter zugeschnitten wird, und beide sollen gleichzeitig
+       zu sehen sein. -->
+  <section class="step" id="step-adjust" hidden>
+    <h2><span class="step-num" aria-hidden="true">4</span>
+      <span data-i18n="ui.adjust.title"></span></h2>
+    <div class="adjust-grid" id="adjust-controls"></div>
+    <div class="step-actions">
+      <button type="button" class="btn btn-secondary" id="adjust-reset"
+              data-i18n="ui.adjust.reset_label"
+              data-i18n-attr="title:ui.adjust.reset_hint"></button>
+      <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
+    </div>
+    <div class="notice-slot" id="adjust-error" role="alert"></div>
+  </section>
+
+  <!-- 5 - Zuschnitt -------------------------------------------------------- -->
+  <section class="step" id="step-crop" hidden>
+    <h2><span class="step-num" aria-hidden="true">5</span>
+      <span data-i18n="ui.steps.crop.title"></span></h2>
+    <p class="hint" data-i18n="ui.steps.crop.hint"></p>
+
+    <div class="crop-stage" id="crop-stage">
+      <img class="crop-image" id="preview" alt="" data-i18n-attr="alt:ui.steps.crop.preview_alt">
+      <canvas class="crop-overlay" id="overlay" tabindex="0"
+              data-i18n-attr="aria-label:ui.steps.crop.hint"></canvas>
+    </div>
+
+    <div class="field-grid field-grid-tight">
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.crop.x0_label"></span>
+        <input type="number" id="x0" step="1" inputmode="decimal">
+      </label>
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.crop.y0_label"></span>
+        <input type="number" id="y0" step="1" inputmode="decimal">
+      </label>
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.crop.x1_label"></span>
+        <input type="number" id="x1" step="1" inputmode="decimal">
+      </label>
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.crop.y1_label"></span>
+        <input type="number" id="y1" step="1" inputmode="decimal">
+      </label>
+    </div>
+
+    <div class="info" id="crop-info" role="status"></div>
+  </section>
+
+  <!-- 6 - Druck ------------------------------------------------------------ -->
+  <section class="step" id="step-export" hidden>
+    <h2><span class="step-num" aria-hidden="true">6</span>
+      <span data-i18n="ui.steps.export.title"></span></h2>
+
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.export.dpi_label"></span>
         <select id="dpi"></select>
       </label>
-      <label>Layout
+
+      <label class="field">
+        <span class="field-label" data-i18n="ui.steps.export.layout_label"></span>
+        <!--
+          Vorgabe ist die Kachelung, nicht die Einzelseite: eine Schablone in
+          Originalgroesse passt auf kein Blatt, das hier jemand im Drucker hat.
+          Dieselbe Vorgabe steht in app/schemas.py - die Oberflaeche schickt sie
+          ausdruecklich mit, statt sich auf die Serverseite zu verlassen.
+        -->
         <select id="layout">
-          <option value="single">Eine Seite in Objektgroesse</option>
-          <option value="tiles">Kachelung auf Normalformat</option>
+          <option value="tiles" selected data-i18n="ui.steps.export.layout_tiles"></option>
+          <option value="single" data-i18n="ui.steps.export.layout_single"></option>
         </select>
       </label>
-      <label>Papierformat (Kachelung)
-        <select id="page-format"><option value="A4">A4</option><option value="A3">A3</option></select>
+
+      <label class="field tiles-only">
+        <span class="field-label" data-i18n="ui.steps.export.page_format_label"></span>
+        <select id="page-format">
+          <option value="A4" selected>A4</option>
+          <option value="A3">A3</option>
+        </select>
       </label>
-      <label>Ueberlappung (mm)
-        <input type="number" id="overlap" value="10" step="1" min="0">
+
+      <label class="field tiles-only">
+        <span class="field-label" data-i18n="ui.steps.export.overlap_label"></span>
+        <input type="number" id="overlap" value="10" step="1" min="0" inputmode="decimal">
       </label>
     </div>
-    <fieldset>
-      <legend>Aufdrucke</legend>
-      <label class="check"><input type="checkbox" id="ov-scalebar" checked> 100-mm-Kontrollmassstab</label>
-      <label class="check"><input type="checkbox" id="ov-footer" checked> Metadaten-Fusszeile</label>
-      <label class="check"><input type="checkbox" id="ov-grid" checked> 50-mm-Raster</label>
-      <label class="check"><input type="checkbox" id="ov-marks" checked> Schnitt-/Klebemarken</label>
-      <label class="check"><input type="checkbox" id="ov-overview" checked> Klebeplan als erstes Blatt</label>
-      <label class="check"><input type="checkbox" id="ov-contour"> Umriss als Schnittlinie</label>
+
+    <fieldset class="overlay-set">
+      <legend data-i18n="ui.steps.export.overlays_legend"></legend>
+      <label class="check">
+        <input type="checkbox" id="ov-scalebar" checked>
+        <span data-i18n="ui.steps.export.overlay_scalebar"></span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="ov-footer" checked>
+        <span data-i18n="ui.steps.export.overlay_footer"></span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="ov-grid" checked>
+        <span data-i18n="ui.steps.export.overlay_grid"></span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="ov-marks" checked>
+        <span data-i18n="ui.steps.export.overlay_marks"></span>
+      </label>
+      <label class="check tiles-only">
+        <input type="checkbox" id="ov-overview" checked>
+        <span data-i18n="ui.steps.export.overlay_overview"></span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="ov-contour">
+        <span data-i18n="ui.steps.export.overlay_contour"></span>
+      </label>
     </fieldset>
-    <button id="export">PDF erzeugen</button>
-    <div id="export-info" class="info"></div>
+
+    <div class="step-actions">
+      <button type="button" class="btn btn-action" id="export" data-i18n="ui.steps.export.submit"></button>
+    </div>
+    <div class="info" id="export-info" role="status"></div>
+    <div class="notice-slot" id="export-error" role="alert"></div>
   </section>
+
 </main>
 
-<footer class="brand">
-  <a class="brandlink" href="https://bischof-snowboards.com" target="_blank" rel="noopener">
-    <img src="/brand/logo-light.svg" alt="Bischof Snowboards">
-    <span>Made with Bischof Snowboards Software</span>
+<footer class="app-footer">
+  <a class="brand-mark brand-mark-small" href="https://bischof-snowboards.com" target="_blank"
+     rel="noopener" data-i18n-attr="title:ui.header.brand_link_title">
+    <img data-theme-only="light" src="/brand/logo-dark.svg" alt=""
+         data-i18n-attr="alt:ui.footer.logo_alt">
+    <img data-theme-only="dark" src="/brand/logo-light.svg" alt=""
+         data-i18n-attr="alt:ui.footer.logo_alt">
+    <span data-i18n="ui.footer.claim"></span>
   </a>
 </footer>
 
-<div id="busy" class="hidden"><div class="spinner"></div><span id="busy-text">Rechne…</span></div>
-<script src="/app.js"></script>
+<div class="busy" id="busy" hidden>
+  <div class="spinner" aria-hidden="true"></div>
+  <span id="busy-text" role="status"></span>
+</div>
+
+<script type="module" src="/js/main.js"></script>
 </body>
 </html>

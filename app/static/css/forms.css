@@ -1,0 +1,231 @@
+/* ==========================================================================
+   forms.css - alles, in das der Benutzer einen WERT eingibt: Feld, Auswahl,
+   Ankreuzfeld, Schieberegler, Dateiwahl.
+
+   Getrennt von components.css, weil das sonst eine Schublade waere: dort stehen
+   Knoepfe und Rueckmeldungen, hier die Eingabe. Die Masse stammen aus
+   free/src/components/shadcn/ui/input und /select (design-system.md 6.2, 6.3):
+   2.25rem hoch, Radius --radius-md, Innenabstand 0.75rem, gefuellte Flaeche.
+   ========================================================================== */
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+}
+
+.field-label {
+    color: var(--foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+}
+
+.field-hint {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
+}
+
+input[type="number"],
+input[type="text"],
+select {
+    width: 100%;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.75rem;
+    /* --input traegt hier Rahmen UND Fuellung: die Felder dieser Oberflaeche
+       sind gefuellt (design-system.md 6.2). */
+    background: var(--input);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+    font: inherit;
+    transition: border-color var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+}
+
+select {
+    cursor: pointer;
+}
+
+input::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.7;
+}
+
+input:disabled,
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Die Datei-Auswahl ist die erste Handlung der Seite und darf danach aussehen:
+   eine gestrichelte Ablage statt eines schmalen Knopfes. */
+.file-input {
+    width: 100%;
+    padding: 1rem;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+    font: inherit;
+    cursor: pointer;
+}
+
+.file-input:hover { border-color: var(--ring); }
+
+.file-input::file-selector-button {
+    margin-right: 0.75rem;
+    min-height: 2.25rem;
+    padding: 0.5rem 1rem;
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font: inherit;
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Ankreuzfeld
+   --------------------------------------------------------------------------
+   Das Kaestchen selbst bleibt klein; angetippt wird das <label>, das es
+   umschliesst - deshalb traegt DAS die Mindesthoehe fuer den Finger und nicht
+   die Eingabe.
+   -------------------------------------------------------------------------- */
+.check {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-height: 2.25rem;
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    cursor: pointer;
+}
+
+input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin: 0;
+    /* accent-color faerbt das eingebaute Element - der einzige Weg, der ohne
+       Nachbau des Haekchens auskommt und der Tastaturbedienung nichts nimmt. */
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+.overlay-set {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0 1rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.overlay-set legend {
+    padding: 0 0.375rem;
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+}
+
+/* --------------------------------------------------------------------------
+   Schieberegler
+   --------------------------------------------------------------------------
+   Die Spur ist duenn, der Griff gross, und das GANZE Element ist so hoch wie
+   --touch-target: der Finger trifft damit ueberall, nicht nur auf der 6px hohen
+   Spur. Beide Praefixe sind noetig - WebKit und Firefox teilen sich keinen
+   Selektor fuer Spur und Griff.
+   -------------------------------------------------------------------------- */
+.slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: var(--touch-target);
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+    height: 0.375rem;
+    border-radius: var(--radius-full);
+    background: var(--input);
+    border: 1px solid var(--border);
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1.25rem;
+    height: 1.25rem;
+    /* Griffmitte auf die Spurmitte: (Spur 6px + 2x Rahmen 1px) / 2 - Griff/2. */
+    margin-top: -0.4375rem;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+    border: 2px solid var(--card);
+    box-shadow: var(--shadow-xs);
+}
+
+.slider::-moz-range-track {
+    height: 0.375rem;
+    border-radius: var(--radius-full);
+    background: var(--input);
+    border: 1px solid var(--border);
+}
+
+.slider::-moz-range-thumb {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+    border: 2px solid var(--card);
+    box-shadow: var(--shadow-xs);
+}
+
+.slider-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* Der Zahlenwert steht in Ziffern - er ist in jeder Sprache derselbe, wird aber
+   nach der Sprache formatiert (Komma oder Punkt, siehe js/i18n.js). */
+.slider-value {
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.adjust-control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+/* 44px, sobald das Zeigegeraet grob ist ODER der Bildschirm schmal. Begruendung
+   und die zweite Haelfte dieser Regel stehen in components.css. */
+@media (max-width: 768px), (pointer: coarse) {
+    .check,
+    input[type="number"],
+    input[type="text"],
+    select {
+        min-height: var(--touch-target);
+    }
+
+    input[type="checkbox"] {
+        width: 1.375rem;
+        height: 1.375rem;
+    }
+
+    .file-input::file-selector-button {
+        min-height: var(--touch-target);
+    }
+}

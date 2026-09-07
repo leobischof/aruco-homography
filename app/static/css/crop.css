@@ -1,0 +1,69 @@
+/* ==========================================================================
+   crop.css - die Buehne, auf der das entzerrte Bild liegt und das
+   Zuschnitt-Rechteck gezogen wird.
+
+   Gezeichnet wird das Rechteck in js/crop-rect.js auf einem <canvas>. Ein
+   Canvas loest var() nicht auf, also holt sich das Skript die Farben per
+   getComputedStyle aus tokens.css. Hier steht nur, WO die Flaeche liegt und wie
+   sie sich anfuehlt - Groesse, Zeiger, Fokus, Beruehrung.
+   ========================================================================== */
+
+.crop-stage {
+    position: relative;
+    /* inline-block, damit die Buehne genau so breit ist wie das Bild darin und
+       das Canvas darueber deckungsgleich sitzt. */
+    display: inline-block;
+    max-width: 100%;
+    line-height: 0;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--muted);
+}
+
+.crop-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    /* Das Bild ist Untergrund, kein Bedienelement: ein versehentliches Ziehen
+       soll das Rechteck bewegen, nicht das Bild aus der Seite reissen. */
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
+.crop-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    /* Ohne touch-action: none scrollt das Handy die Seite, sobald man das
+       Rechteck ziehen will - der Browser deutet die Geste, bevor das Skript sie
+       sieht. Pointer Events allein reichen dafuer nicht. */
+    touch-action: none;
+    /* Ein langer Druck darf kein Auswahl- oder Kontextmenue oeffnen. */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Der Fokusring gehoert nach innen: aussen liegt er unter dem Rand der Buehne,
+   die ja overflow: hidden traegt, und waere unsichtbar. */
+.crop-overlay:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 3px var(--ring-soft), inset 0 0 0 1px var(--ring);
+}
+
+/* Ein hilfreicher Nebeneffekt der Buehne: auf schmalen Geraeten bleibt das Bild
+   hoch genug, um das Rechteck ueberhaupt greifen zu koennen. Bei 360px Breite
+   waere ein 3:2-Foto sonst nur 240px hoch, und acht Griffe mit je 44px
+   Trefferflaeche laegen fast alle uebereinander. */
+@media (max-width: 768px) {
+    .crop-stage {
+        width: 100%;
+        border-radius: var(--radius-md);
+    }
+
+    .crop-image {
+        width: 100%;
+    }
+}

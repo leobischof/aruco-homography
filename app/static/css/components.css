@@ -1,0 +1,301 @@
+/* ==========================================================================
+   components.css - Knopf, Sprachumschalter, Berichtskarte, Hinweis, Warten.
+
+   Was der Benutzer DRUECKT und was ihm ANTWORTET. Alles, in das er einen Wert
+   eingibt, steht in forms.css; Flaechenaufteilung in layout.css.
+
+   Die Masse stammen aus free/src/components/shadcn/ui/* (design-system.md 6):
+   Knopf 2.25rem hoch, Radius --radius-md, Innenabstand 0.75-1rem, Text
+   --text-sm, Gewicht 500. Die Tailwind-Klassennamen tragen hier nichts; die
+   Zahlen dahinter schon.
+
+   Zwei Regeln, die diese Datei durchziehen:
+
+   1. Hover ist DIESELBE Farbe, nur anders hell - nie eine zweite Farbe. Bei den
+      Markenfarben, die in beiden Themen gleich sind, leistet das ein
+      brightness()-Filter; bei den themenabhaengigen Flaechen waere ein Filter in
+      einem der beiden Themen verkehrt herum, deshalb wechseln die auf eine
+      andere ROLLE (Rahmen und Tinte nach --primary).
+   2. Deaktiviert ist immer opacity .5 plus pointer-events: none - nie eine graue
+      Sonderfarbe.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Knopf
+   -------------------------------------------------------------------------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-tight);
+    text-align: center;
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out),
+                filter var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Die EINE Handlung der Ansicht. Es gibt pro Schritt genau einen davon -
+   zwei Bernsteinknoepfe nebeneinander heben sich gegenseitig auf. */
+.btn-action {
+    background: var(--action);
+    color: var(--action-foreground);
+    box-shadow: var(--shadow-xs);
+}
+
+.btn-action:hover { filter: brightness(0.94); }
+.btn-action:active { filter: brightness(0.88); }
+
+.btn-secondary {
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    border-color: var(--border);
+}
+
+.btn-secondary:hover {
+    border-color: var(--ring);
+    color: var(--primary);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--foreground);
+    border-color: var(--border);
+}
+
+.btn-outline:hover {
+    border-color: var(--ring);
+    color: var(--primary);
+}
+
+/* Symbolknopf: quadratisch und rund, wie free's size="icon". */
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--foreground);
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out),
+                background-color var(--duration-fast) var(--ease-out);
+}
+
+.btn-icon:hover {
+    background: var(--accent);
+    border-color: var(--ring);
+    color: var(--primary);
+}
+
+.btn-icon svg {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+/* --------------------------------------------------------------------------
+   Sprachumschalter
+   --------------------------------------------------------------------------
+   Zwei Segmente statt eines Umschalters: bei einem einzigen Knopf mit der
+   Aufschrift "DE" weiss niemand, ob das der Zustand oder das Ziel ist. Die
+   aktive Sprache wird mit --accent markiert - dieselbe Farbe, mit der free's
+   LocaleSwitch.vue die aktuelle Sprache im Menue markiert.
+   -------------------------------------------------------------------------- */
+.lang-switch {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.lang-option {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0 0.625rem;
+    border: 0;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-wide);
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out);
+}
+
+.lang-option:hover { background: var(--accent); color: var(--foreground); }
+
+.lang-option[aria-pressed="true"] {
+    background: var(--accent);
+    color: var(--primary);
+    font-weight: var(--weight-semibold);
+}
+
+/* --------------------------------------------------------------------------
+   Qualitaetsbericht
+   -------------------------------------------------------------------------- */
+.report-card {
+    padding: 0.75rem 0.875rem;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.report-key {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+}
+
+.report-value {
+    margin-top: 0.25rem;
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    /* Ein langer Kantenwert soll umbrechen statt die Karte zu sprengen. */
+    overflow-wrap: anywhere;
+}
+
+.report-card.good .report-value { color: var(--tone-good); }
+.report-card.warn .report-value { color: var(--tone-warn); }
+.report-card.bad .report-value { color: var(--tone-bad); }
+
+/* --------------------------------------------------------------------------
+   Hinweise, Warnungen, Fehler
+   -------------------------------------------------------------------------- */
+.notice-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* Muss HINTER der Regel darueber stehen: gleiche Spezifitaet, also entscheidet
+   die Reihenfolge. Ein leerer Behaelter darf keine Luecke im Abstandsraster des
+   Abschnitts hinterlassen. */
+.notice-slot:empty {
+    display: none;
+}
+
+.notice {
+    padding: 0.625rem 0.875rem;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    /* Der farbige Streifen sitzt links, weil der Blick dort anfaengt und weil
+       eine ganze Flaeche in Warnfarbe die Karte dominieren wuerde. */
+    border-left: 3px solid var(--tone-warn);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+}
+
+.notice-info { border-left-color: var(--primary); }
+.notice-error { border-left-color: var(--tone-bad); color: var(--tone-bad); }
+
+.hint {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+}
+
+.info {
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+}
+
+.info b,
+.info strong {
+    color: var(--foreground);
+    font-weight: var(--weight-semibold);
+}
+
+.info .over-limit { color: var(--tone-bad); }
+.info .warn { color: var(--tone-warn); }
+
+/* --------------------------------------------------------------------------
+   Warten
+   -------------------------------------------------------------------------- */
+.busy {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.875rem;
+    /* Der Schleier ist der eigene Seitengrund mit hoher Deckkraft: man sieht
+       noch, wo man war, versucht aber nicht hineinzuklicken. */
+    background: var(--scrim);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+}
+
+.spinner,
+.inline-busy {
+    border-radius: var(--radius-full);
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    animation: spin 0.8s linear infinite;
+}
+
+.spinner { width: 1.625rem; height: 1.625rem; }
+
+.inline-busy {
+    width: 1.125rem;
+    height: 1.125rem;
+    border-width: 2px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Ohne Bewegung: der Ring steht still und markiert den Zustand als Ring, nicht
+   als Drehung. Weglassen waere falsch - der Zustand bliebe unsichtbar. */
+@media (prefers-reduced-motion: reduce) {
+    .spinner,
+    .inline-busy { animation: none; }
+}
+
+/* --------------------------------------------------------------------------
+   Beruehrung
+   --------------------------------------------------------------------------
+   44px ist Apples Untergrenze und die kleinste Groesse, die mit
+   Arbeitshandschuhen zuverlaessig trifft (--touch-target). Sie gilt, sobald das
+   Zeigegeraet grob ist ODER der Bildschirm schmal - nicht auf dem
+   Werkstattrechner mit Maus, wo die Hausmasse (2.25rem) gelten. Die Eingabe-
+   elemente bekommen dieselbe Regel in forms.css.
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px), (pointer: coarse) {
+    .btn,
+    .lang-option {
+        min-height: var(--touch-target);
+    }
+
+    .btn-icon {
+        width: var(--touch-target);
+        height: var(--touch-target);
+    }
+
+    .lang-option {
+        min-width: var(--touch-target);
+    }
+}
