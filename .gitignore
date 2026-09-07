@@ -1,8 +1,67 @@
-venv/
+# Was hier steht, gehoert nicht in die Versionsverwaltung.
+#
+# Zwei Regeln, an die man sich beim Erweitern halten sollte:
+#
+# 1. Muster, die nur den Projektstamm meinen, mit / anfangen. `out/` faengt auch
+#    ein `app/out/` mit ein, `/out/` nicht.
+# 2. Nie nach Dateiendung allein aussperren. In app/static/ liegen echte
+#    Bildbestandteile (Favicons, Logos) - ein pauschales *.png haette sie
+#    stillschweigend aus dem Repo geworfen.
+
+# --- Python -------------------------------------------------------------------
 __pycache__/
-*.pyc
-out/
+*.py[cod]
+*$py.class
+/build/
+/dist/
+*.egg-info/
+
+# --- Umgebung und Werkzeug-Caches ---------------------------------------------
+venv/
+.venv/
 .pytest_cache/
-*.log
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+.env.*
+
+# --- Erzeugnisse des Projekts -------------------------------------------------
+# dev.ps1 build-markersheet und alles andere Gebaute landet hier.
+/out/
+
+# --- Artefakte von Testlaeufen und Agenten ------------------------------------
+# Der Playwright-MCP legt Seitenabzuege und YAML-Baeume neben dem Projekt ab.
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# Bildschirmfotos aus Oberflaechenpruefungen. Bewusst NUR im Stamm verankert:
+# app/static/favicon-32x32.png und die Logos sollen selbstverstaendlich bleiben.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.gif
+# Ein PDF im Stamm ist immer ein Streuner - Gebautes gehoert nach /out/.
+/*.pdf
+
+# --- Editor -------------------------------------------------------------------
+# .vscode/tasks.json IST versioniert: die Tasks rufen dev.ps1 und gehoeren zum
+# Projekt. Deshalb der Ordnerinhalt raus und diese eine Datei ausdruecklich rein.
+.vscode/*
+!.vscode/tasks.json
+.idea/
+*.swp
+*~
+
+# --- Betriebssystem und Streuner ----------------------------------------------
 Thumbs.db
+Desktop.ini
 .DS_Store
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
