@@ -68,3 +68,6 @@ Desktop.ini
 *.bak
 *.orig
 *.rej
+
+# --- Spike Stufe 0: rohe Graustufen, 16 MB, aus spike/make_scene.py herstellbar ----
+spike/*.raw
