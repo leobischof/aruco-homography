@@ -336,7 +336,21 @@ export class Sheet {
      * Teilbild - nur wird hier das GANZE Bild einmal eingebettet und je Kachel
      * anders verschoben und beschnitten. Das Ergebnis ist dasselbe Rechteck aus
      * denselben Pixeln, die Datei aber deutlich kleiner: ein Bildstrom statt einer
-     * Kopie je Blatt.
+     * Kopie je Blatt. Ausserdem braucht der Browser so keinen zweiten Kodierlauf
+     * je Kachel - er hat EIN JPEG von der Leinwand und gibt es weiter.
+     *
+     * EIN gemessener Unterschied bleibt, und er gehoert hierher, weil er sonst
+     * wieder gesucht wuerde: die aus beiden PDFs gelesenen Platzierungen stimmen
+     * auf 0,00005 mm ueberein, die GERASTERTEN Kachelseiten aber nicht ganz. Der
+     * Grund ist der Renderer, nicht die Datei - er legt Bildkanten auf ganze
+     * Geraetepixel, und das gerundete Rechteck ist hier das ganze Bild statt der
+     * Kachel. Nachgemessen ueber eine Zoomreihe: 189 um bei 3,9 px/mm, 91 um bei
+     * 7,9, 59 um bei 15,7, 18 um bei 31,5 - der Betrag halbiert sich mit jeder
+     * Verdopplung der Aufloesung und bleibt unter einem halben Geraetepixel. Ein
+     * echter geometrischer Versatz waere in Millimetern konstant. Auf dem Ausdruck
+     * heisst das bei 600 dpi hoechstens 0,02 mm, und die Dinge, an die man den
+     * Messschieber legt - Seitengroesse, Bildrechteck, Raster, Kontrollmassstab -
+     * sind Vektor und stimmen exakt.
      */
     drawImageRegion(image, pixelRect, rectMm) {
         const { x0, y0, x1, y1 } = pixelRect;

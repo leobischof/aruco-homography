@@ -1,5 +1,5 @@
 /**
- * build.js - PDF bauen: Einzelseite in Originalgroesse.
+ * build.js - PDF bauen: Einzelseite in Originalgroesse oder Kachelung mit Klebeplan.
  *
  * Die eine Zusage, die dieses Modul einhalten muss (AGENTS.md, Invariante 1): das
  * entzerrte Bild belegt auf der Seite exakt so viele Millimeter, wie der Zuschnitt
@@ -14,10 +14,11 @@
  * unter Node der Pruefstand, auf Android die Huelle.
  */
 
+import * as branding from "./branding.js";
 import * as constants from "./constants.js";
-import { Document } from "./draw.js";
+import { Document, HELVETICA, HELVETICA_BOLD } from "./draw.js";
 import { translate } from "./i18n.js";
-import { singlePage, stripHeight } from "./layout.js";
+import { Rect, singlePage, stripHeight, tileLayout } from "./layout.js";
 import * as overlays from "./overlays.js";
 
 /**
@@ -54,6 +55,9 @@ export function exportOptions(overrides = {}) {
 
 /** Einstiegspunkt: baut je nach Option eine Seite oder eine Kachelung. */
 export async function buildPdf(jpegBytes, cropWMm, cropHMm, options, footerLines, contourMm = null) {
+    if (options.layout === "tiles") {
+        return buildTiles(jpegBytes, cropWMm, cropHMm, options, footerLines, contourMm);
+    }
     return buildSingle(jpegBytes, cropWMm, cropHMm, options, footerLines, contourMm);
 }
 
@@ -82,6 +86,162 @@ async function buildSingle(jpegBytes, cropW, cropH, options, footerLines, contou
         pageCount: 1,
         meta: {},
     };
+}
+
+async function buildTiles(jpegBytes, cropW, cropH, options, footerLines, contourMm) {
+    const stripH = stripHeight();
+    const plan = tileLayout(
+        cropW,
+        cropH,
+        options.pageFormat,
+        options.orientation,
+        options.printerMarginMm,
+        options.overlapMm,
+        stripH,
+    );
+
+    const document = await newDocument(options.title);
+    const image = await document.embedJpeg(jpegBytes);
+    let pages = 0;
+
+    if (options.tileOverview) {
+        drawOverview(document, plan, cropW, cropH, footerLines, options.locale);
+        pages += 1;
+    }
+
+    const pxPerMm = image.width / cropW;
+    for (const tile of plan.tiles) {
+        const sheet = document.addSheet(plan.sheetW, plan.sheetH);
+        const pixelRect = cropPixels(image, tile.cropX, tile.cropY, tile.srcW, tile.srcH, pxPerMm);
+        placeImage(sheet, image, pixelRect, tile.placement);
+        decorate(sheet, tile.placement, [tile.cropX, tile.cropY], options, contourMm);
+
+        if (options.showMarks) {
+            overlays.drawTileMarks(
+                sheet,
+                tile.placement,
+                plan.overlapMm,
+                tile.col < plan.nCols - 1,
+                tile.row < plan.nRows - 1,
+            );
+        }
+        overlays.drawStrip(sheet, plan.strip, options.showScalebar, options.showFooter ? footerLines : [], {
+            tileLabel: tileLabel(tile.index, plan.pageCount, tile.col, tile.row, options.locale),
+            locale: options.locale,
+        });
+
+        pages += 1;
+    }
+
+    const first = plan.tiles[0].placement;
+    return {
+        data: await document.save(),
+        pageSizeMm: [plan.sheetW, plan.sheetH],
+        imageRectMm: first.asTuple(),
+        pageCount: pages,
+        meta: { n_cols: plan.nCols, n_rows: plan.nRows, tiles: plan.pageCount },
+    };
+}
+
+/** Blattnummer und Rasterplatz - zwei Bausteine, damit beide Sprachen frei sind. */
+function tileLabel(index, count, col, row, locale) {
+    const sheet = translate("pdf.tiles.sheet", locale, { index, count });
+    const position = translate("pdf.tiles.position", locale, { col: col + 1, row: row + 1 });
+    return `${sheet} - ${position}`;
+}
+
+/**
+ * Pixelausschnitt fuer eine Kachel. Das mm-Rechteck bleibt massgeblich.
+ *
+ * Auf ganze Pixel gerundet wird hier genauso wie in der Vorlage - nicht, weil es
+ * genauer waere (exakt platzieren koennte man auch), sondern weil es DASSELBE sein
+ * soll. Ein Ausschnitt, der eine halbe Pixelbreite anders sitzt, ist ein
+ * Unterschied zur geprueften Referenz, und Unterschiede zur geprueften Referenz
+ * gehoeren begruendet, nicht eingeschmuggelt.
+ */
+function cropPixels(image, cropX, cropY, widthMm, heightMm, pxPerMm) {
+    const x0 = roundHalfToEven(cropX * pxPerMm);
+    const y0 = roundHalfToEven(cropY * pxPerMm);
+    return {
+        x0,
+        y0,
+        x1: Math.min(image.width, x0 + Math.max(1, roundHalfToEven(widthMm * pxPerMm))),
+        y1: Math.min(image.height, y0 + Math.max(1, roundHalfToEven(heightMm * pxPerMm))),
+    };
+}
+
+/**
+ * Runden wie Pythons `round()`: die Haelfte geht zur GERADEN Zahl.
+ *
+ * `Math.round` rundet die Haelfte immer nach oben. Bei 300 dpi trennt eine
+ * Pixelbreite 0,085 mm - achtmal die Toleranz, die dieses Projekt einhaelt. Der
+ * Fall tritt selten ein, und genau deshalb faende ihn niemand.
+ */
+function roundHalfToEven(value) {
+    const floor = Math.floor(value);
+    const rest = value - floor;
+    if (rest > 0.5) return floor + 1;
+    if (rest < 0.5) return floor;
+    return floor % 2 === 0 ? floor : floor + 1;
+}
+
+/** Uebersichtsblatt: welches Blatt gehoert wohin. */
+function drawOverview(document, plan, cropW, cropH, footerLines, locale = constants.DEFAULT_LOCALE) {
+    const sheet = document.addSheet(plan.sheetW, plan.sheetH);
+    const ink = branding.ink(constants.BRAND_INK);
+    const title = translate("pdf.assembly.title", locale);
+    sheet.setFillColor(ink);
+    sheet.setFont(HELVETICA_BOLD, 14);
+    sheet.drawString(plan.printerMarginMm, plan.sheetH - 20.0, title);
+
+    sheet.setFont(HELVETICA, 9);
+    sheet.drawString(
+        plan.printerMarginMm,
+        plan.sheetH - 28.0,
+        translate("pdf.assembly.summary", locale, {
+            width: cropW.toFixed(1),
+            height: cropH.toFixed(1),
+            pages: plan.pageCount,
+            cols: plan.nCols,
+            rows: plan.nRows,
+            overlap: plan.overlapMm.toFixed(0),
+        }),
+    );
+
+    // Raster massstabsgetreu in den verbleibenden Platz einpassen. Unten bleibt der
+    // Streifen frei, damit Marke und Metadaten auch hier stehen koennen.
+    const strip = new Rect(
+        plan.printerMarginMm,
+        plan.printerMarginMm,
+        plan.sheetW - 2.0 * plan.printerMarginMm,
+        constants.STRIP_H_MM,
+    );
+    const areaW = plan.sheetW - 2.0 * plan.printerMarginMm;
+    const areaH = plan.sheetH - 40.0 - (strip.y + strip.height + 8.0);
+    const scale = Math.min(areaW / Math.max(cropW, 1e-6), areaH / Math.max(cropH, 1e-6));
+    const originX = plan.printerMarginMm;
+    const originY = plan.sheetH - 40.0 - cropH * scale;
+
+    sheet.setLineWidth(0.4);
+    for (const tile of plan.tiles) {
+        const x = originX + tile.cropX * scale;
+        const y = originY + (cropH - tile.cropY - tile.srcH) * scale;
+        sheet.setStrokeColor(branding.ink(constants.BRAND_PRIMARY));
+        sheet.rect(x, y, tile.srcW * scale, tile.srcH * scale);
+        sheet.setFont(HELVETICA_BOLD, 10);
+        sheet.setFillColor(ink);
+        sheet.drawCentredString(
+            x + (tile.srcW * scale) / 2.0,
+            y + (tile.srcH * scale) / 2.0,
+            String(tile.index),
+        );
+    }
+
+    sheet.setStrokeColor(ink);
+    sheet.setLineWidth(0.8);
+    sheet.rect(originX, originY, cropW * scale, cropH * scale);
+
+    overlays.drawStrip(sheet, strip, true, footerLines, { tileLabel: title, locale });
 }
 
 async function newDocument(title) {
