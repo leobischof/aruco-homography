@@ -46,6 +46,29 @@ Arbeit vernichten. Örtlich darf man mutig sein, nach außen nicht.
 **Eine Erlaubnis gilt einmal.** „Push das" bezieht sich auf den Push, der gerade zur Debatte
 steht, nicht auf die nächsten.
 
+### Wann committet wird
+
+**Sobald ein Feature fertig *und* geprüft ist — sofort, ungefragt.** Fertig-und-geprüft ist
+nicht nur die *Erlaubnis* zu committen, es ist der *Auslöser*. Nicht sammeln, nicht „am Ende
+alles zusammen", nicht auf eine Rückfrage warten.
+
+Beide Hälften zählen, und die zweite ist die, die gern unterschlagen wird:
+
+| | |
+|---|---|
+| **fertig** | Das Feature tut, was es tun soll — keine Platzhalter, kein „den Rest später". |
+| **geprüft** | Es ist *gelaufen*. Testsuite grün, und zwar wirklich ausgeführt und angesehen. |
+
+**„Geprüft" heißt: die Prüfung, die dieses Feature betrifft.** Eine grüne Python-Suite sagt
+nichts über eine Änderung an der Oberfläche aus — `tests/` öffnet die Seite nie. Wer am
+Frontend etwas ändert, startet den Server, sieht sich das Ergebnis an und beendet den Server
+wieder; wer an der Geometrie etwas ändert, lässt die synthetischen Szenen laufen. Die falsche
+Prüfung bestanden zu haben ist kein Beweis, sondern eine Verwechslung.
+
+Was **nicht** committet wird: fremde Arbeit, die noch läuft. Ein Zwischenstand, den jemand
+anders gerade schreibt, ist per Definition weder fertig noch geprüft — auch dann nicht, wenn
+das Arbeitsverzeichnis danach aussieht.
+
 ---
 
 ## 3 · Ein Feature, ein Commit
