@@ -1082,10 +1082,21 @@ Markerblatt drucken → Marker messen → Foto eines Objekts bekannter Größe �
 drucken → 100-mm-Maßstab und Objektmaß mit dem Messschieber prüfen. Ergebnis wird im README
 dokumentiert.
 
-**Diese Probe steht bis heute (2026-09-07) aus.** Die Maßhaltigkeit ist ausschließlich gegen
-synthetische Szenen belegt — gegen gerechnete Wahrheit, nicht gegen Papier. Das ist eine gute
-Grundlage und kein Beweis: kein Test dieses Repos hat je einen Drucker gesehen. Wer das
-Erfolgskriterium aus §1 zitiert, zitiert bis dahin eine Zusage, keine Messung.
+**Diese Probe ist zur Hälfte erbracht (2026-09-07).** Am gedruckten Blatt wurden der
+100-mm-Kontrollmaßstab **und** das 50-mm-Raster mit dem Messschieber nachgemessen, beide richtig.
+
+Damit ist der Teil `PDF → Drucker → Papier` belegt: die Seitengeometrie stimmt, und der Drucker
+skaliert nicht.
+
+**Der zweite Teil dieser Probe — das Objektmaß — steht aus**, und das ist kein Formalismus. Die
+Reihenfolge oben nennt beides aus gutem Grund: Maßstab und Raster zeichnet die PDF-Schicht (§4.2)
+aus **denselben** Millimeterzahlen, in denen der Zuschnitt angegeben ist. Eine falsche
+Homographie ergäbe eine falsch große Schablone, auf der beide trotzdem tadellos mäßen — sie
+können diesen Fehler prinzipiell nicht sehen. Nur ein Gegenstand **bekannter Größe im Foto**,
+auf dem Ausdruck nachgemessen, prüft `Foto → Marker → Millimeter`.
+
+Wer das Erfolgskriterium aus §1 zitiert, zitiert bis dahin eine halb belegte Zusage: die
+Druckkette ist gemessen, die Messkette nicht.
 
 ---
 

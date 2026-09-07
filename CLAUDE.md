@@ -30,9 +30,24 @@ Hier steht nur, was speziell für Claude Code in diesem Repo gilt.
 ## Behauptungen
 
 Nichts als funktionierend melden, was nicht gelaufen ist. `.\dev.ps1 run-tests` und das
-Ergebnis nennen. Wenn etwas nicht geprüft werden konnte, das so sagen — insbesondere,
-dass die Maßhaltigkeit bis heute nur gegen synthetische Szenen belegt ist und der
-Beweis am echten Ausdruck (drucken, mit dem Messschieber nachmessen) noch aussteht.
+Ergebnis nennen. Wenn etwas nicht geprüft werden konnte, das so sagen.
+
+**Stand der Maßhaltigkeit — genau so und nicht großzügiger:**
+
+- **Belegt am Papier (07.09.2026):** gedruckter 100-mm-Kontrollmaßstab und das
+  50-mm-Raster mit dem Messschieber nachgemessen, beide richtig. Damit ist die
+  Kette **PDF → Drucker → Papier** belegt: die Seitengeometrie stimmt und der
+  Drucker skaliert nicht.
+- **Noch nicht unabhängig belegt:** die Kette **Foto → Marker → Millimeter**.
+  Maßstab und Raster zeichnet die PDF-Schicht aus denselben Millimeterzahlen, in
+  denen der Zuschnitt angegeben ist — läge die Homographie daneben, wäre die
+  Schablone falsch groß, und Maßstab und Raster mäßen trotzdem stimmig. Sie
+  können diesen Fehler gar nicht sehen.
+- **Was ihn sähe:** einen Gegenstand *bekannter* Länge mit aufs Foto legen, die
+  Schablone drucken und **diesen Gegenstand** auf dem Ausdruck nachmessen.
+
+Wer über Maßhaltigkeit schreibt, schreibt diese Unterscheidung mit. „Mit dem
+Messschieber geprüft" allein liest sich als das Doppelte dessen, was geprüft ist.
 
 ## Git
 

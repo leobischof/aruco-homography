@@ -77,8 +77,8 @@ LEGAL_COPYRIGHT = config.BRAND_COPYRIGHT.replace("(C)", "©")
 # zeigte dann nichts, auch keinen Herausgeber.
 #
 # Zu beachten: `filevers`/`prodvers` sind die BINAEREN Felder und nehmen genau vier
-# ganze Zahlen - "0.0.2-alpha" weist Windows ab. Deshalb dort config.APP_VERSION_TUPLE
-# (0.0.2.0) und in den Zeichenkettenfeldern daneben die lesbare Fassung.
+# ganze Zahlen - "0.0.3-alpha" weist Windows ab. Deshalb dort config.APP_VERSION_TUPLE
+# (0.0.3.0) und in den Zeichenkettenfeldern daneben die lesbare Fassung.
 #
 # Das ersetzt KEINE Signatur. SmartScreen nennt weiterhin keinen Herausgeber,
 # solange die .exe nicht mit einem Zertifikat signiert ist; die Eigenschaften kann
