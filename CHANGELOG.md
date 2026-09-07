@@ -4,6 +4,82 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+**Das Programm bekommt ein eigenes Fenster.** Bis hierher öffnete ein Doppelklick den
+Standardbrowser: die Anwendung war ein Reiter zwischen zwanzig anderen, wurde beim Aufräumen des
+Browsers mitgeschlossen und sah dann verschwunden aus, obwohl ihr Server weiterlief. Ein Fenster
+mit eigenem Namen in der Taskleiste ist ein Programm. Am Rechenweg ändert sich **nichts** — es
+ist dieselbe Oberfläche auf demselben Server, nur in einem anderen Rahmen.
+
+### Hinzugefügt
+
+- **Ein eigenes Fenster (pywebview) als Vorgabe.** Ein Doppelklick auf die `.exe` öffnet die
+  Anwendung in einem Fenster von 1200 × 860 Punkt, das nicht kleiner als 900 × 600 gezogen
+  werden kann. Die Breite ist nicht geraten: der Inhalt der Oberfläche ist auf 68 rem begrenzt
+  und braucht mit seinen Rändern rund 1136 Punkt — darüber gewönne man nichts mehr. Beide Maße
+  stehen in `app/config.py` (Invariante 4), der Fenstertitel ist der Produktname, der jetzt
+  ebenfalls dort steht und nicht mehr an drei Stellen getippt wird.
+
+  **Der Server bleibt, was er war.** Er läuft weiter, gibt weiter LAN-Adresse und QR-Code aus,
+  und das Handy erreicht ihn weiter, während das Fenster offen steht. Das Fenster ist eine
+  *zweite Ansicht* auf denselben Server, keine zweite Anwendung — und das ist der Punkt, denn
+  das Foto kommt vom Handy.
+
+  Zwei Kleinigkeiten, die pywebview anders vorgibt, sind ausdrücklich zurückgestellt: Textauswahl
+  bleibt erlaubt und Strg+Mausrad zoomt weiter. Das Fenster soll sich verhalten wie der
+  Browser-Reiter, den es ersetzt, und in einer Oberfläche voller Zahlenfelder und kleiner
+  Messwerte will man beides haben. Aus demselben Grund läuft es **nicht** im Privatmodus: die
+  gewählte Sprache und das gewählte Thema stehen im `localStorage`, und die sollen den nächsten
+  Start überleben.
+- **`--browser` als Notausgang.** Nimmt statt des Fensters den Browser des Systems — das
+  bisherige Verhalten, für den Rechner, auf dem das Fenster nicht taugt.
+
+### Geändert
+
+- **`--no-browser` heißt weiterhin „gar nichts aufmachen"** — weder Fenster noch Browser, nur
+  der Server. Die Bedeutung ist absichtlich unverändert geblieben: die Freigabeprüfung fährt die
+  Anwendung damit ohne Anzeige hoch, und ein Schalter, der plötzlich ein Fenster öffnete, ließe
+  sie auf ein Fenster warten, das niemand schließt. Stehen `--browser` und `--no-browser`
+  zusammen da, gewinnt `--no-browser`.
+- **`.\dev.ps1 start-server` sagt jetzt das Richtige** und reicht beide Schalter durch.
+
+### Sicherheitsnetz
+
+- **Kein Fenster ist kein Abbruch.** Fehlt pywebview, fehlt die WebView2-Laufzeit (Windows 10
+  ohne Nachinstallation) oder wirft die Anzeige-Maschine beim Aufbauen, dann sagt das Programm
+  in **einer** Zeile, was fehlt, und öffnet den Browser. Der Server startet in jedem dieser Fälle
+  trotzdem — ein Werkstattrechner ohne WebView2 bleibt vom Handy aus voll benutzbar.
+
+  Der heikelste dieser Fälle ist der stille: **ohne WebView2-Laufzeit fällt pywebview unter
+  Windows wortlos auf die alte IE-Maschine zurück.** Die kennt keine ES-Module, und die
+  Oberfläche besteht aus welchen — das Fenster ginge auf und bliebe leer. Ein leeres Fenster
+  sieht aus wie ein Absturz ohne Meldung. Deshalb wird vor dem Öffnen gefragt, *womit* gezeichnet
+  würde, und MSHTML ausdrücklich abgelehnt; die Meldung nennt den winget-Befehl, der die
+  Laufzeit nachrüstet. `tests/test_window.py` hält beides fest.
+
+### Geprüft
+
+`.\dev.ps1 run-tests`: **161 grün** (153 vorher, acht neue in `tests/test_window.py`).
+
+Das Fenster wurde nicht behauptet, sondern **gesehen** — aus dem Quellbaum und, was allein zählt,
+aus der gebauten `.exe`: Fenstertitel `ArUco-Homographie`, Rahmen 1200 × 860, darin die
+vollständige Oberfläche mit Kopfzeile, Schritt 1 und Markenstreifen. Der Bau brauchte dafür zwei
+Zeilen in `aruco-homographie.spec`: die Anzeige-Module von pywebview als `hiddenimports` (sie
+werden erst zur Laufzeit über einen Namen gezogen) und `webview/js` als Datendateien — der
+mitgelieferte PyInstaller-Hook sammelt nur `webview/lib`, und ohne die JavaScript-Dateien stirbt
+der Fensterstart mit „Cannot find JS directory". Im Quellbaum fällt das nicht auf; es fällt erst
+an der ausgelieferten `.exe` auf.
+
+Ebenfalls an der gebauten `.exe` gemessen: `--no-browser` startet **ohne Fenster und ohne
+Browser** und beantwortet HTTP; bei offenem Fenster antwortet die **LAN-Adresse** und liefert ein
+Markerblatt-PDF; `--browser` ruft den Browser und öffnet kein Fenster.
+
+**Was damit nicht bewiesen ist:** der Rückfall auf den Browser auf einem Rechner, dem die
+WebView2-Laufzeit wirklich fehlt. Dieser Rechner hat sie (v152), also ist dieser Weg nur im Test
+belegt, nicht am echten Windows 10. Und die Maßhaltigkeit am Papier bleibt weiterhin
+ausschließlich gegen synthetische Szenen belegt.
+
 ## [0.0.2-alpha] – 2026-09-07
 
 **Die Fassung, die einen richtigen Installer mitbringt.** 0.0.1-alpha kam als ZIP, das man selbst

@@ -1,6 +1,7 @@
 """FastAPI-Anwendung: Routen, Fehlerabbildung, Startbanner.
 
-Reines Transportgeschaeft - gerechnet wird in app.pipeline und app.vision.
+Reines Transportgeschaeft - gerechnet wird in app.pipeline und app.vision, und
+wie sich die Oberflaeche zeigt (Fenster, Browser, gar nicht) steht in app.window.
 """
 
 from __future__ import annotations
@@ -9,14 +10,13 @@ import io
 import socket
 import sys
 import threading
-import time
-import webbrowser
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app import config, i18n
+from app import config, i18n, window
 from app.notices import AppError
 from app.pdf.markersheet import build_markersheet
 from app.pipeline import run_adjust, run_export, run_solve, solve_response
@@ -24,7 +24,10 @@ from app.schemas import AdjustRequest, ExportRequest, SolveRequest
 from app.session import store
 from app.vision.detect import load_photo
 
-app = FastAPI(title="ArUco-Homographie", docs_url="/api/docs", redoc_url=None)
+if TYPE_CHECKING:  # nur fuer die Typangabe - uvicorn wird erst beim Start geladen
+    from uvicorn import Server
+
+app = FastAPI(title=config.APP_NAME, docs_url="/api/docs", redoc_url=None)
 
 
 def request_locale(request: Request) -> str:
@@ -261,31 +264,58 @@ def preferred_port(args: list[str]) -> int:
     return config.PORT
 
 
-def open_browser_when_ready(url: str, port: int) -> None:
-    """Browser erst rufen, wenn der Server antwortet.
+def build_server(port: int) -> Server:
+    """Der Server, gebaut aber noch nicht gestartet.
 
-    Sofort geoeffnet zeigt der Doppelklick eine Fehlerseite, weil uvicorn noch
-    startet. Der Faden ist ein Daemon - er darf das Beenden mit Strg+C nicht
-    aufhalten.
+    Gebaut statt gleich gestartet, weil das Fenster ihn auf einem Nebenfaden
+    braucht und danach wieder anhalten koennen muss (`should_exit`). `uvicorn.run`
+    tut nichts anderes als diese zwei Zeilen und dann `run()`.
     """
+    import uvicorn
 
-    def wait_and_open() -> None:
-        deadline = time.monotonic() + config.BROWSER_WAIT_S
-        while time.monotonic() < deadline:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-                probe.settimeout(0.5)
-                if probe.connect_ex(("127.0.0.1", port)) == 0:
-                    webbrowser.open(url)
-                    return
-            time.sleep(0.2)
+    return uvicorn.Server(uvicorn.Config(app, host=config.HOST, port=port, log_level="info"))
 
-    threading.Thread(target=wait_and_open, daemon=True).start()
+
+def serve_in_window(url: str, port: int) -> int:
+    """Server auf einem Nebenfaden, Fenster auf dem Hauptfaden.
+
+    Beide wollen den Hauptfaden: uvicorn laeuft dort normalerweise, pywebview
+    besteht darauf. Also bekommt ihn das Fenster - es ist das, was der Bediener
+    sieht - und der Server einen Daemon-Faden daneben. Daemon, damit ein
+    haengender Server das geschlossene Fenster nicht ueberlebt.
+
+    Kann dieser Rechner kein Fenster zeigen, laeuft der Server trotzdem weiter und
+    der Browser tritt ein. Eine fehlende Anzeige-Maschine darf den Server nicht
+    aufhalten - sonst ist ein Werkstattrechner ohne WebView2-Laufzeit gar nicht
+    mehr zu gebrauchen, auch nicht vom Handy aus.
+    """
+    server = build_server(port)
+    thread = threading.Thread(target=server.run, name="uvicorn", daemon=True)
+    thread.start()
+
+    # Strg+C muss auch hier beenden. uvicorn faengt es nur ab, wenn es auf dem
+    # Hauptfaden laeuft; hier laeuft es daneben, also kommt es bei uns an.
+    try:
+        if not window.show(url):
+            window.open_browser_when_ready(url, port)
+            # Gewartet wird in Scheiben und nicht in einem Zug, damit der
+            # Hauptfaden zwischendurch ansprechbar bleibt.
+            while thread.is_alive():
+                thread.join(0.5)
+    except KeyboardInterrupt:
+        pass
+
+    # Das Fenster ist zu (oder es kam Strg+C): der Server darf gehen. Ohne diese
+    # Bitte liefe er weiter, bis der Prozess ihn beim Beenden abraeumt.
+    server.should_exit = True
+    thread.join(config.SERVER_STOP_WAIT_S)
+    return 0
 
 
 def print_banner(local_url: str, lan_url: str) -> None:
     """URL plus ASCII-QR-Code, damit man das Handy nur draufhalten muss."""
     print()
-    print("  ArUco-Homographie laeuft")
+    print(f"  {config.APP_NAME} laeuft")
     print(f"  Lokal:       {local_url}")
     print(f"  Im Netzwerk: {lan_url}")
     print()
@@ -309,26 +339,31 @@ def print_banner(local_url: str, lan_url: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Server starten und den Browser aufmachen.
+    """Server starten und die Oberflaeche zeigen.
 
-    Mit `--no-browser` nur den Server, mit `--port N` auf einem anderen Wunschport.
+    Vorgabe ist das eigene Fenster. `--browser` nimmt stattdessen den Browser des
+    Systems, `--no-browser` oeffnet gar nichts und laesst nur den Server laufen;
+    `--port N` verschiebt den Wunschport. Welcher Schalter was bedeutet, steht in
+    `app.window.choose_ui_mode`.
 
-    Der Browser wird HIER geoeffnet und nicht im Aufrufer: erst hier steht fest,
+    Die Oberflaeche geht HIER auf und nicht im Aufrufer: erst hier steht fest,
     welcher Port es geworden ist. Ein Aufrufer, der vorher eine URL baut, trifft
     die falsche, sobald ausgewichen werden musste.
     """
-    import uvicorn
-
     args = sys.argv[1:] if argv is None else argv
 
     port = choose_port(preferred_port(args))
     local_url = f"http://127.0.0.1:{port}"
     print_banner(local_url, f"http://{lan_address()}:{port}")
 
-    if "--no-browser" not in args:
-        open_browser_when_ready(local_url, port)
+    mode = window.choose_ui_mode(args)
+    if mode == window.WINDOW:
+        return serve_in_window(local_url, port)
 
-    uvicorn.run(app, host=config.HOST, port=port, log_level="info")
+    if mode == window.BROWSER:
+        window.open_browser_when_ready(local_url, port)
+
+    build_server(port).run()
     return 0
 
 

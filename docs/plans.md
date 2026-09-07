@@ -54,8 +54,12 @@ noch einmal glaubt:
 - **Die Paketgröße bleibt bei rund 290 MB** — der Brocken sind OpenCV (112 MB), SciPy
   (67 MB mit `scipy.libs`) und NumPy (28 MB), nicht die GUI.
 
-**Offen bleibt Stufe 2** (`pywebview` als eigenes Fenster statt Browser-Tab) — nur bauen,
-wenn der Tab wirklich stört.
+**Stufe 2 ist gebaut.** Der Reiter hat gestört, also zeigt sich die Oberfläche jetzt in einem
+eigenen Fenster (`pywebview`, `app/window.py`); `--browser` bleibt als Notausgang, `--no-browser`
+bedeutet unverändert „gar nichts aufmachen". Der Server ist derselbe geblieben — LAN-Adresse und
+QR-Code kommen weiter, und das Handy erreicht ihn, während das Fenster offen steht. Fehlt die
+WebView2-Laufzeit, sagt das Programm das und öffnet den Browser, statt abzubrechen. Beschrieben
+in [der Spezifikation](superpowers/specs/2026-09-06-aruco-homographie-design.md), §10.
 
 **Offen bleibt die eigentliche Prüfung:** die `.exe` auf einem Rechner **ohne Python**
 starten, ein echtes Foto durchlaufen lassen, das PDF drucken und mit dem Messschieber
