@@ -61,7 +61,7 @@
       },
       "crop": {
         "title": "Zuschnitt",
-        "hint": "Rechteck im Bild aufziehen. Die grüne Fläche ist die Marker-Hülle – alles weit außerhalb wird extrapoliert und damit unsicher.",
+        "hint": "Das Rechteck an den Ecken oder Kanten anfassen, oder es im Bild verschieben. Die hinterlegte Fläche ist die Marker-Hülle – alles weit außerhalb wird extrapoliert und ist damit unsicher.",
         "preview_alt": "Entzerrte Vorschau",
         "x0_label": "x0 (mm)",
         "y0_label": "y0 (mm)",

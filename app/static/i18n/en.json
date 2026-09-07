@@ -61,7 +61,7 @@
       },
       "crop": {
         "title": "Crop",
-        "hint": "Drag a rectangle on the image. The green area is the marker hull – anything well outside it is extrapolated and therefore uncertain.",
+        "hint": "Grab the rectangle by a corner or an edge, or drag it to move it. The shaded area is the marker hull – anything well outside it is extrapolated and therefore uncertain.",
         "preview_alt": "Rectified preview",
         "x0_label": "x0 (mm)",
         "y0_label": "y0 (mm)",
