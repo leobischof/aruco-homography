@@ -137,10 +137,10 @@ def run_export(session: Session, request: ExportRequest) -> BuildResult:
     if not isinstance(solved, SolveResult):
         raise AppError("not_solved", "session_id")
 
-    # ExportRequest kennt noch kein locale-Feld - bis es das tut, druckt der Export
-    # in der Vorgabesprache. getattr statt einer Abfrage, damit dieselbe Zeile auch
-    # dann noch stimmt, wenn das Feld hinzukommt.
-    locale = i18n.normalise(getattr(request, "locale", config.DEFAULT_LOCALE))
+    # Die Sprache des Ausdrucks kommt aus der Anfrage. normalise ist idempotent -
+    # das Schema hat den Wert schon abgebildet; hier steht es noch einmal, damit
+    # auch ein von Hand gebautes ExportRequest nicht mit "en-GB" durchrutscht.
+    locale = i18n.normalise(request.locale)
 
     crop = Extent(request.crop_mm.x0, request.crop_mm.y0, request.crop_mm.x1, request.crop_mm.y1)
     if crop.width <= 0.0 or crop.height <= 0.0:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app import config
+from app import config, i18n
 from app.vision import enhance
 
 # Waehlbare Farbbetonungen: "keine" plus jeder Farbton, den config kennt. Aus dem
@@ -102,4 +102,19 @@ class ExportRequest(BaseModel):
     # Die Aufbereitung des Ausdrucks. Neutral gestellt heisst: das entzerrte Bild
     # geht unveraendert ins PDF.
     adjust: AdjustOptions = Field(default_factory=AdjustOptions)
+    # Sprache der Aufdrucke. Der Ausdruck folgt damit der Sprache, die in der App
+    # gewaehlt ist, statt immer der Vorgabesprache des Servers.
+    locale: str = config.DEFAULT_LOCALE
     filename: str = "schablone.pdf"
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, value: str) -> str:
+        """Sprachkuerzel auf eine unterstuetzte Sprache abbilden.
+
+        Abbilden statt ablehnen: "de-CH" und ein leeres Feld sind keine
+        Bedienfehler, und ein Export soll an einer Sprachangabe niemals scheitern -
+        er kommt dann eben in der Vorgabesprache. i18n.normalise ist die einzige
+        Stelle, die diese Abbildung kennt.
+        """
+        return i18n.normalise(value)

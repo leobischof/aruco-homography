@@ -92,6 +92,23 @@ def test_export_liefert_pdf_mit_exakter_seitengroesse(client, solved):
     assert float(box.width) / config.PT_PER_MM == pytest.approx(expected_w, abs=0.01)
 
 
+def test_der_ausdruck_folgt_der_gewaehlten_sprache(client, solved):
+    """Die Fusszeile kommt in der Sprache, die die App mitschickt.
+
+    Geprueft an "Kamera"/"Camera": das Wort steht in beiden Katalogen frueh in
+    Zeile 2 und ueberlebt damit auch das Kuerzen langer Fusszeilen. Zusaetzlich
+    wird die Gegenprobe verlangt - sonst waere der Test auch dann gruen, wenn
+    beide Sprachen im selben Text landeten.
+    """
+    german = _page_text(_export_in(client, solved, "de"))
+    english = _page_text(_export_in(client, solved, "en"))
+
+    assert "Kamera" in german and "Camera" not in german
+    assert "Modus Markerblatt" in german
+    assert "Camera" in english and "Kamera" not in english
+    assert "Mode marker sheet" in english
+
+
 def test_export_ohne_solve_wird_abgelehnt(client, uploaded):
     fresh = client.post(
         "/api/upload", files={"file": ("leer.jpg", _tiny_jpeg(), "image/jpeg")}
