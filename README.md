@@ -24,14 +24,15 @@ Windows with PowerShell and Python 3. One command:
 ```
 
 The first run creates the virtual environment and installs the dependencies by itself — there
-is no separate setup step. Then it starts the server, opens the browser at
-`http://127.0.0.1:8000`, and prints the LAN address together with an ASCII QR code. Point your
-phone's camera at that code and the phone runs the whole thing over the network. Stop the
-server with Ctrl+C.
+is no separate setup step. Then it starts the server, opens the application **in its own
+window**, and prints the LAN address together with an ASCII QR code. Point your phone's camera
+at that code and the phone runs the whole thing over the network — the server keeps serving the
+LAN while the window is open, because the phone is where the photo comes from. Close the window
+to stop, or press Ctrl+C in the console.
 
 | Command | What it does |
 |---|---|
-| `.\dev.ps1 start-server` | Start the server and open the browser (`--no-browser` suppresses that, `--port N` asks for a different port) |
+| `.\dev.ps1 start-server` | Start the server and open the app window (`--browser` uses the system browser instead, `--no-browser` opens neither, `--port N` asks for a different port) |
 | `.\dev.ps1 install-deps` | Create the venv and install `requirements.txt` |
 | `.\dev.ps1 run-tests` | Run the test suite (`pytest`; extra arguments are forwarded) |
 | `.\dev.ps1 build-markersheet [mm] [spacing_x] [spacing_y]` | Write the marker sheet to `out/markerblatt_A4.pdf` |
@@ -46,6 +47,27 @@ only call into `dev.ps1`; the script is the single source of truth for what a co
 
 The server takes port 8000 when it is free and a different one when it is not — the address
 that actually applies is printed in the start banner.
+
+### Its own window — and the ways out of it
+
+The interface comes up in a **native desktop window** that hosts the local server, not in a
+browser tab. A tab is closed with all the others and the program looks gone while its server is
+still running; a window is a program. The window is a second *view* of that server, not a second
+application: the LAN address stays reachable while it is open, which is the whole point, because
+the phone is where the photo comes from.
+
+| Flag | What it does |
+|---|---|
+| *(none)* | Open the app in its own window. This is what a double-click does. |
+| `--browser` | Open the system browser instead — the way out on a machine where the window is no good. |
+| `--no-browser` | Open neither. The server runs on its own; for scripts, and for working only from the phone. |
+| `--port N` | Ask for a different port. A wish, not a promise: a port already taken is stepped around. |
+
+The window needs the **Microsoft Edge WebView2 runtime**. Windows 11 has it; a Windows 10
+machine may not (`winget install --id Microsoft.EdgeWebView2Runtime` adds it). If it is missing —
+or if `pywebview` is not installed at all — the program says so in one line and opens the browser
+instead. It never refuses to start over a missing window: server, LAN address and QR code come up
+either way, so a workshop PC that cannot show the window is still fully usable from the phone.
 
 ## Running it without Python
 
@@ -84,8 +106,10 @@ reads them out of `app/config.py` and passes them in, so there is one place to c
 ```
 
 builds `dist\ArUco-Homographie\ArUco-Homographie.exe` with PyInstaller. Double-clicking it starts
-the server and opens the browser. This is what the release `.zip` contains, and what to use when
-installing is not an option — on a machine where nothing may be installed, or from a USB stick.
+the server and opens the app in its own window; a console window comes up beside it with the LAN
+address and the QR code, and it belongs there — that is how the phone finds the server. This is
+what the release `.zip` contains, and what to use when installing is not an option — on a machine
+where nothing may be installed, or from a USB stick.
 
 Pass on the **whole folder**, not just the `.exe` inside it — `_internal\` sits beside it and
 holds OpenCV, the fonts and the interface. Around 290 MB.
@@ -493,10 +517,15 @@ with a sanding block, and try again — a two-minute job, not a re-cut.
 
 **And on the first panel you make this way, check the tool.** Measure one long dimension of the
 finished panel and compare it with the same dimension on the template and with the opening
-itself. The dimensional accuracy of this chain has so far been proven only against synthetic
-scenes: a virtual camera with a known pose, checked against the numbers that went into it. That
-is a good foundation and it is not a measurement on paper — nothing in this repository has ever
-seen a printer. See [Limits](#limits).
+itself.
+
+The printing half of the chain has now been checked on paper: the printed 100 mm control scale
+and the 50 mm grid were both measured with a caliper and both were right. What that proves is
+that the PDF reaches the paper at true size and the printer is not scaling. What it does *not*
+prove is the half before it — photo to markers to millimetres — because the scale bar and the
+grid are drawn from the same millimetre figures the crop is specified in. If the homography were
+off, the template would come out the wrong size and those two would still measure perfectly.
+That is why you measure the finished panel. See [Limits](#limits).
 
 ---
 
@@ -592,11 +621,18 @@ Stated plainly, because a tool that measures things should not overstate itself.
   later as another unknown.
 - **Curved objects cannot work.** A homography describes exactly one plane. No amount of care
   with the photo changes that.
-- **Dimensional accuracy has so far been proven only against synthetic scenes.** The test suite
-  renders a virtual camera with a known pose and checks that the pipeline recovers the numbers
-  that were put in. **The proof on a real printout — print it, measure the 100 mm scale with a
-  caliper, write down what you got — is still outstanding.** Until that has happened, the central
-  promise of this project stands unverified.
+- **Half the chain is proven on paper, half is not.** On 2026-09-07 a printed sheet was measured
+  with a caliper: the 100 mm control scale and the 50 mm grid were both correct. **That proves
+  PDF → printer → paper** — the page geometry is exact and the printer does not scale.
+
+  **It does not prove photo → markers → millimetres.** The scale bar and the grid are drawn by
+  the PDF layer out of the same millimetre figures the crop is specified in, so a wrong
+  homography would produce a wrongly sized template on which both still measure perfectly. They
+  cannot see that error.
+
+  **What would close it:** put an object of *known* length in the photo beside the markers, print
+  the template, and measure **that object** on the paper. Until then, measure your first panel
+  against the opening before you trust the tool.
 - **Sessions live one hour in memory.** Restarting the server throws away work in progress;
   nothing is stored on disk.
 
@@ -609,7 +645,8 @@ app/vision/    detection, homography, camera pose, thickness correction,
                rectification, image adjustment, contour
 app/pdf/       page geometry, printed extras, branding, PDF build, marker sheet
 app/static/    the interface — css/ js/ i18n/ and brand/ with the logo and the font
-app/           config (SSOT for every constant), pipeline (orchestration), main (routes)
+app/           config (SSOT for every constant), pipeline (orchestration), main (routes),
+               window (how the interface shows up: own window, browser, or neither)
 installer/     aruco-homographie.iss — the Inno Setup recipe for the Windows installer
 tests/         synthetic scenes with known ground truth
 docs/          documentation — start at docs/README.md
@@ -670,8 +707,12 @@ Lineal: aus ihrer bekannten, **nachgemessenen** Größe folgt die Homographie un
 ```
 
 Beim ersten Mal richtet der Befehl venv und Abhängigkeiten selbst ein, startet dann den Server,
-öffnet den Browser und gibt die Netzwerk-Adresse samt QR-Code aus. Damit lässt sich der ganze
-Ablauf vom Handy aus bedienen. Die vollständige Befehlstabelle steht oben unter *Getting started*.
+zeigt die Oberfläche **in einem eigenen Fenster** und gibt die Netzwerk-Adresse samt QR-Code aus.
+Der Server bleibt dabei, was er war: die Adresse fürs Handy antwortet weiter, während das Fenster
+offen steht, und damit lässt sich der ganze Ablauf vom Handy aus bedienen. `--browser` nimmt
+statt des Fensters den Browser, `--no-browser` öffnet gar nichts. Das Fenster braucht die
+**WebView2-Laufzeit**; fehlt sie, sagt das Programm das in einer Zeile und öffnet den Browser,
+statt abzubrechen. Die vollständige Befehlstabelle steht oben unter *Getting started*.
 
 **Auf einen Rechner ohne Python bringen.** `.\dev.ps1 build-installer` baut
 `dist\ArUco-Homographie-Setup-<Fassung>.exe` — **eine** Datei. Doppelklicken, durchklicken,
@@ -744,14 +785,18 @@ Kellerfenster saß: rund 470 × 600 mm, keine gerade Kante daran. Hinein soll ei
     der Abfallseite bleiben und den Rest mit dem Hobel wegnehmen. Zu klein ist zu retten, zu groß
     heißt zurück an die Säge.
 12. **Papier abziehen und einpassen.** Flach abziehen, solange der Kleber frisch ist. Klemmt es,
-    die Stelle anzeichnen und mit dem Schleifklotz wegnehmen. **Beim ersten Stück mit dem
-    Messschieber gegenprüfen** — die Maßhaltigkeit ist bislang nur gegen synthetische Szenen
-    belegt.
+    die Stelle anzeichnen und mit dem Schleifklotz wegnehmen. **Beim ersten Stück eine lange
+    Strecke am fertigen Teil nachmessen** und mit der Öffnung vergleichen.
 
 **Grenzen, offen gesagt.** Die Objektivverzeichnung bleibt unkorrigiert. Gewölbte Objekte gehen
-prinzipiell nicht — eine Homographie beschreibt genau eine Ebene. Und: **die Maßhaltigkeit ist
-bislang nur gegen synthetische Szenen belegt; der Beweis am echten Ausdruck, mit dem Messschieber
-nachgemessen, steht noch aus.**
+prinzipiell nicht — eine Homographie beschreibt genau eine Ebene.
+
+Und zur Maßhaltigkeit, genau: **die Hälfte ist am Papier belegt.** Am 07.09.2026 wurden am
+Ausdruck der 100-mm-Kontrollmaßstab und das 50-mm-Raster mit dem Messschieber nachgemessen,
+beide richtig — damit stimmt der Weg **PDF → Drucker → Papier**. Der Weg **Foto → Marker →
+Millimeter** ist damit *nicht* belegt: Maßstab und Raster zeichnet die PDF-Schicht aus denselben
+Millimeterzahlen, in denen der Zuschnitt steht. Läge die Homographie daneben, käme die Schablone
+falsch groß heraus und beide mäßen trotzdem stimmig. **Deshalb am fertigen Teil nachmessen.**
 
 **Weiterlesen.** [docs/README.md](docs/README.md) ist das Inhaltsverzeichnis der Dokumentation —
 dort steht jedes Dokument mit Zweck, Zielgruppe und Stand. Die Invarianten für Agenten stehen in

@@ -102,6 +102,13 @@ def _load_shared_constants() -> dict:
 # kennt keine Kommentare; das Warum haette den Umzug sonst nicht ueberlebt.
 SHARED_CONSTANTS = _load_shared_constants()
 
+# --- Name ----------------------------------------------------------------------
+# Der Produktname: Titel der FastAPI-Anwendung, Beschriftung des eigenen Fensters,
+# Name der .exe und des Ordners um sie herum (aruco-homographie.spec liest ihn von
+# hier). Eine Marke, kein uebersetzbarer Satz - deshalb steht er hier und nicht im
+# Sprachkatalog.
+APP_NAME = "ArUco-Homographie"
+
 # --- Fassung -------------------------------------------------------------------
 # Die Versionsnummer steht NUR hier. `dev.ps1 build-installer` liest sie von hier
 # und reicht sie als /D-Definition an Inno Setup weiter - genauso, wie der Port
@@ -112,7 +119,7 @@ SHARED_CONSTANTS = _load_shared_constants()
 #
 # Bleibt bewusst in Python: eine Fassung ist eine Aussage ueber DIESES Programm,
 # nicht ueber das Produkt - der C++-Kern und der WASM-Bau bekommen eigene.
-APP_VERSION = "0.0.2-alpha"
+APP_VERSION = "0.0.3-alpha"
 
 # Windows will in den BINAEREN Versionsfeldern seiner Dateieigenschaften vier ganze
 # Zahlen sehen und vertraegt kein "-alpha". Die Vorabkennung wird deshalb hier
@@ -309,6 +316,24 @@ PORT = 8000
 # Wie lange der Browser-Faden auf den Server wartet, bevor er aufgibt. Eine .exe auf
 # kaltem Dateisystem entpackt OpenCV beim ersten Start spuerbar lange.
 BROWSER_WAIT_S = 60.0
+
+# --- Eigenes Fenster ----------------------------------------------------------
+# Die Anwendung zeigt sich in einem eigenen Fenster (pywebview) statt in einem
+# Browser-Reiter; der Server dahinter bleibt derselbe.
+#
+# Die Breite ist so gewaehlt, dass die Oberflaeche ihre volle Breite bekommt: der
+# Inhalt ist auf 68 rem = 1088 px begrenzt (app/static/css/layout.css) und traegt
+# links und rechts 24 px Rand - macht 1136 px, ab denen nichts mehr gewonnen ist.
+WINDOW_SIZE = (1200, 860)
+# Untergrenze, damit das Fenster nicht auf eine Groesse gezogen werden kann, in der
+# die Schrittfolge nicht mehr zu bedienen ist. 900 px liegen ueber dem Umbruchpunkt
+# der Oberflaeche (768 px), das Fenster bleibt also immer im Rechner-Layout.
+WINDOW_MIN_SIZE = (900, 600)
+# Wie lange nach dem Schliessen des Fensters auf das Ende des Servers gewartet wird.
+# Die Frist ist nur die Gelegenheit, sich sauber zu verabschieden: der Serverfaden
+# ist ein Daemon und endet mit dem Prozess, ob er will oder nicht. Sie ist da, damit
+# eine laufende Antwort noch hinausgeht, nicht damit irgendetwas haengen bleibt.
+SERVER_STOP_WAIT_S = 5.0
 
 # --- Einheiten ----------------------------------------------------------------
 MM_PER_INCH = SHARED_CONSTANTS["MM_PER_INCH"]

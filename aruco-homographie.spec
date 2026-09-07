@@ -47,10 +47,11 @@ sys.path.insert(0, ROOT)
 
 from app import config, i18n  # noqa: E402 - erst nach dem sys.path-Eintrag moeglich
 
-# Der Name steht hier EINMAL: er benennt die .exe, den Ordner um sie herum und
-# damit auch das, was der Installer verpackt und was in den Dateieigenschaften
-# als Produkt erscheint.
-APP_NAME = "ArUco-Homographie"
+# Der Produktname benennt die .exe, den Ordner um sie herum und damit auch das, was
+# der Installer verpackt und was in den Dateieigenschaften als Produkt erscheint.
+# Er steht in app/config.py, weil ihn auch die Anwendung selbst braucht - als Titel
+# ihres eigenen Fensters (AGENTS.md, Invariante 4).
+APP_NAME = config.APP_NAME
 
 # Die Beschreibung in den Dateieigenschaften ist eine sichtbare Zeichenkette, also
 # kommt sie aus dem Katalog und nicht aus dem Code (AGENTS.md, Invariante 7). Es ist
@@ -76,8 +77,8 @@ LEGAL_COPYRIGHT = config.BRAND_COPYRIGHT.replace("(C)", "©")
 # zeigte dann nichts, auch keinen Herausgeber.
 #
 # Zu beachten: `filevers`/`prodvers` sind die BINAEREN Felder und nehmen genau vier
-# ganze Zahlen - "0.0.2-alpha" weist Windows ab. Deshalb dort config.APP_VERSION_TUPLE
-# (0.0.2.0) und in den Zeichenkettenfeldern daneben die lesbare Fassung.
+# ganze Zahlen - "0.0.3-alpha" weist Windows ab. Deshalb dort config.APP_VERSION_TUPLE
+# (0.0.3.0) und in den Zeichenkettenfeldern daneben die lesbare Fassung.
 #
 # Das ersetzt KEINE Signatur. SmartScreen nennt weiterhin keinen Herausgeber,
 # solange die .exe nicht mit einem Zertifikat signiert ist; die Eigenschaften kann
@@ -132,10 +133,25 @@ datas = [
 # aber nicht.
 datas += collect_data_files("reportlab")
 
+# pywebview spritzt beim Oeffnen des Fensters eigene JavaScript-Dateien in die
+# Seite und liest sie dafuer zur Laufzeit von der Platte (`webview/js/`, ueber
+# `webview.util.get_js_dir`). Der mitgelieferte Hook sammelt nur `webview/lib/`
+# (die WebView2-DLLs), nicht diesen Ordner - ohne ihn stirbt der Fensterstart mit
+# "Cannot find JS directory", und die gebaute .exe zeigt nur den Rueckfall auf den
+# Browser. Der Quellbaum merkt davon nichts: dort liegen die Dateien einfach da.
+datas += collect_data_files("webview", subdir="js")
+
 hiddenimports = [
     # svglib waehlt seine Schrift ueber reportlab.rl_config; das Modul wird nur
     # ueber einen Namen gezogen und faellt der statischen Analyse durch.
     "reportlab.rl_config",
+    # pywebview sucht sich seine Anzeige-Maschine erst zur Laufzeit aus
+    # (`webview.guilib.initialize`). Unter Windows ist das WinForms, und darunter
+    # Edge Chromium - beide werden nur im Rumpf einer Funktion importiert. Fehlen
+    # sie, faellt das Fenster stillschweigend auf den Browser zurueck: es sieht aus
+    # wie ein Rechner ohne WebView2, ist aber ein Loch in der Bauvorschrift.
+    "webview.platforms.winforms",
+    "webview.platforms.edgechromium",
 ]
 
 # Was sicher nicht gebraucht wird. tkinter haengt ueber PIL.ImageTk mit drin und
