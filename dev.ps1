@@ -17,6 +17,7 @@
     ./dev.ps1 run-tests          # Testsuite ausfuehren
     ./dev.ps1 build-markersheet  # Markerblatt-PDF nach out/ schreiben
     ./dev.ps1 build-exe          # Windows-.exe nach dist/ bauen
+    ./dev.ps1 build-installer    # Windows-Installer (eine Datei) nach dist/ bauen
     ./dev.ps1 help               # alle Kommandos auflisten
 #>
 
@@ -45,7 +46,15 @@ $VenvPython   = Join-Path $RepoRoot 'venv\Scripts\python.exe'
 $Requirements = Join-Path $RepoRoot 'requirements.txt'
 $DepsStamp    = Join-Path $RepoRoot 'venv\.deps-installed'
 $ExeSpec      = Join-Path $RepoRoot 'aruco-homographie.spec'
-$ExeDist      = Join-Path $RepoRoot 'dist\ArUco-Homographie'
+$DistDir      = Join-Path $RepoRoot 'dist'
+$ExeDist      = Join-Path $DistDir 'ArUco-Homographie'
+$IssScript    = Join-Path $RepoRoot 'installer\aruco-homographie.iss'
+
+# Der Ordnername des Bundles IST der Name der .exe und der Name, unter dem der
+# Installer die Anwendung kennt. Festgelegt wird er in aruco-homographie.spec
+# (EXE/COLLECT name); hier wird er abgeleitet und nicht ein zweites Mal getippt.
+$AppName      = Split-Path $ExeDist -Leaf
+$ExePath      = Join-Path $ExeDist "$AppName.exe"
 
 # --- Logging gateway (single source of truth for output formatting) ----------
 function Write-Step { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Cyan }
@@ -106,12 +115,17 @@ function Confirm-Deps {
 }
 
 # --- Commands ----------------------------------------------------------------
-# Der Port steht in app/config.py - er wird von dort GELESEN, nicht hier wiederholt.
-function Get-ServerPort {
-    $port = & $VenvPython -c "from app import config; print(config.PORT)"
-    if ($LASTEXITCODE -ne 0 -or -not $port) { throw 'Port konnte nicht aus app/config.py gelesen werden.' }
-    return [int]$port.Trim()
+# Port, Fassung und Marke stehen in app/config.py - sie werden von dort GELESEN,
+# nicht hier wiederholt (AGENTS.md, Invariante 4). Ein zweiter Wert in diesem Skript
+# oder in der .iss waere die Sorte Duplikat, die still veraltet.
+function Get-ConfigValue {
+    param([Parameter(Mandatory)][string]$Name)
+    $value = & $VenvPython -c "from app import config; print(config.$Name)"
+    if ($LASTEXITCODE -ne 0 -or -not $value) { throw "$Name konnte nicht aus app/config.py gelesen werden." }
+    return $value.Trim()
 }
+
+function Get-ServerPort { return [int](Get-ConfigValue 'PORT') }
 
 function Invoke-StartServer {
     Confirm-Deps
@@ -146,21 +160,115 @@ function Invoke-BuildMarkersheet {
 # hier wird sie nur aufgerufen, damit der Bau genauso selbstheilend ist wie jedes
 # andere Kommando. Zusatzargumente gehen an PyInstaller (z. B. --clean).
 function Invoke-BuildExe {
+    # Vorgabe sind die Argumente der Kommandozeile - ausser der Aufrufer ist
+    # build-installer: dessen Zusatzargumente gehoeren ISCC und nicht PyInstaller.
+    param([string[]]$ExtraArgs = $Rest)
+
     Confirm-Deps
     Write-Step 'Building the Windows .exe (PyInstaller, one-folder)'
     Invoke-Native -What 'build-exe' -Action {
-        & $VenvPython -m PyInstaller --noconfirm $ExeSpec @Rest
+        & $VenvPython -m PyInstaller --noconfirm $ExeSpec @ExtraArgs
     }
 
     # PyInstaller meldet auch dann Erfolg, wenn nur Warnungen kamen - also
     # nachsehen, ob die .exe wirklich dort liegt.
-    $exePath = Join-Path $ExeDist 'ArUco-Homographie.exe'
-    if (-not (Test-Path $exePath)) { throw "PyInstaller lief durch, aber $exePath fehlt." }
+    if (-not (Test-Path $ExePath)) { throw "PyInstaller lief durch, aber $ExePath fehlt." }
 
     $bytes = (Get-ChildItem -Path $ExeDist -Recurse -File | Measure-Object -Property Length -Sum).Sum
-    Write-Ok "Fertig: $exePath"
+    Write-Ok "Fertig: $ExePath"
     Write-Host ("     {0:N0} MB in {1}" -f ($bytes / 1MB), $ExeDist) -ForegroundColor DarkGray
     Write-Host '     Weitergegeben wird der GANZE Ordner, nicht nur die .exe darin.' -ForegroundColor DarkGray
+    Write-Host '     Eine Datei zum Weitergeben macht ./dev.ps1 build-installer daraus.' -ForegroundColor DarkGray
+}
+
+# --- Installer ----------------------------------------------------------------
+
+# Ist das Bundle noch das, was der Quellcode beschreibt? Verglichen wird die .exe
+# gegen alles, was in sie hineingeht. Ohne diese Frage tuetete der Installer
+# klaglos eine alte Fassung ein - und das faellt erst am Zielrechner auf.
+function Test-BundleFresh {
+    if (-not (Test-Path $ExePath)) { return $false }
+    $built = (Get-Item $ExePath).LastWriteTimeUtc
+
+    $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app') -Recurse -File |
+        Where-Object { $_.FullName -notlike '*__pycache__*' })
+    $sources += Get-Item $ExeSpec
+    $newest = ($sources | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
+
+    return ($newest -le $built)
+}
+
+# ISCC.exe SUCHEN statt einen Pfad festzuschreiben. Inno Setup laesst sich pro
+# Benutzer oder fuer alle installieren, und nur die zweite Form landet unter
+# "Program Files" - ein fest verdrahteter Pfad funktionierte auf genau einem
+# Rechner, dem, auf dem er getippt wurde.
+function Find-InnoCompiler {
+    $onPath = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+
+    $candidates = @()
+    # Die Installation pro Benutzer kommt zuerst: sie braucht keine Adminrechte und
+    # ist deshalb die wahrscheinlichere. Sie steht in KEINEM PATH.
+    if ($env:LOCALAPPDATA)        { $candidates += Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe' }
+    if (${env:ProgramFiles(x86)}) { $candidates += Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe' }
+    if ($env:ProgramFiles)        { $candidates += Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe' }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+
+    throw (@(
+        'Inno Setup wurde nicht gefunden (ISCC.exe).',
+        '     Installieren mit:  winget install --id JRSoftware.InnoSetup',
+        '     Gesucht wurde im PATH und unter:',
+        '       %LOCALAPPDATA%\Programs\Inno Setup 6\',
+        '       %ProgramFiles(x86)%\Inno Setup 6\',
+        '       %ProgramFiles%\Inno Setup 6\'
+    ) -join [Environment]::NewLine)
+}
+
+# Baut den Windows-Installer aus dem One-Folder-Bundle. Was hineinkommt und warum,
+# steht in installer/aruco-homographie.iss; hier wird nur der Uebersetzer gesucht,
+# das Bundle sichergestellt und die Marke aus app/config.py durchgereicht.
+# Zusatzargumente gehen an ISCC (z. B. /Q fuer einen stillen Lauf).
+function Invoke-BuildInstaller {
+    Confirm-Deps
+    $compiler = Find-InnoCompiler
+
+    if (-not (Test-BundleFresh)) {
+        Write-Warn 'Bundle fehlt oder ist aelter als app/ - es wird zuerst neu gebaut'
+        Invoke-BuildExe -ExtraArgs @()
+    }
+
+    # Alle Werte VOR dem Aufruf holen: Get-ConfigValue startet Python und setzt dabei
+    # $LASTEXITCODE, an dem Invoke-Native den Erfolg von ISCC ablesen will.
+    $version   = Get-ConfigValue 'APP_VERSION'
+    $numeric   = Get-ConfigValue 'APP_VERSION_NUMERIC'
+    $publisher = Get-ConfigValue 'BRAND_NAME'
+    $url       = Get-ConfigValue 'BRAND_URL'
+    $copyright = Get-ConfigValue 'BRAND_COPYRIGHT'
+
+    Write-Step "Building the Windows installer (Inno Setup, $AppName $version)"
+    Write-Host ("     Compiler: {0}" -f $compiler) -ForegroundColor DarkGray
+
+    Invoke-Native -What 'build-installer' -Action {
+        & $compiler `
+            "/DAppName=$AppName" `
+            "/DAppVersion=$version" `
+            "/DAppVersionNumeric=$numeric" `
+            "/DAppPublisher=$publisher" `
+            "/DAppUrl=$url" `
+            "/DAppCopyright=$copyright" `
+            $IssScript @Rest
+    }
+
+    $setupPath = Join-Path $DistDir "$AppName-Setup-$version.exe"
+    if (-not (Test-Path $setupPath)) { throw "ISCC lief durch, aber $setupPath fehlt." }
+
+    $bytes = (Get-Item $setupPath).Length
+    Write-Ok "Fertig: $setupPath"
+    Write-Host ("     {0:N0} MB - eine Datei. Doppelklicken, fertig; nichts zu entpacken." -f ($bytes / 1MB)) -ForegroundColor DarkGray
+    Write-Host ("     Installiert wird ohne Adminrechte nach %LOCALAPPDATA%\Programs\{0}\." -f $AppName) -ForegroundColor DarkGray
 }
 
 # Stop only servers started FROM THIS REPOSITORY - never someone else's python.
@@ -210,6 +318,7 @@ function Show-Help {
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
+    Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
     Write-Cmd 'kill-servers'      'Aus diesem Repo gestartete Server beenden'
     Write-Cmd 'clean-all'         'venv, out/, build/, dist/ und Caches entfernen'
     Write-Cmd 'help'              'Diese Hilfe anzeigen'
@@ -223,6 +332,7 @@ switch ($Command.ToLowerInvariant()) {
     'run-tests'         { Invoke-RunTests }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
+    'build-installer'   { Invoke-BuildInstaller }
     'kill-servers'      { Invoke-KillServers }
     'clean-all'         { Invoke-CleanAll }
     'help'              { Show-Help }

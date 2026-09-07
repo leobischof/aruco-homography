@@ -231,6 +231,36 @@ def choose_port(preferred: int = config.PORT) -> int:
     raise OSError("Kein freier Port gefunden.")
 
 
+def preferred_port(args: list[str]) -> int:
+    """Der gewuenschte Port aus der Kommandozeile, sonst der aus config.
+
+    `--port 8123` und `--port=8123` sind beide erlaubt. Gebraucht wird das dort, wo
+    der Vorgabeport schon vergeben ist oder wo eine zweite Kopie danebenlaufen soll -
+    etwa, wenn eine frisch installierte Fassung neben dem Entwicklungsserver geprueft
+    wird. Ausgewichen wird danach wie immer: choose_port nimmt diesen Port nur, wenn
+    er frei ist.
+
+    Ein unbrauchbarer Wert beendet das Programm NICHT. Ein Doppelklick, der wegen
+    eines Komfortarguments gar nicht erst startet, ist schlimmer als einer, der auf
+    dem Vorgabeport landet - gesagt wird es trotzdem.
+    """
+    for index, argument in enumerate(args):
+        if argument.startswith("--port="):
+            raw = argument.split("=", 1)[1]
+        elif argument == "--port" and index + 1 < len(args):
+            raw = args[index + 1]
+        else:
+            continue
+
+        port = int(raw) if raw.isdigit() else -1
+        if 1 <= port <= 65535:
+            return port
+        print(f"  (--port {raw} ist keine gueltige Portnummer - es gilt {config.PORT})")
+        break
+
+    return config.PORT
+
+
 def open_browser_when_ready(url: str, port: int) -> None:
     """Browser erst rufen, wenn der Server antwortet.
 
@@ -279,7 +309,9 @@ def print_banner(local_url: str, lan_url: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Server starten und den Browser aufmachen. Mit --no-browser nur den Server.
+    """Server starten und den Browser aufmachen.
+
+    Mit `--no-browser` nur den Server, mit `--port N` auf einem anderen Wunschport.
 
     Der Browser wird HIER geoeffnet und nicht im Aufrufer: erst hier steht fest,
     welcher Port es geworden ist. Ein Aufrufer, der vorher eine URL baut, trifft
@@ -289,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = sys.argv[1:] if argv is None else argv
 
-    port = choose_port()
+    port = choose_port(preferred_port(args))
     local_url = f"http://127.0.0.1:{port}"
     print_banner(local_url, f"http://{lan_address()}:{port}")
 

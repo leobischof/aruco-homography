@@ -34,6 +34,13 @@ ist `README.md` — die Eingangstür ist englisch mit deutscher Kurzfassung.
 > beschrieben in [der Spezifikation](superpowers/specs/2026-09-06-aruco-homographie-design.md),
 > §10, und in [CHANGELOG.md](../CHANGELOG.md) unter 0.3.0. Die Überschrift bleibt stehen,
 > weil Punkt 3 auf „Punkt 1" verweist.
+>
+> **Ebenfalls erledigt: die Auslieferung als eine Datei.** `.\dev.ps1 build-installer` baut
+> mit Inno Setup `dist\ArUco-Homographie-Setup-<Fassung>.exe` (78 MB), installiert **ohne
+> Adminrechte** nach `%LOCALAPPDATA%\Programs\`, legt Startmenü-Eintrag und Deinstallation an.
+> Damit ist der Umweg über „ZIP entpacken, aber nicht zu tief" für den Regelfall vom Tisch —
+> **die MAX_PATH-Falle ist für Installer-Nutzer weg**, weil der Installer den Zielpfad wählt.
+> Die Bauvorschrift steht in `installer/aruco-homographie.iss`.
 
 **Zwei Annahmen von damals, gemessen widerlegt** — sie stehen hier, damit sie niemand
 noch einmal glaubt:
@@ -52,8 +59,10 @@ wenn der Tab wirklich stört.
 
 **Offen bleibt die eigentliche Prüfung:** die `.exe` auf einem Rechner **ohne Python**
 starten, ein echtes Foto durchlaufen lassen, das PDF drucken und mit dem Messschieber
-nachmessen. Bisher belegt ist nur, dass das Bundle außerhalb des Repos, ohne Python im
-`PATH` und ohne `PYTHON*`-Variablen läuft. Das ist etwas anderes als ein fremder Rechner.
+nachmessen. Belegt ist inzwischen, dass der Installer durchläuft und die installierte Fassung
+außerhalb des Repos die ganze Kette leistet — Oberfläche, Kataloge, Markerblatt und ein
+vollständiger Export mit richtiger Seitengröße. Das ist immer noch **dieser** Rechner, und es
+ist immer noch eine synthetische Szene. Ein fremder Rechner und ein Ausdruck sind etwas anderes.
 
 ---
 

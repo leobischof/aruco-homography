@@ -15,15 +15,107 @@ Das kostet Sekunden Startzeit fuer nichts; ein Ordner mit einer .exe darin tut e
 sonst startet die .exe und zeigt eine nackte Seite ohne Schrift, ohne Logo und ohne
 Uebersetzung. Das ist der gefaehrlichste Fehler dieses Bundles, weil er wie ein
 Erfolg aussieht.
+
+**Die Dateieigenschaften.** PyInstaller legt von sich aus KEINE Versionsressource an -
+ohne den `version_info`-Block weiter unten stuende unter Rechtsklick -> Eigenschaften ->
+Details nichts, kein Herausgeber und keine Fassung. Die Werte werden nicht abgetippt,
+sondern aus `app/config.py` und den i18n-Katalogen gelesen.
 """
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.win32.versioninfo import (
+    FixedFileInfo,
+    StringFileInfo,
+    StringStruct,
+    StringTable,
+    VarFileInfo,
+    VarStruct,
+    VSVersionInfo,
+)
 
 # Relativ zur Spec-Datei, nicht zum Arbeitsverzeichnis: `pyinstaller` darf aus
 # jedem Ordner heraus aufgerufen werden.
 ROOT = SPECPATH  # noqa: F821 - von PyInstaller in den Namensraum gelegt
+
+# Marke, Fassung und Beschreibung kommen aus dem Projekt selbst, nicht aus dieser
+# Datei. Diese Vorschrift laeuft als gewoehnliches Python, also wird einfach
+# importiert - der kuerzeste Weg zur einen Wahrheit (AGENTS.md, Invariante 4).
+sys.path.insert(0, ROOT)
+
+from app import config, i18n  # noqa: E402 - erst nach dem sys.path-Eintrag moeglich
+
+# Der Name steht hier EINMAL: er benennt die .exe, den Ordner um sie herum und
+# damit auch das, was der Installer verpackt und was in den Dateieigenschaften
+# als Produkt erscheint.
+APP_NAME = "ArUco-Homographie"
+
+# Die Beschreibung in den Dateieigenschaften ist eine sichtbare Zeichenkette, also
+# kommt sie aus dem Katalog und nicht aus dem Code (AGENTS.md, Invariante 7). Es ist
+# derselbe Satz, den die Kopfzeile der Oberflaeche zeigt.
+_SUBTITLE_KEY = "ui.header.subtitle"
+FILE_DESCRIPTION = i18n.translate(_SUBTITLE_KEY, config.DEFAULT_LOCALE)
+if FILE_DESCRIPTION == _SUBTITLE_KEY:
+    # translate() gibt bei fehlendem Schluessel den Schluessel zurueck. Ungebremst
+    # stuende dann "ui.header.subtitle" in den Eigenschaften der ausgelieferten
+    # .exe - falsch, aber an einer Stelle, an die niemand schaut. Lieber der Bau
+    # bricht ab.
+    raise SystemExit(f"{_SUBTITLE_KEY} fehlt in app/static/i18n/{config.DEFAULT_LOCALE}.json")
+
+# config.BRAND_COPYRIGHT ist reines ASCII, weil es auf dem Weg zu Inno Setup ueber
+# eine Kommandozeile muss (Begruendung dort). Inno ersetzt "(C)" beim Uebersetzen
+# selbst durch das richtige Zeichen; hier passiert dasselbe im eigenen Prozess,
+# damit auf beiden .exe wortgleich dasselbe steht. Kein Kodierungsrisiko: dieser
+# Wert wird importiert, nicht durch eine Konsole gereicht.
+LEGAL_COPYRIGHT = config.BRAND_COPYRIGHT.replace("(C)", "©")
+
+# Ohne diesen Block bleiben die Dateieigenschaften der .exe LEER: PyInstaller legt
+# von sich aus keine Versionsressource an. Rechtsklick -> Eigenschaften -> Details
+# zeigte dann nichts, auch keinen Herausgeber.
+#
+# Zu beachten: `filevers`/`prodvers` sind die BINAEREN Felder und nehmen genau vier
+# ganze Zahlen - "0.0.2-alpha" weist Windows ab. Deshalb dort config.APP_VERSION_TUPLE
+# (0.0.2.0) und in den Zeichenkettenfeldern daneben die lesbare Fassung.
+#
+# Das ersetzt KEINE Signatur. SmartScreen nennt weiterhin keinen Herausgeber,
+# solange die .exe nicht mit einem Zertifikat signiert ist; die Eigenschaften kann
+# jeder hineinschreiben, eine Signatur nicht.
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(
+        filevers=config.APP_VERSION_TUPLE,
+        prodvers=config.APP_VERSION_TUPLE,
+        mask=0x3F,
+        flags=0x0,
+        OS=0x40004,      # VOS_NT_WINDOWS32
+        fileType=0x1,    # VFT_APP
+        subtype=0x0,
+        date=(0, 0),
+    ),
+    kids=[
+        StringFileInfo(
+            [
+                # 0407 = Deutsch, 04B0 = Unicode. Die Vorgabesprache der Anwendung.
+                StringTable(
+                    "040704B0",
+                    [
+                        StringStruct("CompanyName", config.BRAND_NAME),
+                        StringStruct("ProductName", APP_NAME),
+                        StringStruct("FileDescription", FILE_DESCRIPTION),
+                        StringStruct("FileVersion", config.APP_VERSION),
+                        StringStruct("ProductVersion", config.APP_VERSION),
+                        StringStruct("LegalCopyright", LEGAL_COPYRIGHT),
+                        StringStruct("InternalName", APP_NAME),
+                        StringStruct("OriginalFilename", f"{APP_NAME}.exe"),
+                        StringStruct("Comments", config.BRAND_URL),
+                    ],
+                )
+            ]
+        ),
+        VarFileInfo([VarStruct("Translation", [0x0407, 1200])]),
+    ],
+)
 
 datas = [
     # Oberflaeche, Marke und i18n-Kataloge. KEIN Python - die statische Analyse
@@ -82,7 +174,7 @@ exe = EXE(  # noqa: F821
     a.scripts,
     [],
     exclude_binaries=True,
-    name="ArUco-Homographie",
+    name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -96,6 +188,7 @@ exe = EXE(  # noqa: F821
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(ROOT, "app", "static", "favicon.ico"),
+    version=version_info,
 )
 
 coll = COLLECT(  # noqa: F821
@@ -105,5 +198,5 @@ coll = COLLECT(  # noqa: F821
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="ArUco-Homographie",
+    name=APP_NAME,
 )
