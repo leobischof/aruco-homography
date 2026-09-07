@@ -222,16 +222,87 @@ korrigiert werden, damit niemand später einen contrib-Bau anwirft, den es nicht
 
 **Was an die Stelle des erledigten Risikos tritt** — kleiner, aber nicht null:
 
-- **Fremde Abhängigkeit.** `@techstark/opencv-js` ist der Bau *einer* Person. Fällt er
-  weg oder friert er ein, muss selbst gebaut werden. Das ist dann ein normaler
-  Emscripten-Bau des **Hauptbaums** (kein contrib!) mit erweiterter Whitelist in
-  `platforms/js/opencv_js.config.py` — unangenehm, aber weder exotisch noch riskant.
-  Die Datei sollte für einen Auslieferungsstand ohnehin **eingefroren und mitgeliefert**
-  werden, nicht bei jedem Bau frisch aus npm gezogen.
+- **Fremde Abhängigkeit — kleiner als hier zuerst stand.** `@techstark/opencv-js` ist
+  der Bau *einer* Person, und dieser Absatz nannte das zunächst das verbleibende
+  Hauptrisiko. **Das war zu hoch gegriffen:** der **offizielle** `opencv.js` von
+  `docs.opencv.org/4.x/opencv.js` exportiert den vollen ArUco-Satz ebenfalls
+  (`aruco_ArucoDetector`, `aruco_DetectorParameters`, `aruco_RefineParameters`,
+  `getPredefinedDictionary`, `CORNER_REFINE_SUBPIX`, `DICT_4X4_50`). Es gibt also einen
+  Rückfallweg, und er ist offiziell.
+
+  **Wie das beinahe falsch hier gelandet wäre**, weil die Falle jeden trifft, der es
+  nachprüft: eine Suche nach diesen Namen **in der Datei** findet null Treffer — die
+  offiziellen Bauten legen ihr wasm als **base64** ab, also steht dort keine einzige
+  Symbolzeichenkette. Auch `findHomography` findet man so nicht. Wer daraus schließt,
+  ArUco fehle, schließt falsch; geladen und abgefragt ist es da. Der Kanarienvogel ist,
+  nach einem Namen zu suchen, der ganz sicher enthalten sein *muss* — fehlt der auch,
+  liegt es am Verfahren und nicht am Bau.
+
+  **`@techstark` bleibt trotzdem die richtige Vorgabe**, aber aus einem anderen Grund als
+  „es gibt nichts anderes": es ist **5.0.0** und damit dieselbe Hauptfassung wie der
+  Desktop, während der offizielle Bau **4.13.0** ist. (Auch `docs.opencv.org/5.x/opencv.js`
+  meldet `4.13.0-1274-g6a1a2754c8` — ein 4.13-Zwischenstand, kein OpenCV 5.)
+
+  **Ungeprüft geblieben:** dass der offizielle Bau auch wirklich *erkennt*. Belegt ist
+  nur, dass er die Bindungen führt und meldet; ein Durchlauf kam nicht zustande. Der
+  Browser-Beleg oben ruht also weiterhin allein auf `@techstark` 5.0.0.
+
+  Fällt beides weg, bleibt der normale Emscripten-Bau des **Hauptbaums** (kein contrib!)
+  mit erweiterter Whitelist in `platforms/js/opencv_js.config.py` — unangenehm, aber
+  weder exotisch noch riskant. Für einen Auslieferungsstand gehört die Datei ohnehin
+  **eingefroren und mitgeliefert**, nicht bei jedem Bau frisch aus npm gezogen.
 - **2,7 MB Brotli** liegen vor der ersten Messung. Eine engere Whitelist drückt das,
   falls es stört.
 - **Einkernig und ohne SIMD.** Reicht heute. Wenn es je klemmt, gibt es zwei bekannte
   Hebel, bevor irgendetwas umgeschrieben werden muss.
+
+---
+
+## 6a · Symbolabgleich: was im WASM-Bau fehlt — und für wen
+
+Nachgezählt: von den **50** `cv2.*`-Symbolen, die `app/` benutzt, sind **46** im
+WASM-Bau vorhanden. Die vier fehlenden, und warum keines davon Millimeter kostet:
+
+| fehlt | benutzt in | Bewertung |
+|---|---|---|
+| `imwrite`, `IMWRITE_JPEG_QUALITY` | `pipeline.py`, `session.py` | erwartet — `imgcodecs` ist aus. **Nur Vorschaudateien**, nicht die Messung. |
+| `COLOR_BGR2LAB`, `COLOR_LAB2BGR` | `enhance.py:191,197` | ein Modul, dessen eigener Kopf **„KOSMETISCH, NIE GEOMETRISCH"** sagt (Invariante 6). **Kann die Messung nicht anfassen.** |
+
+Ebenfalls **nicht** an der JS-Oberfläche: `cornerSubPix`, `calibrateCamera`,
+`undistortPoints`, `LMSolver`, `estimatePoseSingleMarkers`. Vorhanden: `solvePnP`,
+`solvePnPRansac`, `solvePnPRefineLM`, `Rodrigues`, `projectPoints`, `findHomography`,
+`warpPerspective`.
+
+### Die Unterscheidung, auf die es ankommt
+
+**Diese Abwesenheiten binden nur, was *JavaScript* aufrufen kann.** Der C++-Kern wird
+**in** das wasm hineinübersetzt und bindet gegen `imgproc` und `calib` — beide sind
+gebaut. `cv::LMSolver` und `cv::cornerSubPix` stehen ihm also zur Verfügung, auf allen
+drei Zielen.
+
+Das ist für Stufe 2 unmittelbar wichtig: der Fahrplan ersetzt
+`scipy.optimize.least_squares` durch `cv::LMSolver`, und dieser Weg ist damit offen.
+
+**Die echte Schranke bleibt das abgeschaltete Modul:** `imgcodecs` ist gar nicht erst
+gelinkt. `cv::imread`/`imwrite` fehlen deshalb **auch dem C++-Kern**, nicht nur
+JavaScript. Der Kern bleibt auf rohen Pixelpuffern.
+
+### Eine Falle, die still zuschlägt
+
+**Die Typkennungen haben sich zwischen OpenCV 4.x und 5.0.0 geändert:**
+
+```
+CV_32FC2 : 37 in 5.0.0, aber 13 in 4.x
+CV_8UC3  : 64 in 5.0.0, aber 16 in 4.x
+```
+
+Die Datenanordnung ist unverändert — nur die Zahlen sind gewandert. Wer `mat.type()`
+gegen eine **Zahl** vergleicht statt gegen das Makro, verzweigt beim Übersetzen gegen
+eine andere OpenCV-Fassung falsch. Ohne Fehlermeldung. Und genau das tut Stufe 4, wenn
+derselbe Quelltext für Android und WASM übersetzt wird.
+
+**Also nur die benannten Makros, nie eine nackte Zahl** — in der Bibliothek wie im
+Konformitätstest.
 
 ---
 
