@@ -183,12 +183,24 @@ lauffähig und liefert weiter aus.
 
 *Fertig, wenn:* die vorhandene Python-Suite gegen den C++-Kern grün ist.
 
-### Stufe 3 · PDF nach JavaScript — Wochen
+### Stufe 3 · ✅ PORTIERT — PDF nach JavaScript
 
-`app/pdf/` nach `web/pdf/`. Die Invarianten 1, 2 und 3 neu belegen.
+`app/pdf/` liegt als `web/pdf/` vor (`pdf-lib`, reines ESM). Alle **33** PDF-Prüfungen
+sind mit `ARUCO_PDF=js` grün — und die ganze Suite mit ihren 174 Prüfungen dazu.
+`.\dev.ps1 run-tests-pdf-js` fährt sie so.
 
-*Fertig, wenn:* ein in JS gebautes PDF Seite für Seite dieselben Maße hat wie das
-heutige, und der Markenstreifen auf jedem Blatt steht.
+Was damit belegt ist: die Invarianten 1, 3 und 7 gelten auch im neuen Bau, an
+denselben Prüfungen und mit denselben Toleranzen. Die aus beiden PDFs **gelesenen**
+Platzierungen stimmen auf 0,00005 mm überein, die Marke steht auf jedem Blatt, und
+ein aus JavaScript gebautes Markerblatt liefert durch den echten Detektor dieselben
+Kantenlängen und Mittelpunktabstände wie das bisherige (auf vier Nachkommastellen).
+`web/pdf/` wurde ausserdem in einem echten Browser ausgeführt.
+
+Was damit **nicht** belegt ist: die Umstellung. Ausgeliefert wird weiter der
+ReportLab-Bau (`ARUCO_PDF` steht auf `python`), und die eine gemessene Abweichung —
+ein halbes Gerätepixel beim **Rastern** gekachelter Seiten, weil der Renderer
+Bildkanten rundet — steht in `web/pdf/draw.js` mit ihrer Messreihe. Der Umbau der
+Oberfläche auf den eigenen PDF-Bau gehört zu Stufe 4.
 
 ### Stufe 4 · Die Hüllen — Wochen
 
@@ -255,7 +267,12 @@ außerhalb von OpenCV ist `scipy.optimize.least_squares` an genau zwei Stellen
 - **Der C++-Kern besteht die Python-Suite nicht** innerhalb der Toleranz → nicht
   weitergehen, sondern die Abweichung finden. Eine Stufe 3 auf einem Kern, der um
   einen Zehntelmillimeter danebenliegt, ist verlorene Arbeit.
-- **Die PDF-Invarianten lassen sich in JS nicht sauber belegen** → dann bleibt PDF
-  vorerst in Python und Android bekommt später eine eigene Antwort.
+- ~~**Die PDF-Invarianten lassen sich in JS nicht sauber belegen**~~ → **erledigt**
+  (Stufe 3). Alle 33 PDF-Prüfungen sind mit `ARUCO_PDF=js` grün, mit denselben
+  Toleranzen. An seine Stelle tritt eine kleinere Frage: das **Rastern** gekachelter
+  Seiten weicht um bis zu ein halbes Gerätepixel ab, weil der Renderer Bildkanten auf
+  ganze Pixel legt und das gerundete Rechteck im neuen Bau das ganze Bild statt der
+  Kachel ist. Die Datei selbst stimmt auf 0,00005 mm; die Messreihe steht in
+  `web/pdf/draw.js`.
 - **Aufmerksamkeit.** Sechs bis zehn Wochen sind lang. Deshalb liefert jede Stufe
   etwas Brauchbares, statt erst am Ende.
