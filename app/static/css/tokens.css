@@ -4,8 +4,9 @@
 
    WAS HIER HINEINGEHOERT: nur Tokens (plus die eine @font-face-Regel und
    color-scheme). Kein Selektor fuer ein Bedienelement, keine Layoutregel -
-   die stehen in style.css. Wer hier eine Klasse anlegt, hat zwei Stellen
-   geschaffen, an denen die Oberflaeche entsteht.
+   die stehen in base.css, layout.css, components.css, forms.css und crop.css.
+   Wer hier eine Klasse anlegt, hat zwei Stellen geschaffen, an denen die
+   Oberflaeche entsteht.
 
    WOHER DIE WERTE KOMMEN: aus snow-service-free/src/main.css, dem Haus-
    Designsystem des Webprojekts. Die semantischen Namen (--background,
@@ -25,7 +26,7 @@
         Palettenwert. Ein Thema zu wechseln heisst deshalb, ein paar Zeiger
         umzulegen - nicht dreissig Farben abzuschreiben.
 
-   Nur die Rollen in style.css benutzen. Die --bfsb-* sind die Farbliste,
+   Nur die Rollen in den Stylesheets benutzen. Die --bfsb-* sind die Farbliste,
    kein Vokabular fuer die Oberflaeche: "der Knopf ist petrol" ist eine
    Aussage, die beim naechsten Themenwechsel falsch wird, "der Knopf ist
    --primary" nicht.
@@ -302,7 +303,7 @@
     /* Der weiche Aussenring des Fokus. free schreibt dafuer `ring-ring/50` - die
        Schraegstrich-Deckkraft ist reine Tailwind-Syntax und laesst sich ohne
        color-mix() (genauso jung wie oklch) nicht nachbauen. Also ein eigener
-       Token statt einer fest verdrahteten Zahl in style.css. Beide Themen
+       Token statt einer fest verdrahteten Zahl im Stylesheet. Beide Themen
        teilen ihn, weil --ring in beiden dasselbe Petrol ist. */
     --ring-soft: var(--bfsb-petrol-a50);
 
