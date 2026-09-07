@@ -81,6 +81,50 @@ def _options_payload(options) -> dict:
     }
 
 
+def _run_node(request: dict, workspace: Path) -> dict:
+    """Auftrag schreiben, Node laufen lassen, die Antwortzeile zurueckgeben."""
+    request_path = workspace / "request.json"
+    request_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
+
+    completed = subprocess.run(
+        [_node(), str(BRIDGE_JS), str(request_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"Der JavaScript-PDF-Bau ist abgebrochen:\n{completed.stderr.strip()}"
+        )
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def build_markersheet_via_node(
+    marker_mm: float, spacing_mm: tuple[float, float], locale: str
+) -> bytes:
+    """Das Markerblatt aus web/pdf/markersheet.js.
+
+    Die Modulbits erzeugt dabei opencv.js unter Node - nicht dieses Python. Sonst
+    prüfte tests/test_markersheet.py am Ende cv2 gegen cv2, und die Frage, ob
+    JavaScript dieselben Marker zeichnet, bliebe offen.
+    """
+    with tempfile.TemporaryDirectory(prefix="aruco-pdfjs-") as folder:
+        workspace = Path(folder)
+        out_path = workspace / "markersheet.pdf"
+        _run_node(
+            {
+                "kind": "markersheet",
+                "out": str(out_path),
+                "marker_mm": float(marker_mm),
+                "spacing_mm": [float(spacing_mm[0]), float(spacing_mm[1])],
+                "locale": locale,
+            },
+            workspace,
+        )
+        return out_path.read_bytes()
+
+
 def build_pdf_via_node(
     rectified_bgr: np.ndarray,
     crop_w_mm: float,
@@ -98,40 +142,22 @@ def build_pdf_via_node(
         workspace = Path(folder)
         jpeg_path = workspace / "image.jpg"
         out_path = workspace / "out.pdf"
-        request_path = workspace / "request.json"
 
         jpeg_path.write_bytes(_as_jpeg(rectified_bgr))
-        request_path.write_text(
-            json.dumps(
-                {
-                    "kind": "export",
-                    "jpeg": str(jpeg_path),
-                    "out": str(out_path),
-                    "crop_w_mm": float(crop_w_mm),
-                    "crop_h_mm": float(crop_h_mm),
-                    "options": _options_payload(options),
-                    "footer_lines": list(footer_lines),
-                    "contour_mm": (
-                        None if contour_mm is None else np.asarray(contour_mm).tolist()
-                    ),
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        answer = _run_node(
+            {
+                "kind": "export",
+                "jpeg": str(jpeg_path),
+                "out": str(out_path),
+                "crop_w_mm": float(crop_w_mm),
+                "crop_h_mm": float(crop_h_mm),
+                "options": _options_payload(options),
+                "footer_lines": list(footer_lines),
+                "contour_mm": (
+                    None if contour_mm is None else np.asarray(contour_mm).tolist()
+                ),
+            },
+            workspace,
         )
-
-        completed = subprocess.run(
-            [_node(), str(BRIDGE_JS), str(request_path)],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        if completed.returncode != 0:
-            raise RuntimeError(
-                f"Der JavaScript-PDF-Bau ist abgebrochen:\n{completed.stderr.strip()}"
-            )
-
-        answer = json.loads(completed.stdout.strip().splitlines()[-1])
         answer["data"] = out_path.read_bytes()
         return answer

@@ -177,10 +177,13 @@ function Invoke-RunTestsJs {
     Invoke-Native -What 'run-tests-js' -Action { node --test 'web/pdf/**/*.test.mjs' @Rest }
 }
 
-# Selbstheilend wie Confirm-Deps, nur fuer npm.
+# Selbstheilend wie Confirm-Deps, nur fuer npm. Geprueft werden BEIDE Pakete:
+# pdf-lib baut das PDF, @techstark/opencv-js erzeugt im Pruefstand die Markermodule.
+# Ein "npm install --omit=dev" liesse das zweite fehlen, und das Markerblatt braucht es.
 function Confirm-NodeModules {
-    if (Test-Path (Join-Path $RepoRoot 'node_modules\pdf-lib')) { return }
-    Write-Warn 'node_modules fehlt - npm install laeuft jetzt'
+    $needed = @('node_modules\pdf-lib', 'node_modules\@techstark\opencv-js')
+    if (-not ($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })) { return }
+    Write-Warn 'node_modules fehlt oder ist unvollstaendig - npm install laeuft jetzt'
     Invoke-Native -What 'npm install' -Action { npm install --prefix $RepoRoot }
 }
 

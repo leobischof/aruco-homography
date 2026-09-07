@@ -9,7 +9,6 @@ darf hier automatisch skaliert werden.
 from __future__ import annotations
 
 import io
-import os
 from dataclasses import dataclass, field
 
 import cv2
@@ -20,7 +19,7 @@ from reportlab.pdfgen.canvas import Canvas
 
 from app import config
 from app.i18n import translate
-from app.pdf import branding, overlays
+from app.pdf import branding, generator, overlays
 from app.pdf.layout import Rect, TileLayout, single_page, strip_height, tile_layout
 
 
@@ -63,29 +62,6 @@ class BuildResult:
     meta: dict[str, float] = field(default_factory=dict)
 
 
-# Welcher Bau das PDF macht. "python" ist die Vorgabe und bleibt es: der
-# ReportLab-Bau ist die Fassung, die am Messschieber geprueft wurde.
-#
-# "js" schaltet auf web/pdf/ um und ruft Node ueber tools/pdf_js_bridge.py auf. Das
-# ist ein PRUEFSTAND, kein Auslieferungsweg (docs/cpp-migration/README.md): dieselben
-# 33 Pruefungen lesen dann ein JavaScript-PDF zurueck und messen es mit demselben
-# Massstab. Im Betrieb baut die Oberflaeche ihr PDF selbst, ohne diesen Umweg.
-#
-# Gelesen wird bei JEDEM Aufruf und nicht beim Import: ein Test, der die Umgebung
-# setzt, soll nicht davon abhaengen, in welcher Reihenfolge Module geladen wurden.
-_PDF_GENERATORS = ("python", "js")
-
-
-def _generator() -> str:
-    """Der gewaehlte Bau. Ein unbekannter Wert bricht ab, statt still zurueckzufallen."""
-    name = os.environ.get("ARUCO_PDF", "python").strip().lower() or "python"
-    if name not in _PDF_GENERATORS:
-        raise ValueError(
-            f"ARUCO_PDF={name!r} ist unbekannt. Moeglich: {', '.join(_PDF_GENERATORS)}."
-        )
-    return name
-
-
 def build_pdf(
     rectified_bgr: np.ndarray,
     crop_w_mm: float,
@@ -95,7 +71,7 @@ def build_pdf(
     contour_mm: np.ndarray | None = None,
 ) -> BuildResult:
     """Einstiegspunkt: baut je nach Option eine Seite oder eine Kachelung."""
-    if _generator() == "js":
+    if generator() == "js":
         return _build_via_javascript(
             rectified_bgr, crop_w_mm, crop_h_mm, options, footer_lines, contour_mm
         )

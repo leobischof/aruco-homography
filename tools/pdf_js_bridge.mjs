@@ -18,7 +18,10 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 
+import { ARUCO_DICT_NAME } from "../web/pdf/constants.js";
 import { buildPdf, exportOptions } from "../web/pdf/build.js";
+import { MODULES, buildMarkersheet } from "../web/pdf/markersheet.js";
+import { markerBitsFromOpenCv } from "./opencv_markers.mjs";
 
 async function main() {
     const requestPath = process.argv[2];
@@ -27,10 +30,15 @@ async function main() {
     }
     const request = JSON.parse(await readFile(requestPath, "utf-8"));
 
-    if (request.kind !== "export") {
+    const handler = { export: doExport, markersheet: doMarkersheet }[request.kind];
+    if (handler === undefined) {
         throw new Error(`Unbekannter Auftrag: ${request.kind}`);
     }
+    const answer = await handler(request);
+    process.stdout.write(`${JSON.stringify(answer)}\n`);
+}
 
+async function doExport(request) {
     const jpeg = await readFile(request.jpeg);
     const result = await buildPdf(
         jpeg,
@@ -42,14 +50,23 @@ async function main() {
     );
 
     await writeFile(request.out, result.data);
-    process.stdout.write(
-        `${JSON.stringify({
-            page_size_mm: result.pageSizeMm,
-            image_rect_mm: result.imageRectMm,
-            page_count: result.pageCount,
-            meta: result.meta,
-        })}\n`,
-    );
+    return {
+        page_size_mm: result.pageSizeMm,
+        image_rect_mm: result.imageRectMm,
+        page_count: result.pageCount,
+        meta: result.meta,
+    };
+}
+
+async function doMarkersheet(request) {
+    const data = await buildMarkersheet({
+        markerBits: await markerBitsFromOpenCv(ARUCO_DICT_NAME, MODULES),
+        markerMm: request.marker_mm,
+        spacingMm: request.spacing_mm,
+        locale: request.locale,
+    });
+    await writeFile(request.out, data);
+    return { bytes: data.length };
 }
 
 main().catch((error) => {
