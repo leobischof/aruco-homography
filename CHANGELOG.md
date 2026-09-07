@@ -15,8 +15,11 @@ kommen aus demselben Code wie vorher.
 ### Hinzugefügt
 
 - **Ein Windows-Installer — eine Datei, nichts zu entpacken.** `.\dev.ps1 build-installer` baut
-  mit Inno Setup `dist\ArUco-Homographie-Setup-<Fassung>.exe`: **81 780 869 Byte (78,0 MB)** statt
-  eines 114-MB-ZIPs, das man erst auspacken muss und dabei auch noch an der richtigen Stelle.
+  mit Inno Setup `dist\ArUco-Homographie-Setup-<Fassung>.exe`: **rund 78 MB** statt eines
+  114-MB-ZIPs, das man erst auspacken muss und dabei auch noch an der richtigen Stelle.
+  (Auf die Byte genau steht die Zahl hier bewusst nicht: zwei Bauläufe aus demselben Quellstand
+  ergaben 81 780 869 und 81 786 796 Byte. PyInstaller schreibt Zeitstempel ins Bundle, und was
+  sich nicht wiederholen lässt, gehört nicht als genaue Zahl in ein Änderungsprotokoll.)
   Doppelklicken, durchklicken, fertig — Startmenü-Eintrag, wahlweise ein Schreibtischsymbol
   (unangehakt, wie es Windows macht) und ein Deinstallierer in *Apps & Features*.
 
