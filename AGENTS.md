@@ -33,13 +33,18 @@ Server, den der Benutzer gestartet hat, niemals beenden — `kill-servers` triff
 ```
 app/config.py        SSOT: jede Konstante, jede Markenfarbe, das Blattlayout. Auch
                      dev.ps1 liest den Port von hier.
-app/notices.py       Vokabular für Warnungen und Abbrüche (Code + deutscher Klartext)
+app/notices.py       Vokabular für Warnungen und Abbrüche: Code + Parameter, KEIN
+                     fertiger Satz. Der Text entsteht erst am Rand, aus dem Katalog.
+app/i18n.py          Katalog laden, übersetzen, Accept-Language aushandeln
 app/pipeline.py      Orchestrierung der Rechenkette; main.py bleibt reiner Transport
-app/vision/          geometry · detect · solve · camera · thickness · extent · rectify · contour
+app/vision/          geometry · detect · solve · camera · thickness · extent · rectify ·
+                     contour · enhance
 app/pdf/             layout · overlays · branding · build · markersheet
-app/static/          Oberfläche; app/static/brand/ trägt Logo und Schrift
+app/static/          Oberfläche: css/ (Tokens + Stylesheets), js/ (ES-Module, kein
+                     Bundler), i18n/ (de.json · en.json), brand/ (Logo und Schrift)
 tests/               synthetische Szenen mit bekannter Grundwahrheit
-docs/superpowers/    die Spezifikation, mit dem Code abgeglichen
+docs/                README.md ist der Index; docs/superpowers/specs/ die Spezifikation,
+                     mit dem Code abgeglichen
 ```
 
 ## Invarianten — hier nichts kaputt machen
@@ -58,6 +63,18 @@ docs/superpowers/    die Spezifikation, mit dem Code abgeglichen
    auch nicht „nur kurz" in einem Modul.
 5. **Das Raster muss auf hellem und dunklem Untergrund lesbar sein.** Deshalb weißer
    Saum unter der Kernlinie — nicht durch eine einzelne graue Linie ersetzen.
+6. **Die Bildaufbereitung ist kosmetisch, niemals geometrisch.** `app/vision/enhance.py`
+   läuft ausschließlich auf dem **bereits entzerrten** Bild, nie vor der Markererkennung:
+   die Homographie wird am unveränderten Foto gemessen. Ein Schärferegler vor dem Detektor
+   verschöbe die Markerecken und damit die Millimeter. Kein Regler darf die Bildgröße
+   ändern, und ein unsymmetrischer Kern hat hier nichts zu suchen.
+   Geprüft in `tests/test_enhance.py` mit einem Subpixel-Schätzer an einer *weichen* Kante —
+   eine harte Stufe kann eine Verschiebung von einem Zehntelpixel gar nicht darstellen und
+   bestünde den Test auch dann, wenn er nichts prüft.
+7. **Jede sichtbare Zeichenkette kommt aus dem Katalog.** `app/static/i18n/de.json` und
+   `en.json` haben denselben Schlüsselsatz — `tests/test_i18n.py` besteht darauf. Kein
+   fertiger deutscher Satz im Code, weder in der Oberfläche noch in `notices.py` noch im
+   PDF: dort steht der Code, der Text entsteht am Rand.
 
 ## Wie hier getestet wird
 
