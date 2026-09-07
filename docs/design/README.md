@@ -1,3 +1,11 @@
+---
+title: docs/design
+description: Einstieg ins Designsystem und die drei Dinge, die man vor jeder Änderung wissen muss.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # docs/design
 
 Wie dieses Werkzeug aussehen soll und warum.

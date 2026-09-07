@@ -1,3 +1,11 @@
+---
+title: Git-Regeln
+description: Verbindliche Regeln für Identität, Commits, Pushes und den Aufbau der Commit-Nachricht.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # Git-Regeln
 
 Verbindlich für **alle**, die in diesem Repo arbeiten — Menschen wie KI-Agenten. Diese Datei

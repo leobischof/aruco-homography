@@ -1,3 +1,11 @@
+---
+title: Designsystem Bischof Snowboards
+description: Farbe, Typografie, Form, Komponenten, Themen, Sprachen und Mobil — und was aus dem Webprojekt nicht zu übernehmen ist.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # Designsystem Bischof Snowboards
 
 Diese Seite beantwortet eine Frage: **jemand baut morgen ein neues Werkzeug für
