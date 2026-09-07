@@ -24,14 +24,15 @@ Windows with PowerShell and Python 3. One command:
 ```
 
 The first run creates the virtual environment and installs the dependencies by itself — there
-is no separate setup step. Then it starts the server, opens the browser at
-`http://127.0.0.1:8000`, and prints the LAN address together with an ASCII QR code. Point your
-phone's camera at that code and the phone runs the whole thing over the network. Stop the
-server with Ctrl+C.
+is no separate setup step. Then it starts the server, opens the application **in its own
+window**, and prints the LAN address together with an ASCII QR code. Point your phone's camera
+at that code and the phone runs the whole thing over the network — the server keeps serving the
+LAN while the window is open, because the phone is where the photo comes from. Close the window
+to stop, or press Ctrl+C in the console.
 
 | Command | What it does |
 |---|---|
-| `.\dev.ps1 start-server` | Start the server and open the browser (`--no-browser` suppresses that, `--port N` asks for a different port) |
+| `.\dev.ps1 start-server` | Start the server and open the app window (`--browser` uses the system browser instead, `--no-browser` opens neither, `--port N` asks for a different port) |
 | `.\dev.ps1 install-deps` | Create the venv and install `requirements.txt` |
 | `.\dev.ps1 run-tests` | Run the test suite (`pytest`; extra arguments are forwarded) |
 | `.\dev.ps1 build-markersheet [mm] [spacing_x] [spacing_y]` | Write the marker sheet to `out/markerblatt_A4.pdf` |
@@ -46,6 +47,27 @@ only call into `dev.ps1`; the script is the single source of truth for what a co
 
 The server takes port 8000 when it is free and a different one when it is not — the address
 that actually applies is printed in the start banner.
+
+### Its own window — and the ways out of it
+
+The interface comes up in a **native desktop window** that hosts the local server, not in a
+browser tab. A tab is closed with all the others and the program looks gone while its server is
+still running; a window is a program. The window is a second *view* of that server, not a second
+application: the LAN address stays reachable while it is open, which is the whole point, because
+the phone is where the photo comes from.
+
+| Flag | What it does |
+|---|---|
+| *(none)* | Open the app in its own window. This is what a double-click does. |
+| `--browser` | Open the system browser instead — the way out on a machine where the window is no good. |
+| `--no-browser` | Open neither. The server runs on its own; for scripts, and for working only from the phone. |
+| `--port N` | Ask for a different port. A wish, not a promise: a port already taken is stepped around. |
+
+The window needs the **Microsoft Edge WebView2 runtime**. Windows 11 has it; a Windows 10
+machine may not (`winget install --id Microsoft.EdgeWebView2Runtime` adds it). If it is missing —
+or if `pywebview` is not installed at all — the program says so in one line and opens the browser
+instead. It never refuses to start over a missing window: server, LAN address and QR code come up
+either way, so a workshop PC that cannot show the window is still fully usable from the phone.
 
 ## Running it without Python
 
@@ -84,8 +106,10 @@ reads them out of `app/config.py` and passes them in, so there is one place to c
 ```
 
 builds `dist\ArUco-Homographie\ArUco-Homographie.exe` with PyInstaller. Double-clicking it starts
-the server and opens the browser. This is what the release `.zip` contains, and what to use when
-installing is not an option — on a machine where nothing may be installed, or from a USB stick.
+the server and opens the app in its own window; a console window comes up beside it with the LAN
+address and the QR code, and it belongs there — that is how the phone finds the server. This is
+what the release `.zip` contains, and what to use when installing is not an option — on a machine
+where nothing may be installed, or from a USB stick.
 
 Pass on the **whole folder**, not just the `.exe` inside it — `_internal\` sits beside it and
 holds OpenCV, the fonts and the interface. Around 290 MB.
@@ -609,7 +633,8 @@ app/vision/    detection, homography, camera pose, thickness correction,
                rectification, image adjustment, contour
 app/pdf/       page geometry, printed extras, branding, PDF build, marker sheet
 app/static/    the interface — css/ js/ i18n/ and brand/ with the logo and the font
-app/           config (SSOT for every constant), pipeline (orchestration), main (routes)
+app/           config (SSOT for every constant), pipeline (orchestration), main (routes),
+               window (how the interface shows up: own window, browser, or neither)
 installer/     aruco-homographie.iss — the Inno Setup recipe for the Windows installer
 tests/         synthetic scenes with known ground truth
 docs/          documentation — start at docs/README.md
@@ -670,8 +695,12 @@ Lineal: aus ihrer bekannten, **nachgemessenen** Größe folgt die Homographie un
 ```
 
 Beim ersten Mal richtet der Befehl venv und Abhängigkeiten selbst ein, startet dann den Server,
-öffnet den Browser und gibt die Netzwerk-Adresse samt QR-Code aus. Damit lässt sich der ganze
-Ablauf vom Handy aus bedienen. Die vollständige Befehlstabelle steht oben unter *Getting started*.
+zeigt die Oberfläche **in einem eigenen Fenster** und gibt die Netzwerk-Adresse samt QR-Code aus.
+Der Server bleibt dabei, was er war: die Adresse fürs Handy antwortet weiter, während das Fenster
+offen steht, und damit lässt sich der ganze Ablauf vom Handy aus bedienen. `--browser` nimmt
+statt des Fensters den Browser, `--no-browser` öffnet gar nichts. Das Fenster braucht die
+**WebView2-Laufzeit**; fehlt sie, sagt das Programm das in einer Zeile und öffnet den Browser,
+statt abzubrechen. Die vollständige Befehlstabelle steht oben unter *Getting started*.
 
 **Auf einen Rechner ohne Python bringen.** `.\dev.ps1 build-installer` baut
 `dist\ArUco-Homographie-Setup-<Fassung>.exe` — **eine** Datei. Doppelklicken, durchklicken,
