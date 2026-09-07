@@ -13,12 +13,18 @@
  * Fragezeichen-Parameter ?locale= - und deshalb muss dieser Parameter bei jedem
  * Sprachwechsel nachgezogen werden, sonst kommt das Blatt in der Sprache des
  * Browsers statt in der der Oberflaeche.
+ *
+ * Der Sprachwaehler steht NICHT im Markup, sondern entsteht hier aus der Liste,
+ * die i18n.js von /api/locales geholt hat. Vorher waren es zwei fest
+ * hingeschriebene Knoepfe, DE und EN: eine dritte Sprache haette Markup,
+ * Stylesheet und zwei Konstantenlisten angefasst. Jetzt genuegen die
+ * Katalogdatei und ein Eintrag in config.SUPPORTED_LOCALES.
  */
 
-import { getLocale, onLocaleChange, setLocale, t } from "./i18n.js";
+import { getLocale, getLocales, onLocaleChange, setLocale, t } from "./i18n.js";
 import { effectiveTheme, onThemeChange, toggleTheme } from "./theme.js";
 
-export function createHeader({ themeButton, langButtons, sheetLink, getSheetParams }) {
+export function createHeader({ themeButton, langSelect, sheetLink, getSheetParams }) {
     function syncTheme() {
         // Der Knopf zeigt, was er TUT, nicht was ist: im hellen Thema den Mond
         // ("auf dunkel schalten"). Welches Symbol sichtbar ist, entscheidet
@@ -29,11 +35,22 @@ export function createHeader({ themeButton, langButtons, sheetLink, getSheetPara
         themeButton.setAttribute("aria-label", label);
     }
 
+    /** Die Eintraege einmal aufbauen. Die Namen sind Eigennamen ("Deutsch",
+        "English") und stehen im Katalog IHRER Sprache - sie aendern sich beim
+        Wechsel also nicht, nur die Auswahl tut es. */
+    function buildLanguageOptions() {
+        langSelect.replaceChildren(
+            ...getLocales().map(({ code, label }) => {
+                const option = document.createElement("option");
+                option.value = code;
+                option.textContent = label;
+                return option;
+            })
+        );
+    }
+
     function syncLanguage() {
-        const current = getLocale();
-        for (const button of langButtons) {
-            button.setAttribute("aria-pressed", String(button.dataset.locale === current));
-        }
+        langSelect.value = getLocale();
     }
 
     function syncSheetLink() {
@@ -48,12 +65,14 @@ export function createHeader({ themeButton, langButtons, sheetLink, getSheetPara
     themeButton.addEventListener("click", toggleTheme);
     onThemeChange(syncTheme);
 
-    for (const button of langButtons) {
-        button.addEventListener("click", async () => {
-            if (button.dataset.locale === getLocale()) return;
-            await setLocale(button.dataset.locale);
+    langSelect.addEventListener("change", () => {
+        // Schlaegt der Katalog fehl, zeigte die Auswahl eine Sprache, die gar
+        // nicht gilt - dann zurueck auf die, die wirklich laeuft.
+        setLocale(langSelect.value).catch((error) => {
+            console.error("Sprachwechsel fehlgeschlagen", error);
+            syncLanguage();
         });
-    }
+    });
 
     // setLocale ruft applyTranslations selbst auf - was dort NICHT erneuert wird,
     // sind Beschriftungen, die von einem Zustand abhaengen (welches Thema,
@@ -65,6 +84,7 @@ export function createHeader({ themeButton, langButtons, sheetLink, getSheetPara
     });
 
     syncTheme();
+    buildLanguageOptions();
     syncLanguage();
     syncSheetLink();
 

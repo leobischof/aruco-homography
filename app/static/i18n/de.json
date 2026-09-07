@@ -14,6 +14,9 @@
     "steps": {
       "upload": {
         "title": "Foto",
+        "choose": "Foto auswählen",
+        "no_file": "Keine Datei ausgewählt",
+        "drop_hint": "oder hierher ziehen",
         "hint": "Tipp fürs Ergebnis: Tele (1× oder 2×), großer Abstand, Objekt mittig. Weitwinkel biegt die Ränder, und diese Verzeichnung wird nicht korrigiert.",
         "summary": "{filename} – {width} × {height} px",
         "exif_focal": "EXIF-Brennweite {focal_mm} mm (KB-Äquivalent) – die Kamerahöhe kann automatisch bestimmt werden.",
