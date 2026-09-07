@@ -176,9 +176,40 @@ Commit in der Historie ist eine Falle für den Nächsten, der bisecten muss.
 
 ---
 
-## 6 · Offener Punkt
+## 6 · Branches
 
-Es wird derzeit direkt auf `master` gearbeitet; die ganze Historie liegt dort. Ein
-Branch-und-PR-Verfahren ist bewusst **nicht** eingeführt — bei einem Bearbeiter wäre es
-Zeremonie ohne Nutzen. Sobald ein zweiter Mensch mitschreibt, gehört diese Entscheidung neu
-getroffen und hier ersetzt.
+`master` ist der Stamm, und der Normalfall ist, direkt dort zu arbeiten. Ein
+Branch-und-PR-Verfahren für **jede** Änderung ist bewusst nicht eingeführt — bei einem
+Bearbeiter wäre es Zeremonie ohne Nutzen, und Abschnitt 3 verlangt ohnehin, dass jeder
+einzelne Commit für sich lauffähig ist.
+
+Ein Branch wird dann angelegt, wenn genau diese Regel sonst bricht: wenn ein Vorhaben
+**über mehrere Commits hinweg unfertig** wäre und der Stamm in dieser Zeit nicht mehr
+grün oder nicht mehr benutzbar bliebe. Ein Umbau der Paketierung ist so ein Fall, das
+Hinzufügen eines Reglers nicht.
+
+Benennung: `feat/…`, `fix/…`, `chore/…`.
+
+**Dazu gehört ein eigenes Arbeitsverzeichnis** (`git worktree`), kein Branch-Wechsel im
+selben Ordner:
+
+```powershell
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+git worktree list
+```
+
+Der Grund ist praktisch. Ein `git checkout` im selben Ordner zieht allen anderen den
+Boden weg, die dort gerade arbeiten — laufender Server, offene Datei im Editor, ein
+zweiter Agent. Mit einem Worktree liegen beide Stände nebeneinander auf der Platte und
+teilen sich ein `.git`. Ein frisches Worktree hat **kein** `venv`; `dev.ps1` legt es beim
+ersten Lauf selbst an.
+
+Aufräumen, wenn der Branch zurück im Stamm ist:
+
+```powershell
+git worktree remove ../ArUco-Homographie-kurzname
+git branch -d feat/kurzname
+```
+
+Sobald ein zweiter Mensch mitschreibt, gehört diese Entscheidung neu getroffen und hier
+ersetzt.
