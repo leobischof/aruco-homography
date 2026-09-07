@@ -217,12 +217,32 @@ ersetzt.
 
 ---
 
-## 7 · `master` ist geschützt — es führt nur ein Weg hinein
+## 7 · Zwei geschützte Zweige: `develop` sammelt, `master` veröffentlicht
 
-Seit 2026-09-07 nimmt GitHub auf `master` **keinen direkten Push mehr an**, auch nicht vom
-Eigentümer (`enforce_admins`). Der einzige Weg ist ein **Pull Request, per Squash gemergt**.
+Seit 2026-09-08 gibt es **zwei** Stufen, und Arbeit geht nur in einer Richtung durch sie
+hindurch:
 
-Am Repository eingestellt:
+```
+feat/…, fix/…, docs/…  ──PR──►  develop  ──PR──►  master
+                                (Sammeln)        (Veröffentlichen)
+```
+
+- **`develop` ist das Ziel jedes Feature-PRs.** Was fertig **und geprüft** ist, wird
+  hierhin gemergt. `develop` ist auch der **Vorgabezweig** des Repositories — ein
+  `gh pr create` ohne `--base` zielt von selbst hierher, damit man `master` nicht aus
+  Versehen trifft.
+- **`master` bekommt nur `develop`**, und zwar dann, wenn ein Stand ausgeliefert werden
+  soll. Kein Feature-Branch zielt je direkt auf `master`.
+
+**Wozu die zweite Stufe.** `master` soll den ausgelieferten Stand zeigen und nicht jeden
+Zwischenschritt dorthin. Ein Umzug wie der auf den C++-Kern besteht aus einem Dutzend
+Schritten, von denen einzeln keiner eine Fassung wert ist — zusammen sind sie eine. Auf
+`master` steht danach **ein** Eintrag je Fassung, nicht zwölf.
+
+Beide Zweige sind gleich hart geschützt: **kein direkter Push**, auch nicht vom Eigentümer
+(`enforce_admins`), und der einzige Weg hinein ist ein **Pull Request, per Squash gemergt**.
+
+Am Repository eingestellt (gilt für `develop` **und** `master`):
 
 | Einstellung | Wert | Wozu |
 |---|---|---|
@@ -249,17 +269,37 @@ das Warum.
 
 ### Der Ablauf
 
+**Ein Feature, von `develop` nach `develop`:**
+
 ```powershell
-git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname develop
 # arbeiten, committen, Tests grün halten
 git push -u origin feat/kurzname          # nur auf Ansage
-gh pr create --base master --title "feat: kurzer betreff" --body "..."
+gh pr create --title "feat: kurzer betreff" --body "..."   # zielt von selbst auf develop
 gh pr merge --squash --delete-branch      # nur auf Ansage
 ```
 
-Danach das Worktree entfernen (Abschnitt 6). `master` örtlich wieder einholen mit
+Danach das Worktree entfernen (Abschnitt 6). `develop` örtlich wieder einholen mit
 `git pull --ff-only` — der Squash-Commit ist ein **anderer** Commit als die eigenen, der
 lokale Branch ist danach Geschichte und wird nicht weiterverwendet.
+
+**Eine Fassung, von `develop` nach `master`:**
+
+```powershell
+gh pr create --base master --head develop --title "release: 0.1.0-alpha — …"
+gh pr merge --squash                      # OHNE --delete-branch!
+```
+
+`--delete-branch` wäre hier ein Fehler: `develop` ist kein Feature-Branch, sondern bleibt
+stehen. Danach `develop` wieder auf `master` einholen, damit die beiden nicht
+auseinanderlaufen — der Squash-Commit auf `master` ist ein anderer Commit als die
+Historie in `develop`:
+
+```powershell
+git checkout develop
+git merge master          # holt den Squash-Commit herein
+git push
+```
 
 ### Wenn der Schutz einmal im Weg steht
 
