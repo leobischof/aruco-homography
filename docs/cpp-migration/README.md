@@ -188,6 +188,24 @@ den Preis ohne den Gegenwert.
 
 ---
 
+## 5a · Wie das Ergebnis ausgeliefert wird
+
+**Der fertige Umzug ist `v0.1.0-alpha`** — und diese Fassung bringt **alle drei Ziele
+auf einmal**: die Windows-`.exe`, die Android-`.apk` und den Browser-Bau.
+
+Das ist Absicht und keine Bequemlichkeit. Der ganze Sinn dieses Umzugs ist, dass
+dieselbe Messtechnik überall rechnet. Drei Ziele einzeln zu veröffentlichen hieße,
+genau die Frage offenzulassen, für die der Aufwand betrieben wurde: rechnen sie
+wirklich gleich? Eine Fassung, in der alle drei liegen, ist die Antwort — sie sind
+zusammen gebaut, zusammen gegen `shared/fixtures/` geprüft und zusammen ausgeliefert.
+
+Der Sprung von `0.0.x` auf `0.1.0` sagt dasselbe: nicht „ein bisschen mehr", sondern
+ein anderes Produkt.
+
+Bis dahin gilt die `0.0.x`-Reihe weiter und liefert wie bisher nur Windows.
+
+---
+
 ## 6 · Aufwand, ehrlich
 
 **Sechs bis zehn Wochen**, nicht die eine, nach der es aussieht. Es sind **zwei**
