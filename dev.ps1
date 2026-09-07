@@ -190,7 +190,11 @@ function Test-BundleFresh {
     if (-not (Test-Path $ExePath)) { return $false }
     $built = (Get-Item $ExePath).LastWriteTimeUtc
 
-    $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app') -Recurse -File |
+    # shared/ gehoert dazu, seit die Produktkonstanten dort stehen und mit ins
+    # Bundle gelegt werden. Ohne diese Zeile gaelte ein Bundle als frisch, obwohl
+    # eine geaenderte Millimeterzahl noch gar nicht darin ist - genau die stille
+    # Sorte Drift, gegen die shared/ ueberhaupt angelegt wurde.
+    $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app'), (Join-Path $RepoRoot 'shared') -Recurse -File |
         Where-Object { $_.FullName -notlike '*__pycache__*' })
     $sources += Get-Item $ExeSpec
     $newest = ($sources | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum

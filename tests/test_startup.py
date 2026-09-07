@@ -8,6 +8,7 @@ Blockzeichen, eine .exe ohne ihre Datendateien.
 from __future__ import annotations
 
 import io
+import shutil
 import socket
 import subprocess
 import sys
@@ -69,38 +70,73 @@ def test_banner_ueberlebt_eine_konsole_ohne_blockzeichen(monkeypatch, capsys):
         print_banner("http://127.0.0.1:8000", "http://192.168.0.2:8000")
 
 
-def test_datendateien_folgen_dem_bundle_verzeichnis(tmp_path):
-    """Eingefroren muessen alle Datenpfade unter sys._MEIPASS liegen.
+def _write_probe(tmp_path: Path, body: str) -> Path:
+    """Ein Skript, das sich fuer ein eingefrorenes Bundle unter `tmp_path` haelt.
 
-    Getestet wird in einem eigenen Prozess, weil `sys._MEIPASS` VOR dem Import von
-    app.config gesetzt sein muss - danach ist die Entscheidung gefallen.
-
-    Faellt dieser Test, startet die .exe trotzdem und liefert eine nackte Seite
-    ohne Schrift, ohne Logo und ohne Uebersetzung. Genau das ist der gefaehrliche
-    Fall: er sieht aus wie ein Erfolg.
+    Eigener Prozess, weil `sys._MEIPASS` VOR dem Import von app.config gesetzt sein
+    muss - danach ist die Entscheidung gefallen.
     """
     probe = tmp_path / "probe.py"
     probe.write_text(
         "import sys\n"
         f"sys._MEIPASS = r'{tmp_path}'\n"
-        f"sys.path.insert(0, r'{REPO_ROOT}')\n"
+        f"sys.path.insert(0, r'{REPO_ROOT}')\n" + body,
+        encoding="utf-8",
+    )
+    return probe
+
+
+def test_datendateien_folgen_dem_bundle_verzeichnis(tmp_path):
+    """Eingefroren muessen alle Datenpfade unter sys._MEIPASS liegen.
+
+    Faellt dieser Test, startet die .exe trotzdem und liefert eine nackte Seite
+    ohne Schrift, ohne Logo und ohne Uebersetzung. Genau das ist der gefaehrliche
+    Fall: er sieht aus wie ein Erfolg.
+    """
+    # Die geteilten Konstanten muessen im Bundle wirklich daliegen, sonst kommt
+    # app.config gar nicht erst durch den Import - siehe den Test darunter. Hier
+    # wird geprueft, wo die Pfade HINZEIGEN, also bekommt das Attrappen-Bundle die
+    # Datei genau dort, wo aruco-homographie.spec sie hinlegt.
+    (tmp_path / "shared").mkdir()
+    shutil.copy(config.shared_path("constants.json"), tmp_path / "shared" / "constants.json")
+
+    probe = _write_probe(
+        tmp_path,
         "from app import config\n"
         "print(config.STATIC_DIR)\n"
         "print(config.LOCALE_DIR)\n"
         "print(config.BRAND_DIR)\n"
-        "print(config.LOGO_INK_SVG)\n",
-        encoding="utf-8",
+        "print(config.LOGO_INK_SVG)\n"
+        "print(config.shared_path('constants.json'))\n",
     )
 
     result = subprocess.run(
         [sys.executable, str(probe)], capture_output=True, text=True, check=True
     )
-    static, locales, brand, logo = result.stdout.split()
+    static, locales, brand, logo, constants = result.stdout.split()
 
     assert Path(static) == tmp_path / "app" / "static"
     assert Path(locales) == tmp_path / "app" / "static" / "i18n"
     assert Path(brand) == tmp_path / "app" / "static" / "brand"
     assert Path(logo) == tmp_path / "app" / "static" / "brand" / "logo-dark.svg"
+    assert Path(constants) == tmp_path / "shared" / "constants.json"
+
+
+def test_ohne_geteilte_konstanten_bricht_der_start_ab(tmp_path):
+    """Fehlen die Produktkonstanten, muss die Anwendung stehenbleiben.
+
+    Kein Vorgabewert, kein try/except (AGENTS.md, Invariante 4): eine Anwendung,
+    die mit halben Konstanten weiterlaeuft, misst falsch - und Millimeter sind hier
+    das Produkt. Ein lautloser Rueckfall waere der teuerste Komfort, den man sich
+    hier einbauen kann, deshalb steht er hier unter Beobachtung.
+    """
+    probe = _write_probe(tmp_path, "from app import config\n")   # kein shared/ angelegt
+
+    result = subprocess.run([sys.executable, str(probe)], capture_output=True, text=True)
+
+    assert result.returncode != 0, "Ohne constants.json darf der Import NICHT durchgehen"
+    # Der Dateiname gehoert in die Meldung - sonst sucht der Bediener im Nebel.
+    assert "constants.json" in result.stderr
 
 
 def test_ohne_bundle_zeigen_die_pfade_in_den_quellbaum():
