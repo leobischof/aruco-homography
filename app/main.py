@@ -47,6 +47,29 @@ async def handle_app_error(request: Request, error: AppError) -> JSONResponse:
     )
 
 
+@app.get("/api/locales")
+async def locales_endpoint() -> dict[str, object]:
+    """Die waehlbaren Sprachen: Code und Anzeigename, aus config.SUPPORTED_LOCALES.
+
+    Ohne diese Route fuehrte der Browser eine zweite Liste neben der in config -
+    genau die zweite Definition, die AGENTS.md (Invariante 4) verbietet. So ist
+    eine neue Sprache eine Katalogdatei plus ein Eintrag in config, sonst nichts.
+    """
+
+    def label(code: str) -> str:
+        # Der Name kommt aus dem Katalog DIESER Sprache: "Deutsch" heisst auch in
+        # der englischen Oberflaeche "Deutsch". Fehlt er, tritt der Code ein -
+        # eine Sprache ohne Beschriftung soll waehlbar bleiben, nicht ausfallen.
+        key = f"ui.language.{code}"
+        text = i18n.translate(key, code)
+        return code.upper() if text == key else text
+
+    return {
+        "default": config.DEFAULT_LOCALE,
+        "locales": [{"code": code, "label": label(code)} for code in config.SUPPORTED_LOCALES],
+    }
+
+
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)) -> dict[str, object]:
     """Foto entgegennehmen, EXIF auswerten, Sitzung anlegen."""

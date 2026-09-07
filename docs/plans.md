@@ -1,3 +1,11 @@
+---
+title: Vorhaben — was noch nicht gebaut ist
+description: Beschlossene, aber ungebaute Vorhaben mit Lösungsweg, bekannten Stolpersteinen und offenen Fragen.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # Vorhaben — was noch nicht gebaut ist
 
 Diese Datei sammelt **Vorhaben, an denen gerade niemand arbeitet**, die aber gebaut werden

@@ -1,3 +1,11 @@
+---
+title: Git-Regeln
+description: Verbindliche Regeln für Identität, Commits, Pushes und den Aufbau der Commit-Nachricht.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # Git-Regeln
 
 Verbindlich für **alle**, die in diesem Repo arbeiten — Menschen wie KI-Agenten. Diese Datei
@@ -36,8 +44,9 @@ Das ist die wichtigste Regel dieser Datei, und sie ist bewusst **asymmetrisch**.
 | Handlung | Erlaubnis |
 |---|---|
 | `git commit` | **Ohne Rückfrage.** Fertige Arbeit gehört committet, nicht in einem schmutzigen Arbeitsverzeichnis geparkt. |
-| `git push` | **Nur nach ausdrücklicher Aufforderung.** Jedes Mal neu. |
-| `git push --force` | Nur nach ausdrücklicher Aufforderung **für genau diesen Push**. Eine frühere Erlaubnis gilt nicht weiter. |
+| `git push` (Feature-Branch) | **Nur nach ausdrücklicher Aufforderung.** Jedes Mal neu. |
+| `git push` nach `master` | **Geht nicht mehr.** GitHub weist es ab — siehe Abschnitt 7. |
+| `git push --force` | Nur nach ausdrücklicher Aufforderung **für genau diesen Push**. Eine frühere Erlaubnis gilt nicht weiter. Auf `master` ohnehin gesperrt. |
 
 Warum die Asymmetrie: ein Commit ist örtlich und umkehrbar — er kostet nichts und rettet
 Arbeit. Ein Push ist öffentlich und für andere sofort sichtbar; ein `--force` kann fremde
@@ -168,9 +177,92 @@ Commit in der Historie ist eine Falle für den Nächsten, der bisecten muss.
 
 ---
 
-## 6 · Offener Punkt
+## 6 · Branches
 
-Es wird derzeit direkt auf `master` gearbeitet; die ganze Historie liegt dort. Ein
-Branch-und-PR-Verfahren ist bewusst **nicht** eingeführt — bei einem Bearbeiter wäre es
-Zeremonie ohne Nutzen. Sobald ein zweiter Mensch mitschreibt, gehört diese Entscheidung neu
-getroffen und hier ersetzt.
+`master` ist der Stamm, und der Normalfall ist, direkt dort zu arbeiten. Ein
+Branch-und-PR-Verfahren für **jede** Änderung ist bewusst nicht eingeführt — bei einem
+Bearbeiter wäre es Zeremonie ohne Nutzen, und Abschnitt 3 verlangt ohnehin, dass jeder
+einzelne Commit für sich lauffähig ist.
+
+Ein Branch wird dann angelegt, wenn genau diese Regel sonst bricht: wenn ein Vorhaben
+**über mehrere Commits hinweg unfertig** wäre und der Stamm in dieser Zeit nicht mehr
+grün oder nicht mehr benutzbar bliebe. Ein Umbau der Paketierung ist so ein Fall, das
+Hinzufügen eines Reglers nicht.
+
+Benennung: `feat/…`, `fix/…`, `chore/…`.
+
+**Dazu gehört ein eigenes Arbeitsverzeichnis** (`git worktree`), kein Branch-Wechsel im
+selben Ordner:
+
+```powershell
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+git worktree list
+```
+
+Der Grund ist praktisch. Ein `git checkout` im selben Ordner zieht allen anderen den
+Boden weg, die dort gerade arbeiten — laufender Server, offene Datei im Editor, ein
+zweiter Agent. Mit einem Worktree liegen beide Stände nebeneinander auf der Platte und
+teilen sich ein `.git`. Ein frisches Worktree hat **kein** `venv`; `dev.ps1` legt es beim
+ersten Lauf selbst an.
+
+Aufräumen, wenn der Branch zurück im Stamm ist:
+
+```powershell
+git worktree remove ../ArUco-Homographie-kurzname
+git branch -d feat/kurzname
+```
+
+Sobald ein zweiter Mensch mitschreibt, gehört diese Entscheidung neu getroffen und hier
+ersetzt.
+
+---
+
+## 7 · `master` ist geschützt — es führt nur ein Weg hinein
+
+Seit 2026-09-07 nimmt GitHub auf `master` **keinen direkten Push mehr an**, auch nicht vom
+Eigentümer (`enforce_admins`). Der einzige Weg ist ein **Pull Request, per Squash gemergt**.
+
+Am Repository eingestellt:
+
+| Einstellung | Wert | Wozu |
+|---|---|---|
+| Squash-Merge | **erlaubt** | die einzige Merge-Art |
+| Merge-Commit | gesperrt | keine Merge-Blasen in der Historie |
+| Rebase-Merge | gesperrt | ausdrücklich nicht gewollt |
+| Pull Request nötig | ja | direkte Pushes werden abgewiesen |
+| Nötige Freigaben | **0** | Einzelbearbeiter: bei 1 könnte niemand seinen eigenen PR mergen |
+| Lineare Historie | erzwungen | passt zu Squash, verbietet Merge-Commits auch am Branch |
+| Force-Push, Löschen | gesperrt | `master` lässt sich nicht mehr umschreiben |
+| Branch nach Merge löschen | automatisch | räumt die Feature-Branches selbst auf |
+
+### Was daraus für den Zuschnitt folgt
+
+**Ein Feature, ein Branch, ein Pull Request.** Beim Squash-Merge wird der ganze PR zu
+**einem** Commit auf `master` — die Einheit der Historie ist also nicht mehr der einzelne
+Commit, sondern der PR. Zwei Features in einem PR landen als ein einziger Commit auf
+`master`, und damit wäre Abschnitt 3 ausgehebelt.
+
+Innerhalb des Branches darf und soll trotzdem kleinteilig committet werden: diese Commits
+sind die Arbeitsspur, der PR-Titel wird der Commit-Betreff auf `master`. Also gilt für den
+**PR-Titel** genau, was Abschnitt 4 über den Betreff sagt, und die PR-Beschreibung trägt
+das Warum.
+
+### Der Ablauf
+
+```powershell
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+# arbeiten, committen, Tests grün halten
+git push -u origin feat/kurzname          # nur auf Ansage
+gh pr create --base master --title "feat: kurzer betreff" --body "..."
+gh pr merge --squash --delete-branch      # nur auf Ansage
+```
+
+Danach das Worktree entfernen (Abschnitt 6). `master` örtlich wieder einholen mit
+`git pull --ff-only` — der Squash-Commit ist ein **anderer** Commit als die eigenen, der
+lokale Branch ist danach Geschichte und wird nicht weiterverwendet.
+
+### Wenn der Schutz einmal im Weg steht
+
+Er ist Absicht, nicht Versehen. Er wird nicht „mal eben" abgeschaltet, um einen Push
+durchzubekommen — das ist genau der Reflex, gegen den er existiert. Wer ihn wirklich
+ändern muss, tut es sichtbar und stellt ihn danach wieder her.

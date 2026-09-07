@@ -1,7 +1,15 @@
+---
+title: ArUco-Homographie — Design / Spezifikation
+description: Rechenweg, PDF-Geometrie, API, Oberfläche und Konstanten — mit dem Code abgeglichen.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # ArUco-Homographie — Design / Spezifikation
 
-**Datum:** 2026-09-06
-**Status:** umgesetzt — dieses Dokument ist mit dem Code abgeglichen (2026-09-06)
+**Datum:** 2026-09-06, fortgeschrieben 2026-09-07
+**Status:** umgesetzt — dieses Dokument ist mit dem Code abgeglichen (2026-09-07)
 **Projektordner:** `SOFTWARE/ArUco-Homographie` (Schwesterordner von `SOFTWARE/OpenCV-Kalibirerung`)
 
 ---
@@ -29,6 +37,7 @@ Lokaler **FastAPI**-Server + statisches Browser-Frontend. Rechenkern in Python
 Handy/Browser ──upload──▶ /api/upload   ──▶ Session (Temp-Verzeichnis, TTL 1 h)
               ──solve───▶ /api/solve    ──▶ Marker, Homographie, Kamerapose, Qualitätsbericht,
                                             entzerrte Vorschau + mm-Extent
+              ──adjust──▶ /api/adjust   ──▶ aufbereitete Vorschau (Live-Regler, §3.10)
               (Crop-Rechteck im Browser ziehen, live mm-Anzeige)
               ──export──▶ /api/export   ──▶ PDF (einzeln oder gekachelt)
                           /api/markersheet ──▶ A4-Markerblatt-PDF
@@ -42,15 +51,21 @@ Handy hochgeladen werden kann, und öffnet den Browser auf dem Port, der es tats
 ist. Er läuft im Vordergrund (`dev.ps1 start-server` blockiert); `dev.ps1 kill-servers` beendet
 hängengebliebene Instanzen.
 
+
+Oberfläche **und** Server sprechen Deutsch und Englisch aus **denselben** Katalogdateien
+(`app/static/i18n/`). Sie werden zweimal gelesen — vom Browser über HTTP, von Python von der
+Platte — und es gibt bewusst keine zweite Fassung für den Server (§7.2).
+
 ### 2.1 Dateien — ein Concern pro Datei, ≤ 300 Zeilen Code
 
 ```
 ArUco-Homographie/
-├─ dev.ps1                      # install-deps | start-server | run-tests | build-markersheet
-│                               # | build-exe | kill-servers | clean-all
+├─ dev.ps1                      # install-deps | start-server | run-tests | build-markersheet |
+│                               #   build-exe | kill-servers | clean-all | help  (§10)
 ├─ aruco-homographie.spec       # PyInstaller-Bauvorschrift (One-Folder), versioniert
 ├─ requirements.txt
-├─ README.md
+├─ pyproject.toml               # nur die pytest-Einstellungen (pythonpath, testpaths, -q)
+├─ README.md · CHANGELOG.md · AGENTS.md · CLAUDE.md
 ├─ .gitignore
 ├─ .vscode/tasks.json
 ├─ docs/superpowers/specs/2026-09-06-aruco-homographie-design.md
@@ -58,8 +73,9 @@ ArUco-Homographie/
 │  ├─ __init__.py
 │  ├─ main.py                   # FastAPI-App, Routen, Static-Mount, Startbanner (LAN-URL + QR)
 │  ├─ config.py                 # SSOT aller Konstanten (§8)
-│  ├─ schemas.py                # Pydantic-Request/Response-Modelle (SSOT der API-Typen)
-│  ├─ notices.py                # Vokabular für Warnungen und Abbruchfehler (Code + Klartext)
+│  ├─ schemas.py                # Pydantic-Request-Modelle (SSOT der API-Typen)
+│  ├─ notices.py                # Vokabular für Warnungen und Abbrüche: Code + Parameter (§7.1)
+│  ├─ i18n.py                   # Sprachkataloge, Platzhalter, Accept-Language (§7.2)
 │  ├─ pipeline.py               # Orchestrierung der Rechenkette, hält main.py auf Transport
 │  ├─ session.py                # Upload-/Ergebnis-Store im Temp-Verzeichnis, TTL-Aufräumung
 │  ├─ vision/
@@ -71,35 +87,35 @@ ArUco-Homographie/
 │  │  ├─ thickness.py           # Dickenkorrektur → effektive Homographie
 │  │  ├─ extent.py              # abbildbarer Ebenenbereich (Horizont-Clipping)
 │  │  ├─ rectify.py             # warpPerspective in exaktes mm-Raster bei Ziel-DPI
+│  │  ├─ enhance.py             # kosmetische Bildaufbereitung NACH dem Entzerren (§3.10)
 │  │  └─ contour.py             # optionale Umriss-Erkennung im entzerrten Bild
 │  ├─ pdf/
 │  │  ├─ __init__.py
 │  │  ├─ layout.py              # Seiten- und Kachelgeometrie (SSOT der Druckgeometrie)
 │  │  ├─ overlays.py            # 100-mm-Maßstab, 50-mm-Raster, Fußzeile, Passermarken
-│  │  ├─ build.py               # PDF-Bau: Einzelseite, Kachelung, Übersichtsseite
+│  │  ├─ branding.py            # Logo als Vektor + Herkunftszeile, auf jedem Blatt (§4.6)
+│  │  ├─ build.py               # PDF-Bau: Einzelseite, Kachelung, Klebeplan
 │  │  └─ markersheet.py         # A4-Markerblatt generieren
 │  └─ static/
-│     ├─ index.html
-│     ├─ app.js                 # Upload, Parameter, Vorschau, Crop-Rechteck mit mm-Anzeige
-│     └─ style.css
+│     ├─ index.html             # das Gerüst der sechs Schritte, jede Beschriftung per data-i18n
+│     ├─ i18n/de.json · en.json # die Kataloge — von Browser UND Python gelesen (§7.2)
+│     ├─ css/                   # tokens · base · layout · components · forms · crop (§6.3)
+│     ├─ js/                    # ES-Module: main · i18n · theme · header · api ·
+│     │                         #   crop-geometry · crop-rect · crop-info · adjust · report
+│     └─ brand/                 # Logo (hell/dunkel/schwarz) und Montserrat als woff2
 └─ tests/
    ├─ conftest.py               # Fixtures: synthetische Szene rendern (§9.1)
-   ├─ test_detect.py
-   ├─ test_solve.py
-   ├─ test_camera.py
-   ├─ test_thickness.py
-   ├─ test_extent.py
-   ├─ test_rectify.py
-   ├─ test_layout.py
-   ├─ test_markersheet.py
-   ├─ test_pdf_size.py
-   ├─ test_branding.py
-   ├─ test_enhance.py
-   ├─ test_i18n.py
-   ├─ test_adjust_api.py
-   ├─ test_api.py
+   ├─ test_detect.py · test_solve.py · test_camera.py · test_thickness.py
+   ├─ test_extent.py · test_rectify.py · test_enhance.py
+   ├─ test_layout.py · test_markersheet.py · test_pdf_size.py · test_branding.py
+   ├─ test_api.py · test_adjust_api.py · test_i18n.py
    └─ test_startup.py
 ```
+
+`app/static/js/` ist bewusst kein einzelnes `app.js` mehr und `app/static/css/` kein einzelnes
+`style.css`. Das frühere `app.js` war mit 388 Zeilen deutlich über dem Richtwert und trug Upload,
+Parameter, Bericht, Zuschnitt-Rechteck, Export und jede sichtbare Zeichenkette in einer Datei;
+`style.css` kannte weder Tokens noch ein zweites Thema. Was jetzt wo liegt, steht in §6.3.
 
 ---
 
@@ -219,10 +235,16 @@ N   = (C_x, C_y)               # Lotpunkt der Kamera in der Ebene (mm)
 2. Sonst: Feld „Kameraabstand" wird zur Pflichteingabe, Lotpunkt = Bildmitte in die Ebene
    zurückprojiziert → `source = "manual"`.
 3. Ist `d` außerhalb `[CAM_HEIGHT_MIN_MM, CAM_HEIGHT_MAX_MM]`, gilt das Ergebnis als
-   unplausibel und die manuelle Eingabe wird erzwungen.
+   unplausibel (Warnung `camera_height_implausible`) und die manuelle Eingabe wird erzwungen.
+
+**Ein eingetippter Abstand schlägt die Schätzung**, auch wenn EXIF eine liefert: `source` wird
+dann `"manual"`, die Höhe ist die eingetippte, Lotpunkt und Neigung bleiben die aus der
+Zerlegung. Ein Hinweis (`camera_height_override`) nennt beide Werte, damit ein Vertipper
+auffällt statt still zu wirken. Wer eine Zahl einträgt, meint sie — das Feld wäre sonst eine
+Attrappe.
 
 Bei `thickness_mm == 0` wird die Pose nur informativ berechnet und angezeigt; ein Fehlschlag
-blockiert dann nichts (`source = "none"`).
+blockiert dann nichts (`source = "none"`, Hinweis `camera_pose_unknown`).
 
 Die UI zeigt `d`, `N` und `θ` an — das ist die Plausibilitätsprüfung für den Bediener
 („Kamera ca. 870 mm über der Blattebene, 12° schräg").
@@ -271,6 +293,10 @@ im Bild — das minimiert die nicht korrigierte Objektivverzeichnung.
 4. Gegen die um `EXTENT_HULL_FACTOR · Hülldiagonale` aufgeweitete Hüll-Bounding-Box schneiden —
    Schutz gegen absurde Extents bei flachem Blickwinkel.
 
+Bleibt nach dem Clippen kein Polygon mit mindestens drei Ecken übrig, oder sind zu wenige der
+zurückprojizierten Ecken endlich, fällt das Verfahren auf ebendiese aufgeweitete
+Hüll-Bounding-Box zurück. Ein kleiner Extent ist ein bedienbares Ergebnis, `inf` wäre keines.
+
 **Vorschau.** Der gesamte Extent wird entzerrt gerendert, mit `px_per_mm` so gewählt, dass die
 längere Kante `PREVIEW_MAX_PX` nicht überschreitet.
 
@@ -298,8 +324,11 @@ Bei jedem `solve` berechnet und in UI **und** PDF-Fußzeile ausgegeben:
   Objektivverzeichnung, nicht-planaren Aufbau und falsch eingetragene Markergröße auf.
 - Kamerahöhe, Lotpunkt, Neigung, Quelle der Brennweite.
 - **Extrapolationsanteil:** Flächenanteil des Crop-Rechtecks außerhalb der konvexen Hülle aller
-  Markerecken. Über `EXTRAPOLATION_WARN_FRAC` ⇒ Warnung; der Wert wird immer angezeigt, denn
-  außerhalb der Hülle ist die Homographie am unzuverlässigsten.
+  Markerecken. Der Wert wird immer angezeigt, denn außerhalb der Hülle ist die Homographie am
+  unzuverlässigsten; über `EXTRAPOLATION_WARN_FRAC` färbt die Oberfläche ihn ein. Das ist die
+  einzige Schwelle ohne serverseitige Warnung, und zwar zwangsläufig: der Zuschnitt wird erst
+  **nach** dem Lösen gewählt. Die Schwelle kommt trotzdem vom Server (`limits`, §6.1), damit sie
+  auch hier nur einmal existiert.
 
 Keine dieser Prüfungen bricht ab — sie warnen. Abgebrochen wird nur bei den Fehlern aus §7.
 
@@ -333,10 +362,85 @@ die Meldung nennt den größten DPI-Wert aus `DPI_CHOICES`, der noch passt.
 Auf dem entzerrten Crop: Graustufen → CLAHE → Gauß (σ = 1 px) → Canny mit Medianschwellen
 (`lower = 0.66 · med`, `upper = 1.33 · med`) → morphologisches Schließen (5 px) →
 `findContours` → größte Kontur nach Fläche → `approxPolyDP` mit
-`epsilon = CONTOUR_EPS_MM · spp`. Fläche < `CONTOUR_MIN_AREA_FRAC` des Crops ⇒ keine Kontur,
-Hinweis in der UI, PDF wird ohne Kontur gebaut. Die Kontur wird als **Vektorpfad** ins PDF
-gezeichnet (Linienbreite `CONTOUR_LINE_MM`), zusätzlich zum Foto; ihre Bounding-Box in mm wird
-in der Fußzeile ausgewiesen.
+`epsilon = CONTOUR_EPS_MM · spp`. Fläche < `CONTOUR_MIN_AREA_FRAC` des Crops ⇒ keine Kontur;
+das PDF wird dann ohne Kontur gebaut, ohne Meldung — lieber keine Linie als eine falsche. Die
+Kontur wird als **Vektorpfad** ins PDF gezeichnet (Linienbreite `CONTOUR_LINE_MM`), auf den
+Bildbereich geclippt und zusätzlich zum Foto; ihre Bounding-Box in mm wird in der Fußzeile
+ausgewiesen.
+
+**Gesucht wird auf dem aufbereiteten Bild** (§3.10), nicht auf dem rohen. Ursprünglich war das
+rohe entzerrte Bild vorgesehen; der Grund für die Änderung: die Regler werden ja gerade deshalb
+gestellt, damit eine blasse Bleistiftlinie überhaupt als Kante erscheint — auf dem rohen Bild
+fiele sie durch und die Kontur bliebe leer. Umgekehrt wäre eine Kontur aus dem rohen Bild auf
+dem aufbereiteten Ausdruck eine zweite, andere Wahrheit auf demselben Blatt. Millimeter kostet
+das nichts: die Aufbereitung färbt Pixel, sie verschiebt keine (§3.10, nachgemessen in
+`test_enhance.py`) — **welche** Kante gefunden wird, ändert sich, **wo** sie liegt, nicht.
+
+### 3.10 Bildaufbereitung (`app/vision/enhance.py`)
+
+**Die Invariante dieses Moduls: Aufbereitung ist kosmetisch, nie geometrisch.** Sie greift
+ausschließlich am bereits entzerrten Bild an, **niemals vor der Markererkennung**. Die
+Homographie wird am unberührten Foto gemessen; ein Schärferegler vor dem Detektor würde die
+Markerecken verschieben und damit die Millimeter. Daraus folgt hart:
+
+- Form und Datentyp der Ausgabe sind immer die der Eingabe — es wird nicht skaliert, gedreht,
+  entzerrt, beschnitten oder umgerandet.
+- Jeder Weichzeichner ist symmetrisch. Ein unsymmetrischer Kern wäre eine Verschiebung, nur
+  hübsch verpackt.
+- Stehen alle Regler neutral (`AdjustOptions.is_identity`), kommt das Bild Bit für Bit zurück —
+  aber immer als **neues** Array, damit der Aufrufer hineinzeichnen darf.
+- Die Kantenzeichnung färbt genau die Pixel, die Canny als Kante markiert. Sie legt Tinte dazu,
+  sie rückt nichts.
+
+**Belegt ist das subpixelgenau** (`tests/test_enhance.py`): gemessen wird die 50-%-Durchgangslage
+einer Kante vor und nach jedem einzelnen Eingriff, an einer harten und an einer weichen Kante —
+eine harte Kante zeigt jede Verschiebung um ganze Pixel, erst eine weiche hat für ein
+Zehntelpixel überhaupt Platz. Ergebnis: **Graustufen, Schwellwert und Kantenanhebung verschieben
+die weiche Kante um exakt 0,000000 px** (Toleranz im Test: 0,0 — auf die letzte Stelle gleich,
+nicht „fast gleich"). Einzige Ausnahme ist CLAHE: es bildet kachelweise ab, kippt die Flanke
+leicht und verschiebt damit den **Ablesepunkt** einer weichen Kante um rund 0,11 px, ohne dass
+ein einziges Pixel wandert. Bei 300 dpi sind das **0,009 mm** — drei Zehnerpotenzen unter dem
+Millimeter, um den es geht. Zusätzlich gilt an der harten Kante die schärfere Fassung derselben
+Aussage: die Menge der dunklen Pixel bleibt pixelgenau dieselbe.
+
+**Die Regler** (`AdjustOptions` als eingefrorene Dataclass — die einzige Definition dieser Namen
+und Wertebereiche; `app/schemas.py` spiegelt sie nur für die Leitung, `test_adjust_api.py`
+besteht Feld für Feld und Vorgabe für Vorgabe darauf):
+
+| Feld | Bereich | Wirkung |
+|---|---|---|
+| `grayscale` | bool | Schwarzweiß, aber weiter dreikanalig (die PDF-Einbettung braucht keinen Sonderfall) |
+| `invert` | bool | Negativ |
+| `brightness` | −1 … 1 | globale Aufhellung, 1.0 = voller Wertebereich |
+| `contrast` | −1 … 1 | Spreizung um das Mittelgrau, 1.0 = doppelter Abstand |
+| `saturation` | −1 … 1 | Buntheit, über die Grauachse gemischt (nach `grayscale` wirkungslos) |
+| `local_contrast` | 0 … 1 | CLAHE auf L in LAB; Clip 1.0 … `ADJUST_CLAHE_CLIP_MAX` |
+| `edge_boost` | 0 … 1 | Unschärfemaske, σ = `ADJUST_UNSHARP_SIGMA_PX`, Anteil bis `ADJUST_UNSHARP_MAX` |
+| `edge_overlay` | 0 … 1 | Canny-Kanten (`ADJUST_EDGE_CANNY`) als dunkle Linien aufgelegt |
+| `color_emphasis` | `none` + Schlüssel aus `ADJUST_EMPHASIS_HUES` | einen Farbton behalten, den Rest entsättigen |
+| `emphasis_strength` | 0 … 1 | Stärke der Entsättigung |
+| `threshold` | 0 … 1 | harte Schwelle, nur noch Schwarz und Weiß |
+
+CLAHE arbeitet auf **L in LAB**, nie auf B, G und R einzeln: drei getrennte Histogrammspreizungen
+ziehen die Kanäle auseinander und färben das Bild um.
+
+**Die Reihenfolge der Stufen ist fest verdrahtet**, damit dieselben Regler morgen dieselbe
+Schablone ergeben: Farbbetonung → Schwarzweiß → lokaler Kontrast → Kantenanhebung → Helligkeit
+und Kontrast → Sättigung → Kantenzeichnung → Schwelle → Negativ. Jede Stufe hat ihren Grund:
+die Farbbetonung arbeitet auf den Farben, wie sie fotografiert wurden; CLAHE steht vor der
+globalen Kurve, weil es eine vorher gesetzte Aufhellung kachelweise wieder auffressen würde;
+das Negativ steht am Ende, weil sonst jeder Regler davor verkehrt herum wirkte. Zwischen den
+Stufen liegt immer `uint8` — das kostet je Stufe höchstens eine Rundungsstelle, macht aber jede
+Stufe einzeln abschaltbar.
+
+**Zwei Wege, ein Reglerstand.** `/api/adjust` rechnet auf dem bereits geschriebenen
+Vorschau-JPEG, nicht auf einer frischen Entzerrung: der Regler soll während des Ziehens
+antworten, und eine Entzerrung des vollen Fotos dauert um Größenordnungen länger. Erlaubt ist
+die Abkürzung, weil die Aufbereitung kosmetisch ist — sie taugt am kleinen Bild wie am großen.
+Verbindlich für den Druck ist trotzdem allein der Export: der wendet **dieselben** Regler auf das
+volle Raster an. Was man sieht, wird gedruckt.
+
+**Stellung in der Kette:** nach §3.8 (Entzerren), vor §3.9 (Kontur) und vor §4 (PDF).
 
 ---
 
@@ -349,9 +453,11 @@ ist die eigentliche Produktzusage und wird in `test_pdf_size.py` geprüft.
 
 ### 4.2 Einzelseite
 
-Alles, was nicht Nutzbild ist, lebt in **einem** Streifen unter dem Bild — links der
-100-mm-Maßstab, rechts der Metadatentext. Ein Streifen statt Rand-plus-Fußzeile, damit sich
-Maßstab und Text nie um denselben Platz streiten:
+Alles, was nicht Nutzbild ist, lebt in **einem** Streifen unter dem Bild: links übereinander die
+zwei Metadatenzeilen und darüber der 100-mm-Maßstab mit seiner Beschriftung, rechts außen die
+Marke (§4.6). Ein Streifen statt Rand-plus-Fußzeile, damit sich Maßstab und Text nie um denselben
+Platz streiten. Die Marke bekommt ihren Platz **zuerst**, alles andere richtet sich danach und
+wird nötigenfalls mit Auslassungszeichen gekürzt — so verschwindet nie etwas unter dem Logo:
 
 ```
 strip_h = STRIP_H_MM          immer - der Streifen traegt das Markenzeichen (§4.6)
@@ -378,36 +484,60 @@ step_w   = usable_w − overlap_mm
 step_h   = usable_h − overlap_mm
 n_cols   = max(1, ceil((crop_w − overlap_mm) / step_w))
 n_rows   = max(1, ceil((crop_h − overlap_mm) / step_h))
-Bildrechteck je Kachel = (printer_margin_mm, printer_margin_mm + strip_h, usable_w, usable_h)
+
+Kachel (c, r):  crop_x = c · step_w        crop_y = r · step_h
+                src_w  = min(usable_w, crop_w − crop_x)
+                src_h  = min(usable_h, crop_h − crop_y)
+                Bildrechteck = (printer_margin_mm,
+                                printer_margin_mm + strip_h + (usable_h − src_h),
+                                src_w, src_h)
 ```
 
-Kachel `(c, r)` zeigt den Crop-Bereich ab `c · step_w` bzw. `r · step_h`; die letzte Kachel
-läuft über den Crop hinaus und wird weiß gefüllt. Ausrichtung `auto` wählt die Variante mit
-weniger Seiten (bei Gleichstand Hochformat). `step_w`/`step_h` müssen positiv sein — ist
-`overlap_mm ≥ usable_w` oder `≥ usable_h`, ist die Überlappung für das Papierformat zu groß und
-der Export bricht mit Klartextmeldung ab.
+Die **letzte** Kachel einer Reihe oder Spalte ist damit kleiner als die nutzbare Fläche: sie
+zeigt genau den Rest des Zuschnitts, sitzt oben in der nutzbaren Fläche und lässt den Rest des
+Blattes leer. (Ursprünglich war vorgesehen, die letzte Kachel über den Crop hinauslaufen zu
+lassen und weiß zu füllen. Das Ergebnis sähe gleich aus, verschöbe aber den Inhalt nach unten —
+und ein Bildrechteck, das mehr Millimeter beansprucht, als es Bild hat, ist genau die Sorte
+Nachlässigkeit, die §4.1 verbietet.)
+
+Ausrichtung `auto` wählt die Variante mit weniger Seiten (bei Gleichstand Hochformat); lässt
+sich für keine der beiden ein Plan bauen, entscheidet Hochformat, damit `tile_layout` den
+aussagekräftigen Fehler wirft. `step_w`/`step_h` müssen positiv sein — ist `overlap_mm ≥
+usable_w` oder `≥ usable_h`, bricht der Export mit `overlap_too_large` ab; bleibt nach Rand und
+Streifen gar keine Fläche übrig, mit `margins_too_large`.
 
 Jede Kachel trägt: Bildausschnitt, Passermarken an den Überlappungsrändern, Beschriftung
-„Blatt `i`/`N` — Spalte `c+1`, Reihe `r+1`", Fußzeile. Voran steht eine **Übersichtsseite**
-(A4) mit dem Kachelraster, derselben Numerierung und der Gesamtgröße
-(`TILE_OVERVIEW_DEFAULT = True`).
+„Blatt `i`/`N` — Spalte `c+1`, Reihe `r+1`", Fußzeile, Marke. Voran steht der **Klebeplan** mit
+dem Kachelraster, derselben Numerierung und der Gesamtgröße (`TILE_OVERVIEW_DEFAULT = True`). Er
+liegt auf **demselben Papierformat wie die Kacheln**, nicht auf A4 — ein Kachelsatz kommt aus
+einem Drucker, und ein Blatt anderen Formats mittendrin ist genau das, was im Fach hängen
+bleibt.
+
+Der Kopf `X-Image-Rect-Mm` meldet im Kachelmodus das Bildrechteck der **ersten** Kachel.
 
 ### 4.4 Overlays
 
 | Overlay | Inhalt |
 |---|---|
-| 100-mm-Maßstab | bemaßter Balken mit 10-mm-Teilung, **links im Streifen** (§4.2); Nachmessen beweist die Skalierung |
-| Fußzeile | **rechts im Streifen**: Objektgröße in mm, Datum/Zeit, Quelldateiname, DPI, mm/px, Modus, Marker-IDs, RMS in px und mm, Kamerahöhe/Neigung, Dicke `h`, Korrekturfaktor `k`, Extrapolationsanteil, Rand- und Streifenhöhe |
-| 50-mm-Raster | dünne graue Linien (`GRID_GRAY`) alle `GRID_STEP_MM` über dem Bild, mit mm-Beschriftung an den Rändern |
+| 100-mm-Maßstab | Balken mit wechselnd gefüllten 10-mm-Feldern, **oben links im Streifen** (§4.2), darüber die Beschriftung „Kontrollmaßstab 100 mm — nachmessen!"; Nachmessen beweist die Skalierung |
+| Fußzeile | **zwei Zeilen unten links im Streifen**. Zeile 1: Objektgröße in mm (samt Kontur-Bounding-Box, falls vorhanden), DPI, mm/px, Modus, Marker-IDs und Markergröße. Zeile 2: RMS in px und mm, Kamerahöhe/Neigung und Quelle, Dicke `h` mit Korrekturfaktor `k`, Extrapolationsanteil, Quelldateiname, Datum/Zeit |
+| 50-mm-Raster | Linien alle `GRID_STEP_MM` über dem Bild: erst **alle** weißen Säume (`GRID_HALO_PT`), dann **alle** Kernlinien in `GRID_INK` (`GRID_LINE_PT`), damit kein Saum eine bereits gezogene Kreuzung überdeckt. Beschriftung auf weißem Träger, in den Bildbereich hineingeklemmt |
 | Passermarken | Schnitt- und Klebemarken plus Überlappungsschraffur an den Kachelrändern (nur Kachelmodus) |
 
-Alle vier standardmäßig aktiv (so vom Nutzer entschieden), einzeln abschaltbar.
+Alle vier standardmäßig aktiv (so vom Nutzer entschieden), einzeln abschaltbar. Der Streifen
+selbst bleibt auch dann stehen — er trägt die Marke (§4.6, AGENTS.md, Invariante 3). Im
+Kachelmodus kommt rechtsbündig die Blattnummer dazu.
+
+Das Raster wird **zweimal** gezogen, weil es auf hellem *und* dunklem Untergrund lesbar sein
+muss: auf Weiß verschwindet der Saum, auf einem dunklen Foto trägt er die Linie. Eine einzelne
+graue Linie wäre auf beiden Untergründen halb unsichtbar (AGENTS.md, Invariante 5).
 
 ### 4.5 Bildeinbettung
 
-Das entzerrte Raster wird als JPEG (`JPEG_QUALITY`) bzw. bei Bildern mit Alpha als PNG
-zwischengespeichert und mit `drawImage` auf das exakte mm-Rechteck gesetzt. Kein
-`preserveAspectRatio`-Automatismus — die Rechteckgröße ist gesetzt, nicht abgeleitet.
+Das entzerrte Raster wird als JPEG (`JPEG_QUALITY`) zwischengespeichert — das hält die Datei
+handhabbar groß — und mit `drawImage` auf das exakte mm-Rechteck gesetzt, mit
+`preserveAspectRatio=False`: die Rechteckgröße ist gesetzt, nicht abgeleitet. Nichts darf hier
+automatisch skaliert werden, sonst fällt §4.1.
 
 ### 4.6 Marke
 
@@ -433,25 +563,43 @@ stehen in `config.py` als sRGB, weil PDF und CSS beide Hex brauchen. Gegenprobe 
 Umrechnung: `--foreground oklch(0.3717 0.0392 257.29)` ergibt `#334155` — genau die Tinte, die
 `logo-dark.svg` im eigenen Dateikommentar nennt.
 
+### 4.7 Sprache der Aufdrucke
+
+Jeder Text auf dem Papier — Dokumenttitel, Maßstabsbeschriftung, beide Fußzeilen, Blattnummer,
+Klebeplan, das ganze Markerblatt — kommt aus demselben Katalog wie die Oberfläche (§7.2).
+`ExportOptions.locale` trägt die Sprache durch die PDF-Schicht; die Oberfläche schickt beim
+Export die Sprache mit, in der sie gerade steht. Ein Ausdruck folgt damit dem Schalter im Kopf
+der Seite und nicht der Vorgabesprache des Servers.
+
+**Die Marke bleibt davon unberührt.** „Made with Bischof Snowboards Software" ist ein Zeichen,
+kein Satz, und wird nicht übersetzt (AGENTS.md, Invariante 3).
+
 ---
 
 ## 5 · Markerblatt-PDF
 
-`GET /api/markersheet?marker_mm=&spacing_x_mm=&spacing_y_mm=` und `dev.ps1 build-markersheet`
-erzeugen ein A4-PDF:
+`GET /api/markersheet?marker_mm=&spacing_x_mm=&spacing_y_mm=&locale=` und
+`dev.ps1 build-markersheet` erzeugen ein A4-PDF:
 
 - Vier Marker (`DICT_4X4_50`, IDs 0–3) an den Positionen aus §3.2. Die Marker werden **Modul für
   Modul als Vektorrechtecke** gezeichnet (`generateImageMarker` mit 6 × 6 Pixeln liefert die
   Bitmatrix, jedes Modul wird ein Rechteck). Damit sind die Kanten unabhängig von der
   Druckerauflösung absolut scharf — besser als jedes eingebettete Rasterbild, und ohne dass eine
   Rasterauflösung konfiguriert werden müsste.
-- Eigener **100-mm-Kontrollmaßstab** und der Hinweis „**Ohne Skalierung drucken (100 %)** — danach
-  Markerkante und beide Mittelpunktabstände messen und die gemessenen Werte in der App eintragen."
-- Angabe des Layouts (Kantenlänge, Mittelpunktabstände, ID-Zuordnung) als Klartext auf dem Blatt.
+- Eigener **100-mm-Kontrollmaßstab** und der Hinweis „**Ohne Skalierung drucken (100 %, nicht
+  ‚an Seite anpassen')**" samt der Anweisung, danach Markerkante **und** beide
+  Mittelpunktabstände zu messen und die *gemessenen* Werte in der App einzutragen.
+- Angabe des Layouts (Wörterbuch, Kantenlänge, Mittelpunktabstände, ID-Zuordnung) als Klartext
+  auf dem Blatt, dazu die Marke am unteren Rand (§4.6).
 
 `markersheet.sheet_layout(marker_mm, spacing_mm)` liefert die Platzierungsrechtecke und ist die
-von `test_markersheet.py` geprüfte SSOT. Passen Markergröße und Abstände nicht auf A4, lehnt der
-Endpunkt mit `sheet_too_small` ab.
+von `test_markersheet.py` geprüfte SSOT. Nicht-positive Maße lehnt der Endpunkt mit
+`bad_marker_size` ab, nicht auf A4 passende mit `sheet_too_small`.
+
+**`?locale=` statt Accept-Language.** Das Blatt wird über einen gewöhnlichen Anker geholt, und
+ein Anker kann keinen Kopf mitschicken. Ohne Parameter entscheidet Accept-Language; die
+Oberfläche zieht den Parameter bei jedem Sprachwechsel nach (§6.3), sonst käme das Blatt in der
+Sprache des Browsers statt in der der App.
 
 ---
 
@@ -459,61 +607,275 @@ Endpunkt mit `sheet_too_small` ab.
 
 ### 6.1 Endpunkte
 
+Alle JSON-Endpunkte werten `Accept-Language` aus; Fehler und Warnungen kommen in der
+ausgehandelten Sprache (§7.2).
+
 **`POST /api/upload`** — multipart, Feld `file`
-→ `{ session_id, width, height, preview_url, exif: {focal35, focal_px, model}, warnings[] }`
+→ `{ session_id, filename, width, height,
+     exif: {focal35_mm, camera_model},
+     defaults: {marker_mm, spacing_x_mm, spacing_y_mm, dpi, dpi_choices[],
+                overlap_mm, printer_margin_mm, page_margin_mm} }`
 HEIC wird per `pillow_heif.register_heif_opener()` gelesen, EXIF-Orientierung mit
 `ImageOps.exif_transpose` angewandt, **bevor** irgendetwas detektiert wird.
+
+Die Vorgabewerte kommen mit der Antwort, statt im Frontend zu stehen: `app/config.py` ist die
+einzige Stelle für Konstanten (AGENTS.md, Invariante 4), und ein abgeschriebener Standardwert im
+Browser wäre die zweite.
 
 **`POST /api/solve`**
 `{ session_id, marker_mm, mode: "sheet"|"free", thickness_mm, camera_height_mm|null,
    spacing_x_mm, spacing_y_mm }`  — die beiden Abstände nur im Blatt-Modus benutzt
-→ `{ markers[{id, corners_px, side_mm_measured, residual_px}], mode_used, rms_px, rms_mm,
-     mm_per_px_mean, camera{source, focal_px, height_mm, nadir_mm, tilt_deg},
+→ `{ session_id, mode_used,
+     markers[{id, corners_px, side_mm_measured, residual_px, rotation_deg}],
+     rms_px, rms_mm, mm_per_px,
+     camera{source, focal_px, height_mm, nadir_mm, tilt_deg},
      thickness_mm, scale_correction_k, hull_mm[], extent_mm{x0,y0,x1,y1},
-     default_crop_mm{...}, preview{url, extent_mm, px_per_mm}, warnings[{code,message,severity}] }`
+     default_crop_mm{...}, extrapolation_default,
+     preview{url, extent_mm, px_per_mm, detected_url},
+     limits{dpi_choices[], max_output_mpx, extrapolation_warn},
+     elapsed_s, warnings[{code, params, severity, message}] }`
+
+`limits` trägt dieselben Schwellen, gegen die der Server prüft, in die Oberfläche — damit die
+Live-Anzeige (§6.3) keine zweite Wahrheit über Pixelgrenze und Extrapolationswarnung braucht.
+
+**`POST /api/adjust`**
+`{ session_id, adjust }` — `adjust` ist der Reglersatz aus §3.10, jedes Feld optional
+→ `{ preview: {url, extent_mm, px_per_mm} }`
+
+Stehen alle Regler neutral, zeigt `url` auf die unveränderte `rectified`-Vorschau; sonst wird
+`adjusted` geschrieben und zurückgegeben. Die URL trägt einen Millisekundenstempel als
+Cache-Brecher — die Vorschau wird unter demselben Dateinamen überschrieben, und der Regler tut
+das mehrmals je Sekunde; mit sekundengenauem Stempel bekäme der Browser zweimal dieselbe URL und
+zeigte das alte Bild. Ohne vorheriges `solve` antwortet der Endpunkt mit `not_solved`.
 
 **`POST /api/export`**
 `{ session_id, crop_mm{x0,y0,x1,y1}, dpi, layout: "single"|"tiles",
    page_format: "A4"|"A3", orientation: "auto"|"portrait"|"landscape",
    overlap_mm, printer_margin_mm, page_margin_mm,
-   overlays{scalebar, grid, footer, marks}, tile_overview, contour, filename }`
+   overlays{scalebar, grid, footer, marks}, tile_overview, contour,
+   adjust, locale, filename }`
 → `application/pdf` als Download, dazu die Kopfzeilen `X-Page-Size-Mm`, `X-Image-Rect-Mm`,
 `X-Pages` (maschinell prüfbar, von `test_pdf_size.py` genutzt).
 
-**`GET /api/markersheet?marker_mm=…`** → `application/pdf`
-**`GET /api/preview/{session_id}/{kind}`** → JPEG (`kind ∈ {original, detected, rectified}`)
+- `adjust` ist derselbe Reglersatz wie bei `/api/adjust` (§3.10), hier auf das **volle** Raster
+  angewandt. Neutral gestellt geht das entzerrte Bild unverändert ins PDF.
+- `locale` bestimmt die Sprache der Aufdrucke (§4.7). Ein unbekanntes oder leeres Kürzel wird
+  auf die Vorgabesprache abgebildet, nicht abgelehnt: „de-CH" ist kein Bedienfehler, und ein
+  Export soll an einer Sprachangabe niemals scheitern.
+- `layout` ist standardmäßig **`config.LAYOUT_DEFAULT = "tiles"`**, nicht `"single"`. Ursprünglich
+  war die Einzelseite die Vorgabe; geändert, weil eine Schablone in Originalgröße auf kein Blatt
+  passt, das hier jemand im Drucker hat — die Einzelseite ist der Sonderfall, nicht der Regelfall.
+  Dazu gehört `tile_overview` als Klebeplan, sonst weiß niemand, welches Blatt wohin gehört.
+  **Eine Schicht tiefer gilt bewusst das Gegenteil:** `ExportOptions` in `app/pdf/build.py` steht
+  auf `layout = "single"`, weil dort „ein Bild, eine Seite" der schlichte Fall ist und Kachelung
+  eine Betriebsart, die der Aufrufer verlangt. Wer die beiden gleichzieht, ändert stillschweigend,
+  was `test_branding.py` mit einem blanken `ExportOptions()` prüft.
+- `filename` ohne `.pdf`-Endung wird auf `schablone.pdf` zurückgesetzt.
+
+**`GET /api/markersheet?marker_mm=&spacing_x_mm=&spacing_y_mm=&locale=`** → `application/pdf`
+**`GET /api/preview/{session_id}/{kind}`** → JPEG
+(`kind ∈ {original, detected, rectified, adjusted}`)
 
 ### 6.2 Ablauf im Browser
 
-1. Foto wählen (oder vom Handy hochladen) → Vorschau mit eingezeichneten erkannten Markern.
-2. Markergröße in mm eintragen (Standard 50), Modus wählen, Objektdicke eintragen (Standard 0).
-3. „Entzerren" → Qualitätsbericht (§3.7) und entzerrte Vorschau erscheinen.
-4. Crop-Rechteck ziehen; die Kantenlängen werden live in mm angezeigt, ebenso der
-   Extrapolationsanteil und die zu erwartende Ausgabegröße in Pixel und MB.
-5. Druckoptionen setzen (DPI, Einzelseite/Kachelung, Overlays, Kontur) → „PDF erzeugen".
+Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
+
+1. **Foto** wählen (oder vom Handy hochladen) → Dateiname, Bildmaße und die EXIF-Brennweite,
+   falls vorhanden.
+2. **Maßstab**: Markergröße in mm (Vorgabe `MARKER_MM_NOMINAL` = 67), Modus, im Blatt-Modus die
+   beiden Mittelpunktabstände, Objektdicke (Vorgabe 0), bei Bedarf der Kameraabstand →
+   „Entzerren".
+3. **Qualität**: der Bericht aus §3.7 und die Warnungen, in drei Tönen abgestuft.
+4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau. Der Abschnitt steht bewusst
+   **über** dem Zuschnitt — die Regler verändern genau das Bild, das im Schritt darunter
+   zugeschnitten wird, und beide sollen gleichzeitig zu sehen sein.
+5. **Zuschnitt**: Rechteck auf der entzerrten Vorschau ziehen; darunter live die Kantenlängen in
+   mm, die zu erwartende Ausgabegröße in Pixeln und Megapixeln und der Extrapolationsanteil,
+   beides gegen die Schwellen aus `limits` eingefärbt. Die vier Kanten lassen sich auch als Zahl
+   eintippen.
+6. **Druck**: Auflösung, Einzelseite/Kachelung, Papierformat und Überlappung (die beiden letzten
+   nur bei Kachelung), Aufdrucke, Kontur → „PDF erzeugen". Der Reglerstand aus Schritt 4 geht mit,
+   ebenso die eingestellte Sprache.
+
+Nicht jedes Feld von `ExportRequest` hat einen Bedienknopf: `orientation`, `printer_margin_mm`
+und `page_margin_mm` schickt die Oberfläche nicht mit und überlässt sie den Vorgaben aus §8.
+
+Ein erneutes „Entzerren" behält den Reglerstand und zieht die Vorschau nach, damit Bild und
+Regler wieder zueinander passen.
+
+### 6.3 Aufbau der Oberfläche
+
+Statisch ausgeliefert, kein Build-Schritt: FastAPI hängt `app/static` unter `/`, der Browser
+lädt ES-Module und gewöhnliches CSS. Alles, was Tailwind im Webprojekt erzeugt (`@apply`,
+`@theme inline`, die `dark:`-Variante), gibt es hier nicht — es täte stillschweigend nichts.
+
+**Module unter `app/static/js/`**, eine Zuständigkeit je Datei:
+
+| Datei | Zuständigkeit |
+|---|---|
+| `main.js` | Schrittfolge, Sitzungszustand, Verdrahtung. Rechnet und zeichnet nichts |
+| `i18n.js` | Katalog laden, `t()`, `richText()`, `applyTranslations()` über `data-i18n` / `data-i18n-attr`, `<html lang>` mitschreiben |
+| `theme.js` | helles/dunkles Thema und `readCssThemeVar()` — die eine Stelle, an der ein Token als fertige Farbe gelesen wird |
+| `header.js` | Themenknopf, Sprachumschalter, Verweis aufs Markerblatt (zieht `?locale=` nach) |
+| `api.js` | jeder Weg zum Server: `Accept-Language` an **jeder** Anfrage, Serverfehler in eine lesbare Form |
+| `crop-geometry.js` | reine Rechenfunktionen des Zuschnitts: acht Griffe, Klemmen, Mindestgröße `MIN_CROP_MM` = 5 mm. Kein DOM, kein Zustand — einzeln nachrechenbar |
+| `crop-rect.js` | das Canvas-Overlay: Zeichnen, Zeigergesten, Tastatur |
+| `crop-info.js` | die Zeile unter dem Bild: mm, Pixel, Extrapolationsanteil |
+| `adjust.js` | die Regler aus §3.10 samt Live-Vorschau |
+| `report.js` | Qualitätsbericht und Warnungen aus `/api/solve` |
+
+**Der Zustand hält die rohen Serverantworten**, nicht die fertigen Zeichenketten. Bei einem
+Sprachwechsel muss auch schon gezeichneter Text neu entstehen — Bericht, Bildangaben,
+Exportmeldung. Wer nur die Zeichenketten behält, kann sie nicht mehr übersetzen und braucht ein
+Neuladen der Seite; genau das soll der Schalter im Kopf nicht.
+
+**Zuschnitt-Rechteck.** Acht Griffe (vier Ecken, vier Kantenmitten): eine Ecke ändert beide
+Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Ziehen auf freier Fläche zieht
+ein neues Rechteck auf, Pfeiltasten verschieben um 1 mm und mit Shift um 10 mm. Vorher ließ sich
+ein bestehendes Rechteck überhaupt nicht mehr ändern — man musste ein neues aufziehen. Drei
+Dinge, ohne die das nicht trägt:
+
+1. **Pointer Events mit `setPointerCapture`.** Ein Finger, der beim Ziehen den Rand des Canvas
+   verlässt, verliert die Geste nicht mehr; zusammen mit `touch-action: none` scrollt die Seite
+   dabei auch nicht weg.
+2. **Der Canvas-Speicher wird mit `devicePixelRatio` bemessen.** Sonst ist das Overlay auf jedem
+   Handy und jedem HiDPI-Schirm weichgezeichnet — und eine unscharfe Linie über einer Schnittkante
+   ist die falsche Stelle für Unschärfe.
+3. **Die Farben kommen per `getComputedStyle` aus `tokens.css`** und werden beim Themenwechsel neu
+   gelesen. Ein Canvas löst `var()` nicht auf; wer die Werte einmal liest und behält, malt nach
+   dem Umschalten mit den Farben des anderen Themas.
+
+Die Trefferfläche eines Griffs ist 44 px groß (`--touch-target`), gezeichnet wird er kleiner. Die
+Ecken stehen in der Trefferliste vorn: bei einem kleinen Rechteck überlappen sich alle acht
+Flächen, und eine Ecke ist dann fast immer gemeint.
+
+**Live-Regler.** 200 ms Entprellung, und jede Antwort trägt eine Wachnummer. Ohne Entprellung
+schickt ein Zug über die halbe Spur dutzende Anfragen; ohne Wachnummer gewinnt die *langsamste*
+Antwort das Bild, und der Regler steht dann auf einem Wert, während das Bild einen anderen zeigt.
+
+**Der Extrapolationsanteil unter dem Bild ist eine Schätzung** — ein 40 × 40-Raster gegen die
+Marker-Hülle, gerechnet im Browser, damit die Zahl beim Ziehen mitläuft. Verbindlich ist der
+Wert, den der Server rechnet und in die PDF-Fußzeile schreibt (§3.7): dieselbe Hülle, aber ohne
+Abtastraster. Wo die beiden um ein Prozent auseinanderliegen, hat der Server recht.
+
+**Stil unter `app/static/css/`.** `tokens.css` trägt ausschließlich Tokens (plus `@font-face` und
+`color-scheme`) in zwei Ebenen: die Palette `--bfsb-*`, in der jeder Farbwert genau einmal steht,
+und darüber die Rollen (`--background`, `--primary`, `--card`, …), die nur auf einen Palettenwert
+zeigen. Ein Thema zu wechseln heißt deshalb, ein paar Zeiger umzulegen, nicht dreißig Farben
+abzuschreiben. Die Namen sind dieselben wie im Haus-Designsystem des Webprojekts. Die übrigen
+Dateien (`base`, `layout`, `components`, `forms`, `crop`) benutzen **nur** die Rollen.
+
+**Thema — drei Zustände, alle drei müssen gehen:** ausdrücklich hell (`<html data-theme="light">`),
+ausdrücklich dunkel (`dark`), und gar keine Wahl — dann gilt `prefers-color-scheme`, auch wenn das
+System während der Sitzung umschaltet. Ein kurzer Vorspann in `index.html` setzt das Attribut
+**synchron vor dem ersten Zeichnen**; ohne ihn blitzt die Seite hell auf und kippt erst mit dem
+Modul ins Dunkle. Der `@media`-Block in `tokens.css` schließt `[data-theme="light"]` aus, damit
+die Systemvorgabe eine ausdrückliche Wahl nicht überschreibt. Die Wahl liegt in `localStorage`
+unter `THEME_STORAGE_KEY`; im privaten Modus gilt sie eben nur für diese Sitzung.
+
+**Sprachwahl.** Zwei Knöpfe im Kopf (DE/EN) mit `aria-pressed`. Die Startsprache ist die
+gespeicherte Wahl (`LOCALE_STORAGE_KEY`), sonst die Browsersprache, sonst Deutsch. Der Katalog
+wird geladen, **bevor** irgendetwas gezeichnet wird — die Regler bekommen ihre Beschriftung beim
+Erzeugen, nicht nachträglich. Schlägt das Laden fehl, bleibt der Katalog leer und jede
+Beschriftung zeigt ihren Schlüssel: hässlich und genau deshalb richtig, denn die Oberfläche bleibt
+bedienbar und der Fehler ist nicht zu übersehen.
 
 ---
 
 ## 7 · Fehlerbehandlung
 
+### 7.1 Vokabular: Code, Parameter — kein fertiger Satz
+
+Warnungen (`Notice`) und Abbrüche (`AppError`) tragen einen **Code** und **benannte Parameter**,
+niemals einen ausformulierten Satz. Der Satz entsteht erst am Rand — in der HTTP-Antwort, im PDF,
+in der Oberfläche — aus dem Sprachkatalog. Ursprünglich stand der deutsche Klartext direkt in
+`notices.py`; damit hätte jede Rechenstufe gewusst, in welcher Sprache das Ergebnis später
+gelesen wird, und zwei Sprachen wären ohne Umbau nicht möglich gewesen.
+
+```python
+notices.warn("high_residual", rms_px="2.4", rms_mm="1.1")
+raise AppError("thickness_too_large", "thickness_mm",
+               thickness_mm="30", camera_height_mm="25")
+```
+
+Ein fachlicher Abbruch wird zu **HTTP 422** mit
+`{code, params, field, message}`; eine Warnung erscheint in `warnings[]` als
+`{code, params, severity, message}` mit `severity ∈ {info, warn}`. Der gerenderte `message`
+bleibt in der Antwort — er kommt aus demselben Katalog wie die Oberfläche und hält `/api/docs`
+und jeden Verbraucher, der kein Browser ist, lesbar. Die Oberfläche übersetzt trotzdem bevorzugt
+selbst aus `errors.<code>` / `notices.<code>`; `message` ist ihr Ausweg für einen Code, den ihr
+Katalog nicht kennt.
+
+`field` benennt das Eingabefeld, an dem der Fehler hängt (`camera_height_mm`, `dpi`, `crop_mm`),
+damit die Oberfläche ihn dort zeigen kann, wo er zu beheben ist.
+
+Ein Sonderfall ist `i18n.Phrase`: ein Satzbaustein, dessen **Auswahl** schon beim Rechnen fällt,
+dessen **Sprache** aber erst am Rand feststeht — etwa der Auflösungsvorschlag in
+`output_too_large` („Mit 200 dpi passt es." gegen „Auch 150 dpi reicht nicht …"). Beim Rendern
+wird daraus ein gewöhnlicher String, sodass die HTTP-Antwort nur flache Werte trägt.
+
+### 7.2 Sprachkataloge und Verhandlung
+
+Die Kataloge liegen unter **`app/static/i18n/de.json` und `en.json`** und haben genau zwei Leser:
+der Browser holt sie als statische Datei, Python liest dieselbe Datei von der Platte. **Eine Datei
+je Sprache, zwei Verbraucher, keine zweite Fassung für den Server** — sonst laufen Oberfläche und
+PDF früher oder später auseinander. Beide Kataloge tragen dieselben **184 Schlüssel** unter fünf
+Ästen: `document`, `ui`, `notices`, `errors`, `pdf`.
+
+- **Schlüssel** sind Punktpfade (`ui.steps.export.dpi_label`); verschachteltes JSON liest sich
+  besser, gesucht wird flach.
+- **Platzhalter** heißen `{name}`. Die Schreibweise ist bewusst gewählt: derselbe Ausdruck lässt
+  sich in JavaScript mit einer Zeile ersetzen, sodass Server und Oberfläche denselben
+  Katalogtext identisch füllen. Ein Platzhalter ohne Wert bleibt **wörtlich stehen** — sichtbar,
+  aber harmlos; ein `KeyError` mitten im Fehlertext wäre das schlechtere Ergebnis.
+- **Ein fehlender Schlüssel bricht nie ab:** erst Ausweichen auf `DEFAULT_LOCALE`, sonst kommt
+  der Schlüssel selbst zurück. Die Lücke fällt im Bildschirm auf, statt den Ablauf zu töten.
+- **Kein nacktes `|`** in einem übersetzbaren Text. Dieses Werkzeug benutzt kein vue-i18n, aber
+  die Kataloge sind dieselben Dateien wie im Haus, und dort ist `|` der Trenner der Pluralformen.
+
+**Verhandlung.** `i18n.negotiate()` liest `Accept-Language`, sortiert nach `q`-Gewicht und bei
+Gleichstand nach der Reihenfolge im Kopf (so gewinnt bei `de,en` das zuerst genannte Deutsch),
+und nimmt die erste unterstützte Sprache; `*` und alles Unbekannte fallen auf `DEFAULT_LOCALE`.
+`i18n.normalise()` bildet ein einzelnes Kürzel ab („de-CH" → „de", Unsinn → Vorgabe) und wirft
+nie. Zwei Wege umgehen den Kopf, weil sie ihn nicht mitschicken können: `/api/markersheet` nimmt
+`?locale=` (§5), `/api/export` das Feld `locale` (§4.7).
+
+`tests/test_i18n.py` bewacht das: gleiche Schlüsselmenge in beiden Sprachen, gleiche Platzhalter
+je Schlüssel, und **jeder** im Quelltext benutzte `AppError`- und Warncode hat einen
+Katalogeintrag.
+
+### 7.3 Fälle
+
 | Fall | Verhalten |
 |---|---|
-| 0 Marker erkannt | Fehler mit Erkennungs-Vorschau; Hinweise auf Beleuchtung, Schärfe, Blickwinkel |
-| 1 Marker | rechnet weiter, laute Warnung „redundanzfrei, kein Fehlermaß möglich" |
-| Blatt-Modus, keine ID in `{0..3}` | Fehler mit Vorschlag, in den Frei-Modus zu wechseln |
-| Marker nahezu kollinear | Warnung, Homographie schlecht konditioniert |
-| Marker unterschiedlich rotiert (Frei-Modus) | Warnung über `MARKER_ROT_WARN_DEG` |
-| RMS über `RMS_WARN_PX` / `RMS_WARN_MM` | Warnung, kein Abbruch |
-| gemessene Markergröße weicht ab | Warnung mit Prozentwert je Marker |
-| Crop außerhalb der Hülle | Warnung mit Flächenanteil |
-| EXIF-Brennweite fehlt und `h ≠ 0` | „Kameraabstand" wird Pflichtfeld (HTTP 422 mit Feldname) |
-| `d` unplausibel | wie oben, Pflichtfeld |
-| `h ≥ d` | Fehler „Objektdicke muss kleiner als der Kameraabstand sein" |
-| Ausgabe > `MAX_OUTPUT_MPX` | Fehler mit konkretem DPI-Vorschlag, der passt |
-| Upload > `MAX_UPLOAD_MB` oder unbekannter Typ | HTTP 413 / 415 mit Klartext |
-| Session abgelaufen | HTTP 404 „Sitzung abgelaufen, bitte Foto erneut hochladen" |
+| 0 Marker erkannt | Fehler `no_markers`; die Erkennungs-Vorschau ist trotzdem geschrieben. Hinweise auf Beleuchtung, Schärfe, Blickwinkel |
+| 1 Marker | rechnet weiter, laute Warnung `single_marker`: redundanzfrei, kein Fehlermaß möglich |
+| Blatt-Modus, keine ID in `{0..3}` | Fehler `no_sheet_ids` mit den gefundenen IDs und dem Vorschlag, in den Frei-Modus zu wechseln |
+| Marker nahezu kollinear | Warnung `collinear_markers`, Homographie schlecht konditioniert |
+| Marker unterschiedlich rotiert (Frei-Modus) | Warnung `marker_rotation` über `MARKER_ROT_WARN_DEG` |
+| RMS über `RMS_WARN_PX` / `RMS_WARN_MM` | Warnung `high_residual`, kein Abbruch |
+| gemessene Markergröße weicht ab | Warnung `marker_size_deviation` mit Prozentwert je Marker |
+| Crop außerhalb der Hülle | keine Server-Warnung — der Anteil wird in der Oberfläche angezeigt und über `EXTRAPOLATION_WARN_FRAC` eingefärbt (§3.7) |
+| eingetippter Kameraabstand vorhanden | Hinweis `camera_height_override`: der eingetippte Wert schlägt die EXIF-Schätzung |
+| EXIF-Brennweite fehlt und `h = 0` | Hinweis `camera_pose_unknown`, Pose bleibt leer, nichts blockiert |
+| EXIF-Brennweite fehlt und `h ≠ 0` | Fehler `camera_height_required`, Feld `camera_height_mm` |
+| `d` unplausibel | Warnung `camera_height_implausible`, Schätzung verworfen; ohne Ersatzwert dann wie oben |
+| `h ≥ d` | Fehler `thickness_too_large` |
+| Ausgabe > `MAX_OUTPUT_MPX` | Fehler `output_too_large` mit dem größten DPI-Wert aus `DPI_CHOICES`, der noch passt — oder mit dem Rat, den Zuschnitt zu verkleinern |
+| Überlappung ≥ nutzbare Kante | Fehler `overlap_too_large` mit der nutzbaren Fläche |
+| Rand + Streifen lassen nichts übrig | Fehler `margins_too_large` |
+| Zuschnitt ohne Fläche | Fehler `empty_crop` |
+| `/api/adjust` oder `/api/export` ohne vorheriges `solve` | Fehler `not_solved` |
+| Upload > `MAX_UPLOAD_MB` | Fehler `upload_too_large` |
+| Datei nicht lesbar / unbekannter Typ | Fehler `unreadable_image` mit dem Grund aus Pillow |
+| Session abgelaufen | Fehler `session_expired`: „Sitzung ist abgelaufen, bitte das Foto erneut hochladen" |
 
-Alle Meldungen deutsch, Warnungen mit `code` (maschinenlesbar) und `severity ∈ {info, warn}`.
+**Jeder** fachliche Fehler kommt als **HTTP 422** in der Form aus §7.1. Ursprünglich waren 413
+für den zu großen Upload, 415 für den unbekannten Typ und 404 für die abgelaufene Sitzung
+vorgesehen. Vereinheitlicht, weil die Oberfläche damit genau einen Weg hat, einen Fehler zu
+lesen — Code, Parameter, Feld —, statt je Statuscode einen eigenen. Reine Schema-Verstöße
+(Wert außerhalb des Bereichs, unbekannter Aufzählungswert) bleiben davon unberührt: die beantwortet
+Pydantic selbst mit 422 und `detail`, ohne `code`.
 
 ---
 
@@ -521,10 +883,12 @@ Alle Meldungen deutsch, Warnungen mit `code` (maschinenlesbar) und `severity ∈
 
 ```python
 ARUCO_DICT_NAME          = "DICT_4X4_50"
+ARUCO_DICT_ID            = cv2.aruco.DICT_4X4_50
 MARKER_MM_NOMINAL        = 67.0                    # am realen Blatt gemessen
 SHEET_MM                 = (210.0, 297.0)          # A4 Hochformat
 SHEET_SPACING_MM         = (121.0, 171.0)          # Mittelpunktabstände x, y
 SHEET_MARKER_IDS         = (0, 1, 2, 3)            # TL, TR, BL, BR
+SHEET_FORMATS            = {"A4": (210,297), "A3": (297,420)}   # Kachelpapier, immer hoch
 sheet_marker_centers(spacing) -> dict[int, (x, y)] # die einzige Umrechnung (§3.2)
 
 DPI_DEFAULT              = 300
@@ -546,15 +910,16 @@ CAM_HEIGHT_MAX_MM        = 10000.0
 HORIZON_EPS              = 0.02
 EXTENT_HULL_FACTOR       = 3.0
 
+LAYOUT_DEFAULT           = "tiles"                 # Vorgabe der BEDIENUNG (§6.1)
 PAGE_MARGIN_MM_DEFAULT   = 5.0
 PRINTER_MARGIN_MM_DEFAULT = 5.0
 TILE_OVERLAP_MM_DEFAULT  = 10.0
 TILE_OVERVIEW_DEFAULT    = True
-STRIP_H_MM               = 18.0                    # Maßstab links, Metadaten rechts (§4.2)
+STRIP_H_MM               = 18.0                    # Streifen unter dem Bild (§4.2)
 GRID_STEP_MM             = 50.0
 GRID_INK                 = BRAND_INK               # Kernlinie
 GRID_LINE_PT             = 0.5
-GRID_HALO_PT             = 1.5                     # weisser Saum darunter (§4.4)
+GRID_HALO_PT             = 1.5                     # weißer Saum darunter (§4.4)
 GRID_LABEL_PT            = 6.5
 SCALEBAR_MM              = 100.0
 
@@ -563,17 +928,49 @@ BRAND_INK                = "#334155"               # --foreground
 BRAND_PRIMARY            = "#379992"               # --primary
 BRAND_ACTION             = "#ffbf00"               # --action
 BRAND_DARK               = "#25242b"               # --action-foreground
+BRAND_LIGHT              = "#f1f5f9"               # --primary-foreground
+BRAND_SECONDARY          = "#e2e8f0"               # --secondary
+BRAND_ACCENT             = "#f0f3f3"               # --accent
+BRAND_DESTRUCTIVE        = "#e7000b"               # --destructive
 LOGO_INK_SVG, LOGO_MM    = static/brand/logo-dark.svg, 11.0
+LOGO_BLACK_SVG, LOGO_LIGHT_SVG                     # für dunklen Grund in der Oberfläche
 CONTOUR_LINE_MM          = 0.25
 CONTOUR_EPS_MM           = 0.5
 CONTOUR_MIN_AREA_FRAC    = 0.05
 
+# --- Sprachen (§7.2) ---
+LOCALE_DIR               = app/static/i18n         # Browser UND Python lesen dasselbe
+SUPPORTED_LOCALES        = ("de", "en")
+DEFAULT_LOCALE           = "de"
+LOCALE_STORAGE_KEY       = "aruco-language"        # Namensform folgt snow-service-free
+THEME_STORAGE_KEY        = "aruco-theme"
+
+# --- Bildaufbereitung (§3.10) ---
+ADJUST_CLAHE_TILES       = 8                       # Kachelraster des lokalen Kontrasts
+ADJUST_CLAHE_CLIP_MAX    = 4.0                     # Clip-Limit bei Stärke 1.0
+ADJUST_UNSHARP_SIGMA_PX  = 2.0                     # Radius der Unschärfemaske
+ADJUST_UNSHARP_MAX       = 2.0                     # Anteil der Maske bei Stärke 1.0
+ADJUST_EDGE_CANNY        = (60, 160)               # Schwellen der aufgelegten Kantenzeichnung
+ADJUST_EMPHASIS_SIGMA_DEG = 25.0                   # halbe Breite des Farbtonfensters (HSV-Grad)
+ADJUST_EMPHASIS_HUES     = {red 0, yellow 22, green 60,
+                            cyan 90, blue 120, magenta 150}   # OpenCV-HSV, 0..179
+
 SESSION_TTL_S            = 3600
 HOST, PORT               = "0.0.0.0", 8000   # PORT ist der BEVORZUGTE Port, keine Zusage
 BROWSER_WAIT_S           = 60.0              # wie lange der Browser-Faden auf den Server wartet
+PT_PER_MM                = 72 / 25.4               # ReportLab rechnet in Punkt
+MM_PER_INCH              = 25.4
 ```
 
-Alle Pfade auf **mitgelieferte Dateien** laufen über `config.resource_path()`. Der Helfer stellt
+Die Auswahl der Farbbetonung wird in `schemas.py` **aus** `ADJUST_EMPHASIS_HUES` gebaut, nicht
+abgeschrieben: ein neuer Farbton in `config.py` ist damit sofort gültig, statt still an der
+Validierung zu scheitern (`test_adjust_api.py` prüft das für jeden Schlüssel).
+
+Außerhalb von `config.py` steht nur, was keine frei gewählte Größe ist: der Wertebereich von
+`uint8` und der Farbkreis in `enhance.py`, die Innenaufteilung des Streifens in `overlays.py`.
+Eine Ausnahme ist `MAX_SESSIONS = 8` in `session.py` — eine Obergrenze für den Speicherbedarf,
+die nichts außerhalb dieses Moduls sieht.
+
 `sys._MEIPASS` voran, wenn das Programm als PyInstaller-Bundle läuft, und liefert sonst
 `app/`. Ohne ihn zeigt `Path(__file__).parent` in der `.exe` neben die Daten, und die
 Anwendung startet mit nackter Seite — ohne Schrift, ohne Logo, ohne Übersetzung. Davon
@@ -592,11 +989,11 @@ scipy
 Pillow
 pillow-heif
 reportlab
-svglib                      # Logo als Vektor ins PDF (§ Marke)
+svglib                      # liest die Logo-SVG als ReportLab-Zeichnung (§4.6)
 qrcode
 pytest
 pypdf
-pymupdf                     # PDF-Seiten für Prüfungen rastern
+pymupdf                     # rastert das Markerblatt für den Detektortest (§9.2)
 httpx                       # von fastapi.testclient für die Ende-zu-Ende-Tests gebraucht
 pyinstaller                 # baut die Windows-.exe (dev.ps1 build-exe)
 ```
@@ -638,10 +1035,14 @@ verschiebt Kanten daher nicht.
 | `test_extent` | Horizont-Clipping liefert endlichen, konvexen Extent bei flachem Blickwinkel | keine `inf`/`nan`, Extent ⊂ Klammer |
 | `test_rectify` | 100-mm-Quadrat bei 300 dpi; Testobjekt im Raster über die 50-%-Flanke subpixelgenau nachgemessen | 1181 px exakt; Objektmaß < 0,3 mm |
 | `test_layout` | Kachelzahl gegen Formel; jeder Crop-Millimeter auf ≥ 1 Kachel; Überlappung eingehalten | exakt |
-| `test_markersheet` | Platzierungsrechtecke gegen `SHEET_MARKER_CENTERS_MM`; alle Marker innerhalb A4 mit ≥ 8 mm Ruhezone; Seite = A4 | < 0,01 mm |
+| `test_enhance` | Bildaufbereitung (§3.10): Kantenlage vor/nach **jedem** Regler, an harter und weicher Kante; Silhouette pixelgenau; Form, Typ und Unberührtheit der Eingabe; jedes Feld des Vertrags hat einen Fall | Graustufen/Schwelle/Kantenanhebung **0,0 px**; CLAHE ≤ 0,02 px hart, ≤ 0,15 px weich (gemessen 0,11 px ≙ 0,009 mm bei 300 dpi) |
+| `test_markersheet` | Platzierungsrechtecke gegen `SHEET_MARKER_CENTERS_MM`; alle Marker innerhalb A4 mit ≥ 8 mm Ruhezone; Seite = A4. Zusätzlich wird das erzeugte Blatt **gerastert und durch den echten Detektor geschickt** — ein vertauschtes Modulraster sähe am Bildschirm normal aus und fiele sonst erst am realen Foto auf | Layout < 0,01 mm; zurückgemessen Kante und beide Abstände < 0,15 mm |
 | `test_pdf_size` | MediaBox und Bildrechteck gegen §4.2 (via `pypdf`, 1 mm = 2,834645669 pt); Seitenzahl im Kachelmodus | < 0,01 mm |
-| `test_api` | Ende-zu-Ende über HTTP: Upload → Solve → Export; Kopfzeilen gegen die berechnete Geometrie; Fehlerpfade (`not_solved`, `session_expired`) | exakt |
-| `test_startup` | Portwahl weicht einem belegten Port aus; Banner überlebt eine Konsole ohne Blockzeichen; Datenpfade folgen `sys._MEIPASS` im Bundle und dem Quellbaum ohne | exakt |
+| `test_branding` | die Marke auf **jedem** Blatt: Einzelseite, jede Kachel, Klebeplan, Markerblatt — auch mit abgeschaltetem Maßstab und abgeschalteter Fußzeile; Verlinkung über die Link-Annotationen; schmale Seite behält wenigstens das Logo | exakt |
+| `test_api` | Ende-zu-Ende über HTTP: Upload → Solve → Export; Kopfzeilen gegen die berechnete Geometrie; Vorgabe ist die Kachelung auf A4; der Ausdruck folgt der mitgeschickten Sprache; Fehlerpfade (`not_solved`, `session_expired`) | exakt |
+| `test_adjust_api` | die Regler über die Leitung: Pydantic-Modell spiegelt die Dataclass **Feld für Feld und Vorgabe für Vorgabe**; jeder Farbton aus `config` wird angenommen, ein fremder abgelehnt; Negativ schlägt bis in die Bildpunkte durch; **ein Export mit Aufbereitung hat dieselbe Seitengröße, dasselbe Bildrechteck und dieselbe Seitenzahl wie einer ohne** | Geometrie identisch, Inhalt verschieden |
+| `test_i18n` | beide Kataloge tragen dieselben Schlüssel und je Schlüssel dieselben Platzhalter; jeder im Quelltext benutzte Fehler- und Warncode hat einen Eintrag; `negotiate`/`normalise` über neun bzw. vier Fälle; Rückfall Englisch → Deutsch → Schlüssel; Umlaute wirklich im Katalog | exakt |
+
 
 Erst wenn diese Tests grün sind, gilt die Maßhaltigkeit als belegt.
 **Stand 2026-09-07: 153 Tests, alle grün** (`.\dev.ps1 run-tests`).
@@ -651,6 +1052,11 @@ Erst wenn diese Tests grün sind, gilt die Maßhaltigkeit als belegt.
 Markerblatt drucken → Marker messen → Foto eines Objekts bekannter Größe → PDF erzeugen →
 drucken → 100-mm-Maßstab und Objektmaß mit dem Messschieber prüfen. Ergebnis wird im README
 dokumentiert.
+
+**Diese Probe steht bis heute (2026-09-07) aus.** Die Maßhaltigkeit ist ausschließlich gegen
+synthetische Szenen belegt — gegen gerechnete Wahrheit, nicht gegen Papier. Das ist eine gute
+Grundlage und kein Beweis: kein Test dieses Repos hat je einen Drucker gesehen. Wer das
+Erfolgskriterium aus §1 zitiert, zitiert bis dahin eine Zusage, keine Messung.
 
 ---
 
@@ -668,6 +1074,7 @@ Kurznamen des Nachbarprojekts):
 | `build-exe` | Windows-Bundle nach `dist/ArUco-Homographie/` (PyInstaller, One-Folder) |
 | `kill-servers` | nur Server **aus diesem Verzeichnis** beenden — `app.main` wie gebaute `.exe` |
 | `clean-all` | venv, `out/`, `build/`, `dist/`, Caches entfernen |
+| `help` | die Liste ausgeben (auch die Vorgabe ohne Argument) |
 
 `start-server` liest den bevorzugten Port aus `app/config.py` (keine zweite Wahrheit) und zeigt
 ihn an. Den **Browser öffnet `app.main` selbst**, in einem Daemon-Faden, der wartet, bis der Port
@@ -686,21 +1093,33 @@ Selbstheilung über einen Stempel: `venv/.deps-installed` enthält den SHA-256 v
 `requirements.txt`. Fehlt das venv oder ändert sich die Datei, installiert jedes Run-Kommando
 vorher automatisch nach. `.vscode/tasks.json` ruft ausschließlich `dev.ps1` auf.
 
-`.gitignore`: `venv/`, `__pycache__/`, `*.pyc`, `out/`, `build/`, `dist/`, `.pytest_cache/`,
-`*.log`, `Thumbs.db`. Die Bauvorschrift `aruco-homographie.spec` ist dagegen versioniert — sie
-ist Quelltext, nicht Erzeugnis.
+`.gitignore` sperrt venv, Caches, `/out/` und die Streuner von Testläufen aus. Zwei Regeln, die
+dort im Kopf stehen und beim Erweitern gelten: Muster, die nur den Projektstamm meinen, fangen
+mit `/` an (`out/` finge auch ein `app/out/` mit ein), und **nie nach Dateiendung allein
+aussperren** — in `app/static/` liegen echte Bildbestandteile (Favicons, Logos), ein pauschales
+`*.png` hätte sie stillschweigend aus dem Repo geworfen. `.vscode/tasks.json` ist ausdrücklich
+versioniert.
+
+Die Bauvorschrift `aruco-homographie.spec` ist dagegen versioniert — sie ist Quelltext,
+nicht Erzeugnis.
 
 ---
 
 ## 11 · Nicht im Umfang (v1)
+
+Dieses Dokument beschreibt, was **existiert**. Was gebaut werden *soll*, steht in
+[`docs/plans.md`](../../plans.md) und gehört ausdrücklich nicht hierher — zwei Listen von
+Absichten laufen auseinander, sobald eine davon abgearbeitet wird.
 
 - **Objektivverzeichnung.** Mit vier koplanaren Markern nicht sauber abtrennbar. Der Solver ist
   bereits als Least-Squares gebaut; ein radialer Parameter `k1` kann später als weitere
   Unbekannte eingehängt werden (im Blatt-Modus mit 16 Punkten identifizierbar). Standardmäßig
   aus, als Ausbaustufe vorgesehen.
 - Livebild-Aufnahme im Browser, Stapelverarbeitung, Nutzerkonten, dauerhafte Speicherung über
-  die TTL hinaus.
-- DXF/SVG-Export der Kontur für die CNC — technisch naheliegend (`contour.py` liefert den Pfad
-  in mm), aber nicht gefordert; bewusst zurückgestellt.
+  die TTL hinaus. Sitzungen leben nur im Arbeitsspeicher; ein Neustart des Servers wirft eine
+  laufende Arbeit weg.
+- **DXF/SVG-Export der Kontur für die CNC** ist hier nicht gebaut (`contour.py` liefert den Pfad
+  in mm, mehr nicht). Er ist inzwischen ein beauftragtes Vorhaben — der Lösungsweg samt
+  Stolpersteinen steht in `docs/plans.md`, nicht hier.
 - Nicht-planare Objekte. Eine Homographie beschreibt genau eine Ebene; gewölbte Deckel bleiben
   außerhalb dessen, was dieses Verfahren leisten kann.
