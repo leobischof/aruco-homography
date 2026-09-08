@@ -26,6 +26,7 @@ Lesen wissen, welche Datei er aufmachen muss — und keine zweite Suchrunde brau
 | [`design/design-system.md`](design/design-system.md) | Farbe, Typografie, Form, Komponenten, Themen, Sprachen, Bewegung, Mobil — und was aus dem Webprojekt **nicht** zu übernehmen ist | developer | current |
 | [`contributing/git.md`](contributing/git.md) | Verbindliche Git-Regeln: Identität, wann committet und wann gepusht wird, Aufbau der Commit-Nachricht | developer | current |
 | [`superpowers/specs/2026-09-06-aruco-homographie-design.md`](superpowers/specs/2026-09-06-aruco-homographie-design.md) | Die Spezifikation dessen, was **existiert**, mit dem Code abgeglichen | developer | current |
+| [`cpp-migration/stage-4-web.md`](cpp-migration/stage-4-web.md) | Stufe 4: die ganze Kette ohne Server im Browser — was gemessen ist, wie gebaut wird, und was der Bau nicht kann | developer | current |
 
 ### Außerhalb von `docs/` — die Dateien an der Wurzel
 
