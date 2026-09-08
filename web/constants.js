@@ -106,6 +106,7 @@ export const PAGE_MARGIN_MM_DEFAULT = shared.PAGE_MARGIN_MM_DEFAULT;
 export const PRINTER_MARGIN_MM_DEFAULT = shared.PRINTER_MARGIN_MM_DEFAULT;
 export const TILE_OVERLAP_MM_DEFAULT = shared.TILE_OVERLAP_MM_DEFAULT;
 export const TILE_OVERVIEW_DEFAULT = shared.TILE_OVERVIEW_DEFAULT;
+export const OVERVIEW_MAX_PX = shared.OVERVIEW_MAX_PX;
 export const STRIP_H_MM = shared.STRIP_H_MM;
 export const GRID_STEP_MM = shared.GRID_STEP_MM;
 export const GRID_LINE_PT = shared.GRID_LINE_PT;

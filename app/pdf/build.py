@@ -22,6 +22,17 @@ from app.i18n import translate
 from app.pdf import branding, generator, overlays
 from app.pdf.layout import Rect, TileLayout, single_page, strip_height, tile_layout
 
+# Die Blattnummer im Klebeplan. Groesser als die Rasterbeschriftung, weil sie aus
+# Armlaenge gefunden werden muss, und kleiner als die Ueberschrift, weil sie in die
+# kleinste Kachel passen muss.
+_OVERVIEW_LABEL_PT = 10.0
+# Kachelrand, Aussenkante des Zuschnitts, und der weisse Saum, der auf beide
+# aufgeschlagen wird. Der Saum ist noetig, seit unter den Linien das Bild liegt:
+# eine duenne Linie ist auf einem Foto mal sichtbar und mal nicht.
+_OVERVIEW_LINE_PT = 0.4
+_OVERVIEW_EDGE_PT = 0.8
+_OVERVIEW_HALO_PT = 0.8
+
 
 @dataclass
 class ExportOptions:
@@ -171,7 +182,7 @@ def _build_tiles(
     pages = 0
 
     if options.tile_overview:
-        _draw_overview(canvas, plan, crop_w, crop_h, footer_lines, options.locale)
+        _draw_overview(canvas, plan, crop_w, crop_h, footer_lines, image_bgr, options.locale)
         canvas.showPage()
         pages += 1
 
@@ -287,15 +298,37 @@ def _crop_pixels(
     return image_bgr[y0:y1, x0:x1]
 
 
+def _overview_thumbnail(image_bgr: np.ndarray) -> np.ndarray:
+    """Den Zuschnitt auf Daumennagelgroesse bringen.
+
+    Auf dem Klebeplan wird das Bild ANGESEHEN und nicht nachgemessen - es sagt,
+    welches Blatt welchen Teil zeigt. In voller Aufloesung waere es ein zweites Mal
+    das ganze Raster in derselben Datei: ReportLab kodiert bei jedem drawImage neu,
+    teilt also nichts mit den Kachelseiten. config.OVERVIEW_MAX_PX sagt, wo Schluss
+    ist, und INTER_AREA ist die Verkleinerung, die nicht aliast.
+    """
+    height, width = image_bgr.shape[:2]
+    longest = max(width, height)
+    if longest <= config.OVERVIEW_MAX_PX:
+        return image_bgr
+    factor = config.OVERVIEW_MAX_PX / longest
+    return cv2.resize(
+        image_bgr,
+        (max(1, int(round(width * factor))), max(1, int(round(height * factor)))),
+        interpolation=cv2.INTER_AREA,
+    )
+
+
 def _draw_overview(
     canvas: Canvas,
     plan: TileLayout,
     crop_w: float,
     crop_h: float,
     footer_lines: list[str],
+    image_bgr: np.ndarray,
     locale: str = config.DEFAULT_LOCALE,
 ) -> None:
-    """Uebersichtsblatt: welches Blatt gehoert wohin."""
+    """Uebersichtsblatt: welches Blatt gehoert wohin - ueber dem Zuschnitt selbst."""
     ink = branding.ink(config.BRAND_INK)
     title = translate("pdf.assembly.title", locale)
     canvas.setFillColor(ink)
@@ -331,24 +364,50 @@ def _draw_overview(
     scale = min(area_w / max(crop_w, 1e-6), area_h / max(crop_h, 1e-6))
     origin_x = plan.printer_margin_mm
     origin_y = plan.sheet_h - 40.0 - crop_h * scale
+    outline = Rect(origin_x, origin_y, crop_w * scale, crop_h * scale)
 
-    canvas.setLineWidth(0.4)
-    for tile in plan.tiles:
-        x = origin_x + tile.crop_x * scale
-        y = origin_y + (crop_h - tile.crop_y - tile.src_h) * scale
-        canvas.setStrokeColor(branding.ink(config.BRAND_PRIMARY))
-        canvas.rect(_pt(x), _pt(y), _pt(tile.src_w * scale), _pt(tile.src_h * scale))
-        canvas.setFont("Helvetica-Bold", 10)
-        canvas.setFillColor(ink)
-        canvas.drawCentredString(
-            _pt(x + tile.src_w * scale / 2.0),
-            _pt(y + tile.src_h * scale / 2.0),
+    # Das Bild ZUERST: alles Weitere ist ein Aufdruck darauf. Wer wissen will,
+    # welches Blatt er in der Hand hat, sucht nach dem, was darauf zu sehen ist -
+    # eine leere Kachelnummerierung sagt ihm das nicht.
+    _place_image(canvas, _overview_thumbnail(image_bgr), outline)
+
+    tiles = [
+        (
+            Rect(
+                origin_x + tile.crop_x * scale,
+                origin_y + (crop_h - tile.crop_y - tile.src_h) * scale,
+                tile.src_w * scale,
+                tile.src_h * scale,
+            ),
             str(tile.index),
         )
+        for tile in plan.tiles
+    ]
+    borders = [(rect, _OVERVIEW_LINE_PT, branding.ink(config.BRAND_PRIMARY))
+               for rect, _ in tiles]
+    borders.append((outline, _OVERVIEW_EDGE_PT, ink))
 
-    canvas.setStrokeColor(ink)
-    canvas.setLineWidth(0.8)
-    canvas.rect(_pt(origin_x), _pt(origin_y), _pt(crop_w * scale), _pt(crop_h * scale))
+    # Zwei Durchgaenge wie beim Raster (app/pdf/overlays.draw_grid): erst alle
+    # weissen Saeume, dann alle Kernlinien. Der Saum einer Kachel darf die
+    # Kernlinie ihrer Nachbarin nicht zudecken - die Kacheln ueberlappen sich.
+    for halo in (True, False):
+        for rect, width_pt, colour in borders:
+            canvas.setLineWidth(width_pt + _OVERVIEW_HALO_PT if halo else width_pt)
+            if halo:
+                canvas.setStrokeColorRGB(1.0, 1.0, 1.0)
+            else:
+                canvas.setStrokeColor(colour)
+            canvas.rect(_pt(rect.x), _pt(rect.y), _pt(rect.width), _pt(rect.height))
+
+    # Die Nummern zuletzt: kein Saum soll ueber ihnen liegen.
+    for rect, label in tiles:
+        overlays.draw_label(
+            canvas,
+            rect.x + rect.width / 2.0 - overlays.label_width(label, _OVERVIEW_LABEL_PT) / 2.0,
+            rect.y + rect.height / 2.0,
+            label,
+            _OVERVIEW_LABEL_PT,
+        )
 
     overlays.draw_strip(canvas, strip, show_scalebar=True, footer_lines=footer_lines,
                         tile_label=title, locale=locale)

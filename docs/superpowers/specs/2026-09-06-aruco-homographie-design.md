@@ -590,6 +590,23 @@ liegt auf **demselben Papierformat wie die Kacheln**, nicht auf A4 — ein Kache
 einem Drucker, und ein Blatt anderen Formats mittendrin ist genau das, was im Fach hängen
 bleibt.
 
+**Unter dem Kachelraster liegt der Zuschnitt selbst** — dasselbe entzerrte Bild, das gekachelt
+wird, maßstabsgetreu in dasselbe Rechteck gezeichnet. Ohne es sagt der Plan, *wie viele* Blätter
+es gibt, aber nicht, *welches* man gerade in der Hand hält. Es ist ein Daumennagel und keine
+Schablone: die längere Kante wird auf `OVERVIEW_MAX_PX = 1600` gedeckelt (bei höchstens 250 mm
+Bildhöhe rund 160 dpi). Kachelränder und Außenkante bekommen deshalb denselben weißen Saum wie
+das Millimeterraster (§4.4) — eine dünne Linie ist auf einem Foto mal sichtbar und mal nicht —
+und die Blattnummern stehen auf weißem Träger.
+
+Woher der Daumennagel kommt, hängt am Weg: **am Stück** ist das ganze Raster ohnehin schon
+eingebettet und wird wiederverwendet (ein zweites, kleineres Bild wäre reine Dateigröße);
+**blattweise** gibt es kein ganzes Raster, also fragt der Bau die Bildquelle einmal nach dem
+ganzen Zuschnitt — mit Deckel, damit nicht genau das Raster entsteht, dessen Vermeidung den
+Export auf dem Telefon erst möglich gemacht hat (`web/pdf/build.js`). Die Bildquelle nimmt
+dafür ein fünftes Argument `maxPx`; null heißt Druckauflösung. In ReportLab wird stattdessen
+intern verkleinert, weil dort jedes `drawImage` neu kodiert und nichts mit den Kachelseiten
+teilt.
+
 Der Kopf `X-Image-Rect-Mm` meldet im Kachelmodus das Bildrechteck der **ersten** Kachel.
 
 ### 4.4 Overlays

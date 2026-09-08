@@ -167,27 +167,48 @@ def draw_grid(
     canvas.restoreState()
 
 
-def _grid_label(canvas: Canvas, image_rect: Rect, x: float, y: float, text: str) -> None:
-    """Rasterbeschriftung auf weissem Traeger - lesbar auch auf dunklem Foto.
+def label_width(text: str, size_pt: float) -> float:
+    """Breite der Beschriftung in Millimetern - ohne den Rand des Traegers."""
+    return stringWidth(text, "Helvetica-Bold", size_pt) / config.PT_PER_MM
 
-    Die Beschriftung wird in den Bildbereich hineingeklemmt. Ohne das rutscht die
-    Null-Linie oben aus dem Bild in den Rand, und die aeusserste rechte Beschriftung
-    haengt ueber die Bildkante hinaus.
+
+def draw_label(canvas: Canvas, x: float, y: float, text: str, size_pt: float) -> None:
+    """Beschriftung auf weissem Traeger - lesbar auch auf dunklem Foto.
+
+    Zwei Aufdrucke brauchen das: die Rasterbeschriftung ueber dem entzerrten Bild
+    und die Blattnummer ueber dem Klebeplan. Beide stehen auf einem Foto, dessen
+    Helligkeit niemand kennt; schwarzer Text allein ist dort mal lesbar und mal
+    nicht.
+
+    (x, y) ist die linke Grundlinie des Textes, so wie bei drawString.
     """
-    size = config.GRID_LABEL_PT
-    width = stringWidth(text, "Helvetica-Bold", size) / config.PT_PER_MM
-    height = size / config.PT_PER_MM
-
-    x = min(max(x, image_rect.x + 0.5), image_rect.x + image_rect.width - width - 0.5)
-    y = min(max(y, image_rect.y + 0.5), image_rect.y + image_rect.height - height - 0.5)
+    width = label_width(text, size_pt)
+    # Die Schriftgroesse wird hier als HOEHE gelesen. Eine Naeherung, ja - der
+    # weisse Traeger soll den Text decken, nicht ihn vermessen.
+    height = size_pt / config.PT_PER_MM
 
     canvas.setFillColorRGB(1.0, 1.0, 1.0)
     canvas.rect(
         _pt(x - 0.4), _pt(y - 0.4), _pt(width + 0.8), _pt(height * 0.95), stroke=0, fill=1
     )
     canvas.setFillColor(branding.ink(config.GRID_INK))
-    canvas.setFont("Helvetica-Bold", size)
+    canvas.setFont("Helvetica-Bold", size_pt)
     canvas.drawString(_pt(x), _pt(y), text)
+
+
+def _grid_label(canvas: Canvas, image_rect: Rect, x: float, y: float, text: str) -> None:
+    """Rasterbeschriftung, in den Bildbereich hineingeklemmt.
+
+    Ohne das Klemmen rutscht die Null-Linie oben aus dem Bild in den Rand, und die
+    aeusserste rechte Beschriftung haengt ueber die Bildkante hinaus.
+    """
+    size = config.GRID_LABEL_PT
+    width = label_width(text, size)
+    height = size / config.PT_PER_MM
+
+    x = min(max(x, image_rect.x + 0.5), image_rect.x + image_rect.width - width - 0.5)
+    y = min(max(y, image_rect.y + 0.5), image_rect.y + image_rect.height - height - 0.5)
+    draw_label(canvas, x, y, text, size)
 
 
 def _grid_offsets(start: float, length: float, step_mm: float) -> list[float]:
