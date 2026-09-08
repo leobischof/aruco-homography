@@ -152,6 +152,53 @@ API-Verzeichnis, und ich habe sie als eines benutzt. Berichtigt in PR #18.
 wo auch `LevMarq` liegt. **`geometry` muss auf jede WASM-Whitelist**, sonst fehlen
 beide Hälften der Messung auf einmal.
 
+#### 2026-09-08 · Die Windows-Hülle misst mit C++ (PR #22)
+
+Bis hierher lag der C++-Kern nur in `core/build/` und wurde ausschließlich von der
+Testsuite benutzt. **Die ausgelieferte `.exe` rechnete weiter in Python** — der Umzug
+war an genau der Stelle unsichtbar, an der er ankommen soll. Das ist jetzt zu:
+`aruco-homographie.spec` legt `.pyd` und `opencv_world500.dll` ins Bundle, und
+`app/vision/backend.py` nimmt im eingefrorenen Zustand `cpp` als Vorgabe.
+
+Ganzer Beleg mit Zahlen: [`stage-4-windows-exe.md`](stage-4-windows-exe.md).
+
+**Wieder die Probe, auf die es ankommt.** Banner und Zahlen bestünde auch eine `.exe`,
+die den Kern mitschleppt und still in Python weiterrechnet — sie rechnet ja richtig.
+Also die `.pyd` weggenommen: **der Server kommt nicht hoch**, mit der Meldung, die den
+fehlenden Kern nennt. Ohne diesen Schritt wären die beiden anderen wertlos.
+
+**Der Preis, ungeschönt:** das Bundle wächst von rund 308 MB auf 388 MB, der Installer
+von rund 78 MB auf 103 MB. `opencv_world500.dll` (80 MB) muss mit, solange `cv2` für
+alles außer dem Detektor gebraucht wird — `core/` umfasst heute genau **eine** Rechnung,
+`detect_markers`. Das ist der ehrliche Stand: der Umzug hat den Detektor bewegt, nicht
+die Kette.
+
+#### 2026-09-08 · Drei Dinge, die beim Hinsehen aufgefallen sind
+
+**1 · `./dev.ps1 run-tests-js` war auf einem frischen Klon kaputt** (PR #24). Zwei
+Fehler in einer Zeile, beide nur dort sichtbar, wo `node_modules` fehlt — also genau da,
+wo die Selbstheilung greifen soll. `npm` löst unter Windows auf `npm.ps1` auf, und dieser
+Aufsatz stirbt am `Set-StrictMode` von `dev.ps1`; und `--prefix` trug das Projekt als
+Abhängigkeit von sich selbst in `package.json` ein. Beides an einem wirklich leeren Baum
+nachgemessen, nicht angenommen.
+
+**2 · Acht Dokumente standen nicht im Verzeichnis** (PR #23). `docs/README.md` verlangt
+Frontmatter ausnahmslos und einen Eintrag in §1 — der ganze C++-Umzug hat sich an beides
+nicht gehalten, mein eigenes `stage-4-windows-exe.md` eingeschlossen. Nachgetragen. Das
+Skript, das die Regel künftig durchsetzt, steht als Kandidat in `docs/plans.md`; ein
+lauffähiger Entwurf hat alle acht Fälle gefunden.
+
+**3 · `v0.0.2-alpha` trägt `prerelease=false`** und ist damit als Vollversion markiert,
+obwohl `CHANGELOG.md` unter 0.0.3-alpha ausdrücklich sagt, das sei „die erste Fassung,
+die keine Vorabversion mehr ist". Die Kennzeichnung ist also falsch. **Nicht geändert:**
+eine veröffentlichte Fassung nachträglich umzuetikettieren ist nach außen sichtbar und
+steht nicht im Auftrag. Ein Befehl, wenn gewünscht:
+
+```powershell
+gh release edit v0.0.2-alpha --prerelease
+```
+
+
 #### 2026-09-08 · Was noch unbelegt ist
 
 Der Auftrag lautet „durch Blocker hindurcharbeiten". Damit niemand mehr hineinliest,
