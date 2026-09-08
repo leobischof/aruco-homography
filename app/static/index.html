@@ -282,6 +282,17 @@
       </label>
     </div>
 
+    <!--
+      Der einzige Weg zu einem frischen Rechteck. Seit die freie Flaeche nichts
+      mehr tut (crop-rect.js sagt warum), gaebe es sonst keinen - und ein
+      Rechteck, das man in eine Ecke geschoben hat, waere eine Sackgasse.
+    -->
+    <div class="step-actions">
+      <button type="button" class="btn btn-secondary" id="crop-reset"
+              data-i18n="ui.steps.crop.reset_label"
+              data-i18n-attr="title:ui.steps.crop.reset_hint"></button>
+    </div>
+
     <div class="info" id="crop-info" role="status"></div>
   </section>
 

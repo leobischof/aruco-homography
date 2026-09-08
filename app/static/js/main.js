@@ -216,6 +216,17 @@ function updateCropInfo() {
     });
 }
 
+/**
+ * Zurueck auf den Vorschlag, mit dem der Zuschnitt angefangen hat.
+ *
+ * `default_crop_mm` kommt aus der Loesung und ist die eine Quelle dafuer - der
+ * Knopf rechnet nichts nach, er holt dieselbe Zahl noch einmal.
+ */
+function onCropReset() {
+    if (!state.solve) return;
+    cropRect.setCrop(state.solve.default_crop_mm);
+}
+
 function onCropInput() {
     const next = {};
     for (const key of CROP_KEYS) next[key] = parseFloat(el(key).value);
@@ -432,6 +443,7 @@ async function start() {
     el("export").addEventListener("click", handleExport);
     el("export-image").addEventListener("click", handleExportImage);
     el("adjust-reset").addEventListener("click", () => adjustPanel.reset());
+    el("crop-reset").addEventListener("click", onCropReset);
 
     el("mode").addEventListener("change", updateModeFields);
     el("layout").addEventListener("change", updateLayoutFields);

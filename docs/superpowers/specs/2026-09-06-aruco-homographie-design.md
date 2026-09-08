@@ -824,10 +824,9 @@ Exportmeldung. Wer nur die Zeichenketten behält, kann sie nicht mehr übersetze
 Neuladen der Seite; genau das soll der Schalter im Kopf nicht.
 
 **Zuschnitt-Rechteck.** Acht Griffe (vier Ecken, vier Kantenmitten): eine Ecke ändert beide
-Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Ziehen auf freier Fläche zieht
-ein neues Rechteck auf, Pfeiltasten verschieben um 1 mm und mit Shift um 10 mm. Vorher ließ sich
-ein bestehendes Rechteck überhaupt nicht mehr ändern — man musste ein neues aufziehen. Drei
-Dinge, ohne die das nicht trägt:
+Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Pfeiltasten verschieben um
+1 mm und mit Shift um 10 mm. Vorher ließ sich ein bestehendes Rechteck überhaupt nicht mehr
+ändern — man musste ein neues aufziehen. Drei Dinge, ohne die das nicht trägt:
 
 1. **Pointer Events mit `setPointerCapture`.** Ein Finger, der beim Ziehen den Rand des Canvas
    verlässt, verliert die Geste nicht mehr; zusammen mit `touch-action: none` scrollt die Seite
@@ -842,6 +841,15 @@ Dinge, ohne die das nicht trägt:
 Die Trefferfläche eines Griffs ist 44 px groß (`--touch-target`), gezeichnet wird er kleiner. Die
 Ecken stehen in der Trefferliste vorn: bei einem kleinen Rechteck überlappen sich alle acht
 Flächen, und eine Ecke ist dann fast immer gemeint.
+
+**Außerhalb des Rechtecks passiert nichts** — kein Fokus, kein Pointer-Capture, kein
+`preventDefault`, kein Neuzeichnen. Bis 0.1.4-alpha zog eine Geste dort ein neues Rechteck auf.
+Am Finger ist das die falsche Vorgabe: wer das Bild antippt, um es anzusehen, hatte danach einen
+Zuschnitt von null Millimetern, und ein Fehlgriff kostete die ganze bisherige Einstellung. Der
+Weg zu einem frischen Rechteck ist stattdessen der Knopf **Zuschnitt zurücksetzen**, der
+`default_crop_mm` aus der Lösung noch einmal setzt — dieselbe Zahl, nicht eine nachgerechnete.
+`hitTest` nennt den Fall seither `outside` statt `new`: der Name benennt die Lage des Punktes und
+nicht mehr eine Absicht.
 
 **Live-Regler.** 200 ms Entprellung, und jede Antwort trägt eine Wachnummer. Ohne Entprellung
 schickt ein Zug über die halbe Spur dutzende Anfragen; ohne Wachnummer gewinnt die *langsamste*

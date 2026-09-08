@@ -69,6 +69,8 @@
         "title": "Zuschnitt",
         "hint": "Das Rechteck an den Ecken oder Kanten anfassen, oder es im Bild verschieben. Die hinterlegte Fläche ist die Marker-Hülle – alles weit außerhalb wird extrapoliert und ist damit unsicher.",
         "preview_alt": "Entzerrte Vorschau",
+        "reset_label": "Zuschnitt zurücksetzen",
+        "reset_hint": "Das Rechteck zurück auf den Vorschlag vom Anfang.",
         "x0_label": "x0 (mm)",
         "y0_label": "y0 (mm)",
         "x1_label": "x1 (mm)",
