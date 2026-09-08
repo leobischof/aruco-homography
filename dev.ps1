@@ -190,7 +190,30 @@ function Confirm-NodeModules {
     $needed = @('node_modules\pdf-lib', 'node_modules\@techstark\opencv-js')
     if (-not ($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })) { return }
     Write-Warn 'node_modules fehlt oder ist unvollstaendig - npm install laeuft jetzt'
-    Invoke-Native -What 'npm install' -Action { npm install --prefix $RepoRoot }
+
+    # npm.cmd und NICHT npm: unter Windows loest `npm` auf npm.ps1 auf, und dieser
+    # PowerShell-Aufsatz liest $MyInvocation.Statement - eine Eigenschaft, die es nicht
+    # gibt. Das Set-StrictMode -Version Latest weiter oben macht daraus einen Abbruch:
+    #
+    #   Die Eigenschaft "Statement" wurde fuer dieses Objekt nicht gefunden.
+    #
+    # Die Meldung nennt weder npm noch StrictMode und schickt einen auf die Suche nach
+    # einem Fehler in dev.ps1. Sie schlaegt nur zu, wenn node_modules FEHLT - also nie
+    # auf einem Rechner, auf dem schon einmal gebaut wurde, und immer beim frischen Klon.
+    $npm = Get-Command 'npm.cmd' -ErrorAction SilentlyContinue
+    if (-not $npm) { throw 'npm.cmd wurde nicht gefunden - Node.js installieren.' }
+
+    # Push-Location statt --prefix. Mit --prefix trug npm das Projekt beim ERSTEN
+    # Lauf als Abhaengigkeit von sich selbst ein ("aruco-homographie-web": "file:") und
+    # schrieb das in package.json UND package-lock.json. Auf einem Rechner mit
+    # node_modules passiert das nicht - der Schaden entsteht genau dort, wo die
+    # Selbstheilung greifen soll, und wandert von dort in einen Commit.
+    Push-Location $RepoRoot
+    try {
+        Invoke-Native -What 'npm install' -Action { & $npm.Source install }
+    } finally {
+        Pop-Location
+    }
 }
 
 # --- C++-Rechenkern -----------------------------------------------------------
