@@ -15,12 +15,23 @@ updated: 2026-09-08
 > Rechenschritt auch durch die C-Grenze. `web/vision/` hat dafür **drei neue Dateien
 > bekommen und keine einzige geänderte**.
 >
-> **Auf einem Telefon ist weiterhin nichts gelaufen.** Auf diesem Rechner gibt es kein
-> Android — kein Gerät, kein Emulator, kein System-Abbild. Belegt ist die Kette an zwei
-> Stellen, an denen sie sich hier ausführen lässt: die **JNI-Schicht auf einer echten JVM**
-> (bitgenau gegen denselben Kern durch pybind11) und die **JavaScript-Hälfte in einem
-> echten Chromium**, geladen aus dem gebauten APK. Beides sind Belege, keines ist ein
-> Telefon. Was das nicht misst, steht in [§7](#7--was-nicht-belegt-ist).
+> **Am 08.09.2026 ist die App auf einem Telefon gelaufen.** Xiaomi 2312DRA50G, Android 15
+> (API 35), System-WebView 152.0.7977.64, Seitengröße 4096 B, arm64-v8a. Der Prüfstand hat
+> **bestanden**: beide Szenen `größter Eckfehler 0,2337 px` bei 0,7500 px Toleranz, 4/4
+> Marker, 83 bzw. 84 ms — und **beide SHA-256 genau die, die [§6](#6--auf-ein-telefon-bringen)
+> vorhergesagt hatte**. Der native Kern rechnet auf einem echten Gerät bitgleich zu dem auf
+> diesem Rechner, und Androids PNG-Dekoder liefert dieselben Pixel wie `cv2`.
+>
+> **Derselbe Lauf hat zwei Fehler gefunden, die keine Prüfung hier finden konnte:** die App
+> zeichnete unter Status- und Navigationsleiste, und der Export brach ab — nicht am Rechnen,
+> sondern am Speicher, mit einer Meldung, die keinen Grund nannte. Beides ist behoben; auf
+> einem Gerät nachgesehen ist keine der beiden Behebungen.
+>
+> **Auf diesem Rechner läuft weiterhin kein Android** — kein Gerät, kein Emulator, kein
+> System-Abbild. Alles Übrige ist hier belegt: die **JNI-Schicht auf einer echten JVM**
+> (bitgenau gegen denselben Kern durch pybind11) und die **JavaScript-Hälfte in einem echten
+> Chromium**, geladen aus dem gebauten APK. Was das nicht misst, steht in
+> [§7](#7--was-nicht-belegt-ist).
 
 > **Stand:** 2026-09-08 · Zweig `feat/android-full-chain` · Belege in `core/`, `android/`,
 > `web/vision/`, `dev.ps1`
@@ -39,12 +50,16 @@ Die Trennlinie ist die einzige Aussage dieses Dokuments, die zählt.
 | RGBA→BGR-Weg der JNI-Schicht (der, den Android geht) | **gemessen**, 36/36 Werte identisch zum BGR-Weg |
 | Modulbits des Markerblatts gegen `cv2` | **gemessen**, 4/4 Muster byteweise gleich |
 | Die vier Testläufe (`ARUCO_CORE` × `ARUCO_PDF`) | **gemessen**, je **183 passed** |
-| Die JavaScript-Einheitentests, inkl. der neuen Brücke | **gemessen**, **18/18** |
+| Die JavaScript-Einheitentests, inkl. der neuen Brücke | **gemessen**, **24/24** |
 | `libaruco_core.so` für vier ABIs: ELF, 16-KB-Ausrichtung, Symbole | **gemessen** am Erzeugnis |
 | APK: Inhalt, ABIs, Rechte, `zipalign -P 16`, Signatur | **gemessen** am Erzeugnis |
+| Das **Release-APK**: eigener Schlüssel statt Debug-Schlüssel | **gemessen** am Erzeugnis: `CN=Bischof Snowboards`, Zertifikat-SHA-256 `9e93876a…`, 9,80 MB |
 | **Die Kette aus dem APK** in einem echten Chromium bis zum PDF | **gemessen** — mit **drei Ersatzstücken**, siehe [§5](#5--die-kette-im-chromium--was-der-beleg-wert-ist) |
 | Das dabei entstandene Schablonen-PDF, an den Vektoren nachgemessen | **gemessen**: 3 Seiten je 210,000 × 297,000 mm, 13 Rasterabstände alle 50 mm |
-| **Irgendetwas auf einem Android-Gerät** | **nicht gelaufen.** Kein Gerät, kein Emulator. |
+| **Der Prüfstand auf einem echten Telefon** | **gemessen** (08.09.2026, Xiaomi 2312DRA50G, Android 15): BESTANDEN, 0,2337 px je Szene, beide SHA-256 wie vorhergesagt |
+| Start, Importkarte und `CoreBridge` **auf dem Gerät** | **gelaufen** — die App startet, die Oberfläche lädt, Foto und Entzerren gehen durch |
+| **Der Export bis zum PDF auf dem Telefon** | **abgebrochen** (Speicher), behoben — [§6](#und-der-fehler-den-nur-ein-telefon-finden-konnte) |
+| **Der sichere Bereich auf dem Gerät** | **nicht gemessen** — die Wirkung ist in einem Chromium nachgemessen, die vier Zahlen dort gesetzt statt gemeldet ([§7](#7--was-nicht-belegt-ist)) |
 | Die Kette **Foto → Marker → Millimeter** an einem Gegenstand bekannter Länge | **weiterhin offen** — auf jedem Ziel, nicht nur hier |
 
 ---
@@ -60,8 +75,10 @@ Systemdialoge. Kein Schritt bricht mehr mit einer Meldung ab.
 
 Dazu die eigene Seite der Hülle (`android/app/src/main/assets/www/native/`) mit vier
 Abschnitten — Rechenkern, Prüfstand, Detektor am Foto, Markerblatt. Sie ist die Diagnose,
-nicht das Produkt: **der Knopf, der den Satz „Android ist ungemessen" streicht**, sobald
-ein Telefon da ist.
+nicht das Produkt: **der Knopf, der den Satz „Android ist ungemessen" gestrichen hat.**
+Am 08.09.2026 gedrückt — und er hat nicht nur `BESTANDEN` gesagt, sondern die
+vorhergesagten Zahlen auf die Stelle genau geliefert. Ein Prüfstand, der nur
+„in Ordnung" sagt, hätte das nicht gezeigt.
 
 ### Der Aufbau
 
@@ -79,6 +96,7 @@ WebView (https://appassets.androidplatform.net/  ->  assets/www/)
    |     - Importkarte: core.js -> core-android.js, image.js -> image-android.js
    |     - window.__aruco: die Bruecke nach Java
    |     - blob:-Anker abfangen, PDF in Scheiben hinausreichen
+   |     - window.__arucoInsets: der sichere Bereich als CSS-Variablen
    v
 Java  (WebBridge -> MainActivity -> CoreBridge -> NativeImages)
    |
@@ -129,6 +147,34 @@ geholt — es liegt gar nicht erst im APK, und mit ihm nicht das 3,6 MB große `
 
 **Greift die Karte nicht, scheitert die Seite laut** (Modul nicht gefunden). Das ist
 Absicht. Die stille Alternative wäre ein zweiter Rechenkern im Gepäck.
+
+### Der sichere Bereich — vier Zahlen von Java in die Stilvorlage
+
+Android 15 zwingt jede App mit `targetSdk = 35` **unter die Systemleisten**; die Abmeldung
+davon ist abgekündigt. Wer seinen Inhalt dann nicht selbst einrückt, legt die Kopfzeile
+unter die Uhr und den Fuß hinter die Navigationsleiste. Genau so ist es von einem Xiaomi
+2312DRA50G mit Android 15 gemeldet worden.
+
+`env(safe-area-inset-*)` allein trägt das **nicht**: die WebView füllt daraus nur die
+Display-Aussparung, nie die Systemleisten — der untere Wert, also genau der gemeldete
+Fehler, bliebe 0. Deshalb misst `MainActivity` die Ränder selbst
+(`systemBars() | displayCutout()`), rechnet sie in dip um und ruft `window.__arucoInsets`;
+der Shim schreibt sie als Inline-Stil auf `:root`.
+
+Für die Oberfläche ist das **kein zweiter Weg**. `app/static/css/tokens.css` erklärt
+dieselben vier Namen aus `env()`, und ein Inline-Stil schlägt eine Regel:
+
+| Ziel | woher `--safe-*` kommt | Wert |
+|---|---|---|
+| Desktop, Browser | `env(safe-area-inset-*)` in `tokens.css` | 0 (Fenster ohne Aussparung) |
+| Android | `window.__arucoInsets` aus `MainActivity` | gemessen, in dip |
+
+Benutzt werden sie an **drei** Stellen und nirgends sonst: `.app-header` addiert oben (damit
+die Kartenfläche bis unter die Statusleiste reicht), `body` addiert unten, links und rechts.
+Der Fuß bekommt nichts Eigenes — sonst zählte eine Seite mit Kopf *und* Fuß doppelt.
+
+**Auf Android 14 und darunter ändert sich nichts:** dort fügt sich das Fenster weiter in die
+Systemleisten ein, die Ränder kommen als 0 an, das CSS addiert 0.
 
 ---
 
@@ -401,6 +447,121 @@ $adb = "..\_toolchain\android-sdk\platform-tools\adb.exe"
 
 Zum Schluss **`& $adb kill-server`** — der Dienst läuft sonst im Hintergrund weiter.
 
+### Das Release-APK — das, was ausgeliefert wird
+
+```powershell
+.\dev.ps1 build-apk-release         # derselbe Inhalt, eigener Schlüssel
+```
+
+**Der Unterschied ist die Signatur, nicht der Inhalt.** Beide APKs tragen dieselbe
+Oberfläche und dieselbe `.so`; R8 bleibt auch im Release-Bau aus, und zwar mit Absicht:
+es benennt um, was es für unerreichbar hält, und in dieser App ist beides genau das
+Falsche — die WebView ruft die `@JavascriptInterface`-Methoden über ihren **Namen**, und
+der Linker findet die JNI-Einsprungpunkte über ihren **Namen**. Ohne Gerät ließe sich ein
+dadurch gebrochener Bau hier gar nicht entdecken.
+
+Was sich ändert: `debuggable` fällt weg, und statt des Schlüssels, den jedes Android-SDK
+mitliefert, steht die eigene Kennung darunter:
+
+```
+Signer #1 certificate DN: CN=Bischof Snowboards, O=Bischof Snowboards, C=DE
+Signer #1 certificate SHA-256 digest: 9e93876a88b819d9911963eb3bdb850aa7dad0bd54e15bc2fa12b349f31aadcb
+```
+
+**Diese Zahl gehört verglichen.** Sie steht unter jedem `./dev.ps1 check-apk-release` und
+unter jedem `apksigner verify --print-certs`. Weicht sie ab, ist das APK mit einem anderen
+Schlüssel signiert — dann stammt es nicht aus diesem Projekt.
+
+**Über ein installiertes Debug-APK lässt sich das Release-APK NICHT installieren.**
+Android vergleicht die Signaturen und weist die Aktualisierung ab
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Erst deinstallieren:
+
+```powershell
+& $adb uninstall com.bischofsnowboards.aruco
+& $adb install android\out\aruco-homographie-release.apk
+```
+
+#### Der Schlüssel selbst
+
+Er liegt in `..\_toolchain\aruco-signing\` — **außerhalb des Repos**, neben den anderen
+Werkzeugketten, und wird beim ersten Release-Bau angelegt. Ein eingecheckter Schlüssel
+steckte in jedem Klon, den je jemand gezogen hat, und ließe sich nachträglich nicht mehr
+einsammeln.
+
+> **Diese beiden Dateien sichern: `aruco-release.p12` und `aruco-release.pass`.** Der
+> Schlüssel ist nicht ein Geheimnis, sondern die **Identität** der App: Android verweigert
+> jede Aktualisierung, deren Signatur von der installierten abweicht. Geht er verloren,
+> lässt sich die App auf keinem Gerät mehr aktualisieren — nur deinstallieren, mitsamt
+> allem, was drin steht, und neu installieren. **Seine Sicherung ist wichtiger als seine
+> Geheimhaltung**; deshalb liegt das Kennwort auch als Datei daneben und nicht in
+> irgendeinem Kopf. Auf die Befehlszeile kommt es trotzdem nicht (`keytool -storepass:env`,
+> `providers.environmentVariable`) — die kann auf diesem Rechner jeder Vorgang mitlesen.
+
+#### `versionCode`
+
+`versionName` ist Text und interessiert Android nicht; **`versionCode` ist die Zahl, an der
+es entscheidet, ob etwas eine Aktualisierung ist.** Sie wird aus `APP_VERSION` abgeleitet
+(`0.1.0` → `100`, `0.1.1` → `101`) und nirgends getippt. Bis hierher stand dort die Vorgabe
+`1`, für jede Fassung dieselbe — zwei verschiedene Auslieferungen wären für Android
+ununterscheidbar gewesen.
+### Was der erste Lauf auf einem Telefon ergab
+
+**08.09.2026 · Xiaomi 2312DRA50G · Android 15 (API 35) · WebView 152.0.7977.64 ·
+arm64-v8a · Seitengröße 4096 B · App 0.1.0-alpha**
+
+| | |
+|---|---|
+| **Prüfstand** | **BESTANDEN.** `flat` 0,2337 px in 83 ms, `thick` 0,2337 px in 84 ms, je 4/4 Marker, Toleranz 0,7500 px |
+| Die beiden SHA-256 | **genau die vorhergesagten** — `da8c60f0…` und `c3695fe4…` |
+| App starten, Oberfläche, Foto, Entzerren, Zuschnitt | **ging durch** |
+| **Schablone erzeugen** | **brach ab** — siehe unten |
+
+**Die beiden SHA-256 sind der eigentliche Fund.** Sie sagen, dass Androids PNG-Dekoder
+**dieselben Pixel** geliefert hat wie `cv2` auf diesem Rechner — und erst deshalb ist der
+gleiche Eckfehler eine Aussage über den *Detektor* und nicht über das *Laden*. Ohne die
+Prüfsumme wäre ein abweichender Dekoder als Detektorfehler durchgegangen, oder umgekehrt.
+
+#### Und der Fehler, den nur ein Telefon finden konnte
+
+„Schablone erzeugen" brach ab mit:
+
+```
+Error invoking core: Java exception was raised during method invocation
+```
+
+**Dieser Satz stammt von Chromium, nicht von dieser App.** So meldet die WebView eine
+`@JavascriptInterface`-Methode, die geworfen hat, ohne dass jemand fing — und mehr sagt sie
+nicht. Der Bediener sah, *dass* etwas schiefging, und nie *was*.
+
+Geworfen hatte `ByteBuffer.allocateDirect`: der Vorgabeausschnitt ergab bei 300 dpi ein
+Raster von rund **169 Megapixeln**, also **506 MB** — und weil `runExport` das entzerrte
+Raster und seine aufbereitete Fassung gleichzeitig hält, das Doppelte davon. Ein Telefon
+hat das nicht.
+
+**Zwei Fehler, die sich gegenseitig unsichtbar machten:**
+
+1. **`WebBridge` fing `Exception`.** `OutOfMemoryError` ist ein `Error`, kein `Exception` —
+   genau der Fall, um den es hier geht, fiel durch den Fang hindurch. Jetzt wird `Throwable`
+   gefangen. Ein fehlgeschlagenes `allocateDirect` hat nichts halb geschrieben, die Arena in
+   `NativeImages` ist unverändert, und die App darf danach weiterlaufen.
+2. **Die Obergrenze war eine Aussage über das Format, nicht über die Maschine.**
+   `checkOutputBudget` gab es längst, aber sie maß gegen `MAX_OUTPUT_MPX` = 300 aus
+   `shared/constants.json`. 300 MPx sind auf dem Schreibtisch in Ordnung und auf einem
+   Telefon der sichere Tod. Jetzt meldet `NativeImages.budgetMegapixels` den wirklich
+   verfügbaren Speicher, `bridge-shim.js` reicht ihn an die Seite, und `outputBudgetMpx()`
+   nimmt **die kleinere** der beiden Zahlen. Ein Gerät kann die Grenze senken, nie heben.
+
+Der Abbruch fällt damit in `output_too_large` — eine übersetzte Meldung, die eine kleinere
+Auflösung oder einen kleineren Ausschnitt vorschlägt, und zwar nur eine, die auch wirklich
+passt. `web/vision/budget.test.mjs` hält das fest: bei 40 MPx Budget wird derselbe Export
+mit `limit_mpx: 40` und `megapixels: 169` abgewiesen, bei 300 MPx geht er durch.
+
+> **Was das NICHT ist: die eigentliche Lösung.** Die wäre, die Entzerrung zu kacheln, damit
+> nie ein Riesenraster entsteht — `buildPdf` bettet heute ein einziges JPEG für alle Kacheln
+> ein, das ginge also nicht ohne `web/pdf/build.js`. Bis dahin bekommt der Bediener eine
+> verständliche Meldung statt eines Absturzes, und er kann die Auflösung senken. **Auf einem
+> Telefon nachgemessen ist auch das noch nicht** — geprüft ist die JavaScript-Hälfte hier.
+
 ### Was zu tippen ist, und was dabei herauskommen muss
 
 | Schritt | Erwartung | Wenn nicht |
@@ -411,6 +572,7 @@ Zum Schluss **`& $adb kill-server`** — der Dienst läuft sonst im Hintergrund 
 | Die SHA-256-Zeile darunter | `flat`: `da8c60f0d419cd7035f4bd1ee3bb13190e4507cd16507ddd0202e924601156f4`<br>`thick`: `c3695fe476f79854dc64c1c138303236b735a6c26c884a66fe8c0978ef18e374` | Weicht sie ab, hat Androids PNG-Dekoder **andere Pixel** geliefert als `cv2` — dann liegt der Unterschied im Laden, nicht im Detektor. |
 | **„Oberfläche öffnen"** → Foto laden → **„Entzerren"** | Eine entzerrte Vorschau mit Maßstab in Millimetern. **Das ist der Schritt, der bis zu dieser Stufe abbrach.** | Eine Meldung „android_bridge_failed": die Brücke lief, der Kern nicht — der Grund steht im `logcat`. Eine Meldung über ein fehlendes Modul: die Importkarte hat nicht gegriffen (Falle 13). |
 | Regler bewegen | Die Vorschau folgt. Nach ein paar Bewegungen **darf der Speicher nicht wachsen** — das ist die Arena, und sie ist auf einem Gerät ungemessen. | Stürzt die App nach mehreren Bewegungen ab, ist die Kapazität von `NativeImages` zu groß für dieses Gerät. |
+| **Schablone erzeugen** bei 300 dpi und großem Ausschnitt | Entweder ein PDF — oder die Meldung *Die Ausgabe wäre zu groß* mit einem Vorschlag. **Beides ist richtig**; ein Abbruch ohne Grund ist es nicht. | Kommt wieder `Java exception was raised during method invocation`, wirft etwas anderes als der Speicher — der Grund steht dann im `logcat`. |
 | **„Schablone erzeugen"** | Systemdialog, danach ein mehrseitiges PDF. Ausdrucken mit **100 %, nicht „an Seite anpassen"**. | Bleibt der Dialog aus, hat die `blob:`-Abfangstelle nicht gegriffen — siehe Falle 14. |
 | Am Ausdruck: das **50-mm-Raster** mit dem Messschieber | 50,0 mm | — |
 | Am Ausdruck: **ein Gegenstand bekannter Länge**, der mit auf dem Foto lag | seine wirkliche Länge | **Das ist die Messung, die dieses Projekt noch nie hatte** — auf keinem Ziel. Siehe [§7](#7--was-nicht-belegt-ist). |
@@ -423,27 +585,41 @@ des bekannten Gegenstands.
 
 ## 7 · Was **nicht** belegt ist
 
-**Auf einem Android-Gerät ist nichts gelaufen.** `adb devices` leer, kein Emulator, kein
-System-Abbild, kein WSL, kein Docker, kein `qemu-aarch64`. Was hier steht, ist am Erzeugnis
-gemessen (ELF, Zip, Signatur), auf einer JVM auf Windows gelaufen, oder in einem Chromium
-auf Windows. **Es gibt keine Zahl aus einem Telefon.**
+**Auf dem Bau-Rechner ist nichts von Android gelaufen.** `adb devices` leer, kein Emulator,
+kein System-Abbild, kein WSL, kein Docker, kein `qemu-aarch64`. Was hier gemessen wurde, ist
+am Erzeugnis gemessen (ELF, Zip, Signatur), auf einer JVM auf Windows gelaufen, oder in einem
+Chromium auf Windows.
 
-Im Einzelnen ungeprüft:
+**Von einem Gerät gelaufen ist genau ein Weg: der aus
+[§6](#was-der-erste-lauf-auf-einem-telefon-ergab)** — Start, Prüfstand, Oberfläche, Foto,
+Entzerren, Zuschnitt, und der Export bis zu seinem Abbruch. Ein Gerät, ein Modell, eine
+Android-Fassung. Die Zahlen dazu hat **das Gerät selbst** ausgerechnet und angezeigt; hierher
+gekommen sind sie als Bildschirmfotos, nicht über ein Kabel.
 
-- **Ob die App startet.** Der Java-Teil ist übersetzt und dexed, nicht ausgeführt.
-- **Ob die Importkarte in der WebView des Geräts greift.** In Chromium 152 greift sie
-  (gemessen). Importkarten kann Chromium seit 89, URL-Schlüssel eingeschlossen; eine alte
-  System-WebView könnte trotzdem scheitern, und dann lädt die Seite gar nicht.
-- **Ob `CoreBridge.java` dasselbe tut wie sein Nachbau.** Beide sind aus derselben Liste
-  von Methodennamen gebaut, aber der Chromium-Lauf fährt **den Nachbau**, und `check-jni`
-  fährt die JNI-Schicht **ohne** `CoreBridge`. Genau dazwischen — JSON hinein, JSON heraus,
-  Griffe statt Pixel — liegt eine Naht, die nirgends ausgeführt wird. Der Kopf von
-  `bridge-stub.mjs` sagt das ausdrücklich: eine Abweichung ließe beide Prüfungen grün und
-  die App kaputt.
-- **Ob `NativeImages` mit drei Plätzen reicht.** Die Verdrängung ist in Java geschrieben und
-  nirgends unter Last gelaufen. Ein 12-MP-Foto sind 48 MB BGR; entzerrt bei 300 dpi kommen
-  zweistellige Megabyte je Bild dazu, und der Kern hält die Ausgabe kurzzeitig doppelt.
-  **Kein Speicher- und kein Zeitbedarf ist gemessen.**
+Eingelöst durch diesen Lauf — hier nur, damit niemand sie zweimal aufschreibt:
+
+- ~~Ob die App startet.~~ Sie startet, und die Tabelle war gefüllt: `libaruco_core.so` lädt.
+- ~~Ob die Importkarte in der WebView des Geräts greift.~~ Sie greift, in WebView
+  152.0.7977.64. **Eine ältere System-WebView ist damit nicht geprüft** — die kann es
+  weiterhin zerlegen, und dann lädt die Seite gar nicht.
+- ~~Ob `CoreBridge.java` dasselbe tut wie sein Nachbau.~~ Für die Wege, die der Prüfstand
+  und das Entzerren nehmen: ja, und bitgenau. **Nicht** für die Wege, die der Lauf nie
+  erreicht hat — die PDF-Scheiben, Speichern und Teilen.
+
+Im Einzelnen weiterhin ungeprüft:
+
+- **Ob der sichere Bereich auf dem Gerät richtig ankommt.** In einem Chromium ist die
+  *Wirkung* nachgemessen — dieselbe `bridge-shim.js` aus dem APK, mit 38/0/48/0 dip
+  aufgerufen: `padding-top` des Kopfes 14 → 52 px, `padding-bottom` des `body` 0 → 48 px,
+  Unterkante des Fußes 844 → 796 px, und mit 0 wieder zurück auf den Ausgangswert.
+  **Gemessen** hat die vier Zahlen dort niemand: Chromium meldet 0, und
+  `WindowInsetsCompat` ist nicht nachgebaut.
+- **Ob `NativeImages` mit drei Plätzen reicht.** Die Verdrängung ist nirgends unter Last
+  gelaufen. Was der Lauf zeigte, ist die andere Hälfte: **ein einzelner Puffer kann zu groß
+  sein**, und dagegen hilft die Kapazität nicht. Der Export begrenzt sich jetzt selbst
+  ([§6](#und-der-fehler-den-nur-ein-telefon-finden-konnte)); ob die drei Plätze beim
+  Reglerziehen reichen, ist damit nicht beantwortet. **Kein Speicher- und kein Zeitbedarf
+  ist auf einem Gerät gemessen** — außer den 83 und 84 ms des Prüfstands.
 - **Ob ein gekacheltes PDF in 192-KB-Scheiben durch die echte JavaScript-Brücke passt.**
   Im Chromium ja (155 kB in einem Stück Rechenzeit). `@JavascriptInterface` läuft auf dem
   JavaBridge-Faden und ist synchron; bei einem 40-MB-PDF sind das rund 220 Aufrufe, und wie
@@ -454,7 +630,12 @@ Im Einzelnen ungeprüft:
   ist er gegen synthetische Bilder, nicht gegen eine Kamera.
 - **Nur arm64-v8a im APK.** Die anderen drei ABIs sind gebaut und nachgemessen, aber nicht
   eingepackt (`./dev.ps1 build-apk arm64-v8a,armeabi-v7a`).
-- **Kein Release-Bau, keine Signatur außer dem Debug-Schlüssel.**
+- ~~Kein Release-Bau, keine Signatur außer dem Debug-Schlüssel.~~ **Eingelöst:**
+  `./dev.ps1 build-apk-release` baut mit eigenem Schlüssel, und `check-apk-release` weist
+  ein versehentlich debug-signiertes APK ab. Ungeprüft bleibt, **ob das Release-APK auf
+  einem Gerät startet**: gemessen ist bisher nur das Debug-APK. Der Inhalt ist derselbe
+  (183 Einträge, dieselben 16 Pflichtdateien), aber das ist ein Vergleich am Zip, kein
+  Startversuch.
 - **Und die eine, die über allem steht: die Kette `Foto → Marker → Millimeter` ist nach wie
   vor nicht unabhängig belegt** — auf keinem Ziel. Belegt ist `PDF → Drucker → Papier`
   (Messschieber, 07.09.2026). Was fehlt, ist ein Gegenstand *bekannter* Länge mit auf dem
@@ -517,6 +698,15 @@ Puffer eine `IllegalArgumentException` gibt und der Prozess weiterläuft, ist ge
 `gatherWebAssets` lief gar nicht, und im APK lag von der Oberfläche **nichts**. Ein leeres
 APK ist von einem vollen nur an seiner Größe zu unterscheiden. Die Abhängigkeit steht jetzt
 von Hand an den Merge-Aufgaben, und `check-apk` zählt 16 Pflichtdateien nach.
+
+**Und dieselbe Falle noch einmal, sichtbar erst im Release-Bau.** `lint-vital` läuft auf
+keiner Debug-Variante, liest aber denselben Ordner — und Gradle 8 hält einen ungemeldeten
+Zugriff auf die Ausgabe einer anderen Aufgabe für einen Fehler und bricht ab. Der **erste**
+`assembleRelease` dieses Projekts ist genau darüber gestolpert, nach lauter grünen
+Debug-Bauten. **Und dann gleich noch einmal:** die beiden beteiligten Aufgaben heißen
+`generateReleaseLintVitalReportModel` und `lintVitalAnalyzeRelease` — einmal groß
+geschrieben, einmal klein. Ein `contains("Lint")` fängt die zweite nicht und sieht dabei
+vollkommen richtig aus. Verglichen wird deshalb auf **kleingeschriebenen** Namen.
 
 **10 · `apksigner` ist ein Java-Programm in einer `.bat`-Hülle.** Ohne `JAVA_HOME` bricht es
 mit Rückgabewert 1 ab und sagt kein Wort über den Grund — das sieht nach einer ungültigen
@@ -586,7 +776,7 @@ Brücke JSON sprechen, ohne ein Bit zu verlieren — und deshalb ist der Verglei
 .\venv\Scripts\python.exe -m pytest -o "addopts=" -q                       # 183 passed
 $env:ARUCO_PDF='js';   .\venv\Scripts\python.exe -m pytest -o "addopts=" -q  # 183 passed
 $env:ARUCO_CORE='cpp'; .\venv\Scripts\python.exe -m pytest -o "addopts=" -q  # 183 passed
-.\dev.ps1 run-tests-js                                                     # 18/18
+.\dev.ps1 run-tests-js                                                     # 24/24
 ```
 
 Der Gradle-Bau braucht beim ersten Lauf Netz (AGP 8.7.3, Gradle 8.9, `androidx.webkit`) und

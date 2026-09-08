@@ -56,8 +56,13 @@ public final class WebBridge {
             // Die Seitengroesse des Systems. Auf einem 16-KB-Geraet steht hier 16384 -
             // und genau dort laedt eine nur auf 4 KB ausgerichtete .so nicht.
             info.put("page_size", activity.systemPageSize());
+            // Wieviele Ausgabepixel dieses Geraet vertraegt. Die Seite senkt damit
+            // ihre eigene Obergrenze (bridge-shim.js -> web/constants.js), damit der
+            // Export mit einer verstaendlichen Meldung abbricht statt mit einem
+            // OutOfMemoryError mitten im Entzerren.
+            info.put("max_output_mpx", NativeImages.budgetMegapixels(activity));
             return ok(info);
-        } catch (Exception failure) {
+        } catch (Throwable failure) {
             return error(failure);
         }
     }
@@ -79,7 +84,7 @@ public final class WebBridge {
             JSONObject payload = new JSONObject();
             payload.put("bits", values);
             return ok(payload);
-        } catch (Exception failure) {
+        } catch (Throwable failure) {
             return error(failure);
         }
     }
@@ -113,7 +118,7 @@ public final class WebBridge {
             JSONObject payload = new JSONObject();
             payload.put("value", value);
             return ok(payload);
-        } catch (Exception failure) {
+        } catch (Throwable failure) {
             return error(failure);
         }
     }
@@ -123,7 +128,7 @@ public final class WebBridge {
     public String photoHandle() {
         try {
             return ok(new JSONObject().put("handle", activity.photoHandle()));
-        } catch (Exception failure) {
+        } catch (Throwable failure) {
             return error(failure);
         }
     }
@@ -189,7 +194,7 @@ public final class WebBridge {
         try {
             activity.appendPdf(Base64.decode(base64, Base64.DEFAULT));
             return ok(new JSONObject());
-        } catch (Exception failure) {
+        } catch (Throwable failure) {
             return error(failure);
         }
     }
@@ -224,6 +229,25 @@ public final class WebBridge {
         return payload.toString();
     }
 
+    /**
+     * Ein Fehlschlag als Antwort statt als geworfene Ausnahme.
+     *
+     * <p><b>Gefangen wird Throwable und nicht Exception</b>, und das ist hier keine
+     * Nachlaessigkeit, sondern der Punkt. Ein Exportraster sind bei 300 dpi dreistellige
+     * Megabyte; reicht der Speicher nicht, wirft {@code ByteBuffer.allocateDirect} einen
+     * {@link OutOfMemoryError} - und der ist ein {@code Error}, kein {@code Exception}.
+     * Mit dem engeren Fang stieg er aus der @JavascriptInterface-Methode heraus, die
+     * WebView verschluckte ihn und schrieb ihren eigenen Satz in die Seite:
+     *
+     * <pre>Error invoking core: Java exception was raised during method invocation</pre>
+     *
+     * <p>Der Bediener sah damit, DASS etwas schiefging, und nie WAS. Genau die Sorte
+     * Meldung, die einen Fehler unauffindbar macht - am 08.09.2026 auf einem echten
+     * Telefon passiert.
+     *
+     * <p>Weiterlaufen darf die App danach: ein fehlgeschlagenes allocateDirect hat
+     * nichts halb geschrieben, und die Arena in {@link NativeImages} ist unveraendert.
+     */
     static String error(Throwable failure) {
         String message = failure.getMessage();
         if (message == null || message.isEmpty()) {

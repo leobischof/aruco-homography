@@ -5,7 +5,7 @@
  * (WebViewCompat.addDocumentStartJavaScript). Genau dadurch bleibt
  * app/static/index.html Byte fuer Byte unveraendert.
  *
- * **VIER AUFGABEN, und keine fuenfte.**
+ * **FUENF AUFGABEN, und keine sechste.**
  *
  *  1. `window.ARUCO_TRANSPORT = "local"` setzen. Das ist die ganze Umschaltung:
  *     app/static/js/api.js kennt zwei Betriebsarten, und in der oertlichen holt
@@ -28,6 +28,12 @@
  *  4. Das fertige PDF nach draussen bringen. In einer WebView tut ein
  *     `<a download>` von allein nichts - siehe unten.
  *
+ *  5. Den sicheren Bereich durchreichen. Java misst, was Aussparung und
+ *     Systemleisten dem Fenster wegnehmen, und ruft `window.__arucoInsets`;
+ *     die vier Zahlen landen als CSS-Variablen auf `:root`. Die Stilvorlagen
+ *     rechnen damit - dieselben Variablen, die im Browser aus `env()` kommen.
+ *     Rechnen tut auch hier niemand: die Zahlen kommen fertig aus Java.
+ *
  * **Was hier NICHT passiert: rechnen.** Kein Millimeter entsteht in dieser
  * Datei. Sie schaltet um, sie packt um, und sie reicht durch.
  */
@@ -44,6 +50,23 @@
     // Vor jedem Modul der Seite, also bevor api.js sie liest. Danach ist sie
     // fest; api.js liest sie einmal beim Laden.
     window.ARUCO_TRANSPORT = "local";
+
+    // Und gleich daneben: wieviele Ausgabepixel dieses Geraet vertraegt.
+    // web/constants.js::outputBudgetMpx() liest das und senkt die Obergrenze;
+    // fehlt der Wert, gilt die Produktgrenze aus shared/constants.json.
+    //
+    // Hier und nicht spaeter, weil rectify.js die Zahl beim ERSTEN Export
+    // braucht - und weil es hier nichts kostet: die Bruecke antwortet synchron.
+    // Scheitert der Aufruf, bleibt die Produktgrenze stehen; das ist die
+    // Lage von gestern und nicht schlimmer als sie.
+    try {
+        const budget = JSON.parse(bridge.nativeInfo()).max_output_mpx;
+        if (Number.isFinite(budget) && budget > 0) {
+            window.ARUCO_MAX_OUTPUT_MPX = budget;
+        }
+    } catch (error) {
+        console.error("Speicherbudget nicht ermittelbar", error);
+    }
 
     // --- 2 · Importkarte ------------------------------------------------------
     // Sie muss VOR dem ersten Modul-Import im Dokument stehen. Zu diesem
@@ -220,6 +243,39 @@
             return;
         }
         return nativeClick.call(this);
+    };
+
+    // --- 5 · Der sichere Bereich ----------------------------------------------
+    //
+    // Seit Android 15 zeichnet jede App mit targetSdk 35 UNTER den Systemleisten,
+    // und die Abmeldung davon ist abgekuendigt. Ohne die vier Zahlen hier stuende
+    // die Kopfzeile hinter der Uhr und der Fuss hinter der Navigationsleiste -
+    // genau so ist es auf einem Xiaomi mit Android 15 gemeldet worden.
+    //
+    // **Warum nicht env(safe-area-inset-*) allein?** Die WebView fuellt daraus
+    // nur die Display-Aussparung (AwDisplayCutoutController). Die Systemleisten
+    // stehen dort NICHT drin - der untere Wert, also genau der gemeldete Fehler,
+    // bliebe 0. Java misst deshalb systemBars() | displayCutout() und ruft hier
+    // an. Die Stilvorlagen sehen keinen Unterschied: sie lesen dieselben vier
+    // Namen, die in tokens.css aus env() kommen, und ein Inline-Stil auf :root
+    // schlaegt die Regel dort.
+    //
+    // Die Werte kommen bereits in dichteunabhaengigen Punkten (dip) - also in
+    // dem, was in dieser Seite ein CSS-Pixel ist. In physischen Pixeln waeren
+    // sie auf einem Telefon rund dreimal zu gross.
+    window.__arucoInsets = (top, right, bottom, left) => {
+        const root = document.documentElement;
+        // Reihenfolge wie in CSS: oben, rechts, unten, links.
+        const values = [top, right, bottom, left];
+        ["--safe-top", "--safe-right", "--safe-bottom", "--safe-left"]
+            .forEach((name, index) => {
+                const value = Number(values[index]);
+                // Unsinn (NaN, negativ) fuehrt zu 0 statt zu einem kaputten
+                // calc(): eine Seite ohne Abstand ist ertraeglich, eine Seite
+                // ohne Innenabstand ueberhaupt nicht.
+                root.style.setProperty(
+                    name, (Number.isFinite(value) && value > 0 ? value : 0) + "px");
+            });
     };
 
     /** Den Inhalt einer blob:-Adresse holen und dem System uebergeben. */
