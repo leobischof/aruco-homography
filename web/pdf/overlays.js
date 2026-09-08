@@ -158,29 +158,49 @@ export function drawGrid(sheet, imageRect, cropOrigin, stepMm = constants.GRID_S
     sheet.restoreState();
 }
 
+/** Breite der Beschriftung in Millimetern - ohne den Rand des Traegers. */
+export function labelWidth(sheet, text, sizePt) {
+    return sheet.stringWidthMm(text, HELVETICA_BOLD, sizePt);
+}
+
 /**
- * Rasterbeschriftung auf weissem Traeger - lesbar auch auf dunklem Foto.
+ * Beschriftung auf weissem Traeger - lesbar auch auf dunklem Foto.
  *
- * Die Beschriftung wird in den Bildbereich hineingeklemmt. Ohne das rutscht die
- * Null-Linie oben aus dem Bild in den Rand, und die aeusserste rechte Beschriftung
- * haengt ueber die Bildkante hinaus.
+ * Zwei Aufdrucke brauchen das: die Rasterbeschriftung ueber dem entzerrten Bild
+ * und die Blattnummer ueber dem Klebeplan. Beide stehen auf einem Foto, dessen
+ * Helligkeit niemand kennt; schwarzer Text allein ist dort mal lesbar und mal
+ * nicht.
+ *
+ * (x, y) ist die linke Grundlinie des Textes, so wie bei drawString.
  */
-function gridLabel(sheet, imageRect, x, y, text) {
-    const size = constants.GRID_LABEL_PT;
-    const width = sheet.stringWidthMm(text, HELVETICA_BOLD, size);
+export function drawLabel(sheet, x, y, text, sizePt) {
+    const width = labelWidth(sheet, text, sizePt);
     // Die Schriftgroesse wird hier als HOEHE gelesen - `size / PT_PER_MM` in der
     // Vorlage. Eine Naeherung, ja, aber dieselbe wie drueben: der weisse Traeger
     // soll den Text decken, nicht ihn vermessen.
-    const height = ptToMm(size);
-
-    x = Math.min(Math.max(x, imageRect.x + 0.5), imageRect.x + imageRect.width - width - 0.5);
-    y = Math.min(Math.max(y, imageRect.y + 0.5), imageRect.y + imageRect.height - height - 0.5);
+    const height = ptToMm(sizePt);
 
     sheet.setFillColor(WHITE);
     sheet.rect(x - 0.4, y - 0.4, width + 0.8, height * 0.95, { stroke: false, fill: true });
     sheet.setFillColor(branding.ink(constants.GRID_INK));
-    sheet.setFont(HELVETICA_BOLD, size);
+    sheet.setFont(HELVETICA_BOLD, sizePt);
     sheet.drawString(x, y, text);
+}
+
+/**
+ * Rasterbeschriftung, in den Bildbereich hineingeklemmt.
+ *
+ * Ohne das Klemmen rutscht die Null-Linie oben aus dem Bild in den Rand, und die
+ * aeusserste rechte Beschriftung haengt ueber die Bildkante hinaus.
+ */
+function gridLabel(sheet, imageRect, x, y, text) {
+    const size = constants.GRID_LABEL_PT;
+    const width = labelWidth(sheet, text, size);
+    const height = ptToMm(size);
+
+    x = Math.min(Math.max(x, imageRect.x + 0.5), imageRect.x + imageRect.width - width - 0.5);
+    y = Math.min(Math.max(y, imageRect.y + 0.5), imageRect.y + imageRect.height - height - 0.5);
+    drawLabel(sheet, x, y, text, size);
 }
 
 /** Absolute Rasterpositionen innerhalb eines Abschnitts [start, start+length]. */

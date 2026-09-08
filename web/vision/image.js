@@ -65,17 +65,35 @@ export async function toJpegBytes(raster, quality = JPEG_QUALITY / 100.0) {
 
 /** Ein BGR-Raster als JPEG-Blob. */
 export async function toJpegBlob(raster, quality = JPEG_QUALITY / 100.0) {
+    return toBlob(raster, "image/jpeg", quality);
+}
+
+/**
+ * Ein BGR-Raster als PNG-Bytes - verlustfrei, und deshalb um ein Vielfaches
+ * groesser als dasselbe Bild als JPEG.
+ *
+ * Wer die Schablone weiterverarbeitet, will das: JPEG zieht genau die duennen
+ * Linien breit, die hier das Produkt sind. Die Guete geht nicht mit - PNG hat
+ * keine.
+ */
+export async function toPngBytes(raster) {
+    const blob = await toBlob(raster, "image/png");
+    return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Der gemeinsame Weg ueber die Leinwand. Die Bildpunkte fasst nur er an. */
+function toBlob(raster, type, quality) {
     const canvas = makeCanvas(raster.width, raster.height);
     const context = canvas.getContext("2d");
     context.putImageData(new ImageData(bgrToRgba(raster), raster.width, raster.height), 0, 0);
 
     if (typeof canvas.convertToBlob === "function") {
-        return canvas.convertToBlob({ type: "image/jpeg", quality });
+        return canvas.convertToBlob({ type, quality });
     }
     return new Promise((resolve, reject) => {
         canvas.toBlob(
             (blob) => (blob ? resolve(blob) : reject(new AppError("preview_missing"))),
-            "image/jpeg",
+            type,
             quality,
         );
     });

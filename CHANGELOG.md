@@ -4,6 +4,93 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.3-alpha] – 2026-09-08
+
+**Das Foto entsteht jetzt in der App, und die Marker dürfen liegen, wie sie fallen.** Fünf
+Dinge, die im Weg standen: die App kam nicht an die Kamera, das Markerblatt war die einzige
+verlässliche Vorlage, der Zuschnitt ließ sich nur als PDF speichern, der Klebeplan zeigte ein
+leeres Gitter, und der Kopf brauchte auf dem Telefon drei Zeilen für drei Knöpfe.
+
+### Hinzugefügt
+
+- **Fotografieren in der App.** Neben *Datei wählen* steht auf Geräten mit grobem Zeigegerät
+  ein zweites Feld *Foto aufnehmen*, das die Kamera-App des Systems öffnet. Bisher ging das
+  nicht: der Kommentar im Markup behauptete, das Handy biete von sich aus Kamera und Galerie
+  an — im Browser stimmt das, hinter dieser WebView nicht. `MainActivity.onShowFileChooser`
+  überging die `FileChooserParams` und startete immer den Dokumentwähler. Der einzige Weg
+  hinein war also ein Foto, das es schon gab.
+
+  Es ist die **Kamera-App des Systems** und keine eingebaute: das Bild kommt in voller
+  Auflösung und mit EXIF, und damit funktioniert die automatische Kamerahöhe aus der
+  Brennweite weiter. Die App braucht dafür **kein CAMERA-Recht** — sie startet eine fremde
+  App und bekommt eine Datei zurück.
+
+- **Ein dritter Modus: „Verstreute Marker (beliebige Winkel)".** Bisher gab es das
+  Markerblatt (Abstände bekannt) und *frei* — letzteres setzt voraus, dass alle Marker
+  **gleich ausgerichtet** liegen. Liegen sie das nicht, ist frei nicht bloß ungenauer,
+  sondern falsch: auf der Prüfszene 71 px Restfehler und 500 mm als 148 mm gelesen. Das ist
+  jetzt ein Test.
+
+  Der neue Modus schätzt je Marker **einen Winkel mit**, also 8 + 3·(n−1) Unbekannte statt
+  8 + 2·(n−1). Weil ein Marker sein eigenes Koordinatensystem mitbringt, **genügt ein
+  einziger** — vier Ecken bekannter Kantenlänge bestimmen die Ebene. Der Preis: jeder
+  weitere Marker steuert fünf statt sechs Bedingungen bei, deshalb bleibt *frei* die
+  genauere Wahl, solange seine Annahme stimmt. Alle Marker müssen **gleich groß** sein; ihre
+  Kantenlänge wird gemessen und nicht geschätzt.
+
+  Ausgerichtet wird die Ebene **nach dem Foto**: verstreute Marker geben keine Vorzugsrichtung
+  her, also bleibt das Zuschnitt-Rechteck achsparallel zum Bild. Der Ursprung liegt in der
+  Mitte der Markerwolke.
+
+- **Der Zuschnitt als Bilddatei, JPEG oder PNG.** Mit der **Auflösung in der Datei** —
+  JFIF-Dichte beim JPEG, `pHYs` beim PNG. Ein nachgelagertes Programm liest damit den
+  Maßstab, statt ihn zu raten; ein Pixel ist 25,4/dpi Millimeter. Das musste eigens
+  geschrieben werden: die Leinwand des Browsers schreibt `units = 0`, `Bitmap.compress`
+  schreibt gar kein `pHYs`, und `cv2.imwrite` kann beides nicht.
+
+  Was auf dem Bild **fehlt und fehlen muss**: Maßstab, Raster, Fußzeile, Schnittmarken,
+  Klebeplan. Auf einem Ausdruck ist das ein Aufdruck, auf einem Bild wäre es Bildinhalt, den
+  niemand mehr von der Schablone unterscheiden kann.
+
+### Geändert
+
+- **Der Klebeplan zeigt den Zuschnitt, den er kachelt.** Vorher sagte er, *wie viele* Blätter
+  es gibt und welche Nummer wohin gehört — aber nicht, was darauf zu sehen ist. Vor acht
+  gleich aussehenden A4-Seiten hilft die Nummer im leeren Rechteck nicht; das Bild hilft.
+  Es ist ein Daumennagel (längere Kante höchstens 1600 px, auf A4 rund 160 dpi) und keine
+  Schablone — nachgemessen wird auf dieser Seite nichts.
+
+  Weil darunter jetzt ein Foto liegt, bekommen Kachelränder und Außenkante denselben weißen
+  Saum wie das Millimeterraster, und die Blattnummern stehen auf weißem Träger. Eine dünne
+  Linie ist auf einem Foto sonst mal sichtbar und mal nicht.
+
+  **Der blattweise Export bleibt blattweise.** Der Plan fragt sein Bild mit einer Obergrenze
+  an Pixeln; das Riesenraster, dessen Vermeidung `0.1.2-alpha` ausmachte, entsteht nicht
+  wieder.
+
+- **Markerblatt, Sprache und Thema stehen in einer Zeile.** Auf dem Telefon brauchten die
+  drei bisher drei Zeilen — der Verweis bekam eine eigene, weil er mit dem ausgeschriebenen
+  Sprachnamen nicht danebenpasste (bei 390 px: 361 px in 358 px Innenbreite). Der
+  Sprachwähler zeigt jetzt **geschlossen das Kürzel** `DE` / `EN` und **aufgeklappt** den
+  Eigennamen `Deutsch` / `English`; damit passen alle drei nebeneinander. Unter etwa 380 px
+  passen sie weiterhin nicht — dort fällt das Paar aus Sprache und Thema **gemeinsam** in die
+  zweite Zeile, statt den Themenknopf allein darunter zu stellen.
+
+### Was NICHT belegt ist
+
+- **Auf einem Telefon ist von dieser Fassung nichts gelaufen.** Wie bei `0.1.2-alpha` ist sie
+  in einem Chromium aus dem gebauten APK geprüft: beide Rasterwege bis zum nachgemessenen PDF
+  (je 3 Seiten, 13 Rasterabstände zu 50 mm, größte Abweichung 6 nm), der Bildexport in beiden
+  Formaten mit der Auflösung aus der Datei zurückgelesen, der Klebeplan mit eigenem Bild auf
+  Seite 1. Der Kopf ist bei 360, 390, 768 und 1280 px in beiden Themen und beiden Sprachen
+  vermessen und angesehen.
+- **Der neue Modus ist an synthetischen Szenen belegt, nicht an einem echten Foto.** Acht
+  Prüfungen in Python, sechs durch das WebAssembly, dieselben Zahlen im C++-Kern.
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig belegt.**
+  Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt, ist ein
+  Gegenstand *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem Ausdruck
+  nachgemessen.
+
 ## [0.1.2-alpha] – 2026-09-08
 
 **Der Export auf dem Telefon rastert jetzt blattweise — und damit läuft er.** `0.1.1-alpha`

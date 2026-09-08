@@ -17,6 +17,7 @@ import { translate } from "../pdf/i18n.js";
 import { resolvePose } from "./camera.js";
 import { boundingBoxMm, findContourMm } from "./contour.js";
 import { withImage } from "./core.js";
+import { withResolution } from "./density.js";
 import { adjust, adjustOptions, isIdentity } from "./enhance.js";
 import {
     defaultCrop,
@@ -26,7 +27,7 @@ import {
     planeExtent,
     width,
 } from "./extent.js";
-import { toJpegBytes } from "./image.js";
+import { toJpegBytes, toPngBytes } from "./image.js";
 import { AppError, NoticeList } from "./notices.js";
 import {
     checkOutputBudget,
@@ -148,6 +149,61 @@ export function runAdjust(core, session, request) {
     return { kind: "adjusted", raster: solved.adjusted };
 }
 
+/**
+ * Denselben Zuschnitt als Bilddatei statt als PDF.
+ *
+ * **Was hier fehlt und fehlen muss:** Massstab, Raster, Fusszeile, Schnittmarken,
+ * Klebeplan. Alles davon ist ein AUFDRUCK auf einem Ausdruck - auf einem Bild
+ * waere es Bildinhalt, den ein nachgelagertes Programm nicht von der Schablone
+ * unterscheiden koennte.
+ *
+ * Was NICHT fehlt, ist die Massangabe: `withResolution` schreibt die Auflösung in
+ * die Datei. Ein Pixel ist damit 25,4/dpi Millimeter, und das laesst sich lesen
+ * statt raten (web/vision/density.js sagt, warum das noetig ist).
+ *
+ * Am Stueck und nicht blattweise: ein Bild HAT keine Blaetter. Bei einem grossen
+ * Zuschnitt kann deshalb die Speichergrenze zuschlagen - checkOutputBudget sagt
+ * das dann, bevor die Belegung scheitert.
+ */
+export async function runExportImage(core, session, request) {
+    const solved = session.solve;
+    if (solved === null) throw new AppError("not_solved", "session_id");
+
+    const crop = extent(
+        request.crop_mm.x0,
+        request.crop_mm.y0,
+        request.crop_mm.x1,
+        request.crop_mm.y1,
+    );
+    if (width(crop) <= 0.0 || height(crop) <= 0.0) throw new AppError("empty_crop", "crop_mm");
+
+    checkOutputBudget(core, crop, request.dpi);
+    const pxPerMm = pxPerMmForDpi(request.dpi);
+    const options = adjustOptions(request.adjust);
+
+    let raster = rectify(
+        core,
+        session.photo.image,
+        solved.homographyEffective,
+        crop,
+        pxPerMm,
+        solved.solution.pxPerMm,
+    );
+    if (!isIdentity(core, options)) {
+        raster = adjust(core, raster, options);
+    }
+
+    const format = request.image_format === "png" ? "png" : "jpeg";
+    const bytes = format === "png" ? await toPngBytes(raster) : await toJpegBytes(raster);
+    return {
+        data: withResolution(bytes, format, request.dpi),
+        format,
+        width: raster.width,
+        height: raster.height,
+        mmPerPx: constants.MM_PER_INCH / request.dpi,
+    };
+}
+
 /** Vom gewaehlten Zuschnitt zum druckfertigen PDF. */
 export async function runExport(core, session, request) {
     const solved = session.solve;
@@ -167,19 +223,27 @@ export async function runExport(core, session, request) {
     // am unberuehrten Foto gemessen, ab hier aendert sich nur noch Farbe und Ton.
     const options = adjustOptions(request.adjust);
 
-    /** Entzerren, aufbereiten, kodieren - fuer ein Rechteck in Zuschnitt-Millimetern. */
-    const render = async (area) => {
+    /**
+     * Entzerren, aufbereiten, kodieren - fuer ein Rechteck in Zuschnitt-Millimetern.
+     *
+     * `maxPx` deckelt die laengere Pixelkante des Ergebnisses. Null heisst: in der
+     * eingestellten Aufloesung, also so, wie es gedruckt wird. Mit Deckel fragt
+     * genau ein Aufrufer - der Klebeplan in web/pdf/build.js, der den ganzen
+     * Zuschnitt als Daumennagel zeigt und ihn nie in Druckaufloesung braucht.
+     */
+    const render = async (area, maxPx = 0) => {
+        const areaDpi = cappedDpi(request.dpi, width(area), height(area), maxPx);
         // Dieselbe Pruefung wie bisher, nur auf dem, was wirklich belegt wird.
         // Blattweise ist das ein A4-Blatt und geht ueberall durch; am Stueck ist
         // es der ganze Zuschnitt, und dann soll dieser Abbruch kommen und nicht
         // ein OutOfMemoryError im Entzerren.
-        checkOutputBudget(core, area, request.dpi);
+        checkOutputBudget(core, area, areaDpi);
         let raster = rectify(
             core,
             session.photo.image,
             solved.homographyEffective,
             area,
-            pxPerMm,
+            pxPerMmForDpi(areaDpi),
             solved.solution.pxPerMm,
         );
         if (!isIdentity(core, options)) {
@@ -202,13 +266,13 @@ export async function runExport(core, session, request) {
         // Die Bildquelle fuer web/pdf/build.js: ein Blatt, ein Raster. Der
         // Spitzenbedarf haengt damit am Blatt und nicht mehr am Zuschnitt - genau
         // daran ist der Export auf dem Telefon gescheitert.
-        source = async (xMm, yMm, widthMm, heightMm) =>
+        source = async (xMm, yMm, widthMm, heightMm, maxPx = 0) =>
             (await render(extent(
                 crop.x0 + xMm,
                 crop.y0 + yMm,
                 crop.x0 + xMm + widthMm,
                 crop.y0 + yMm + heightMm,
-            ))).jpeg;
+            ), maxPx)).jpeg;
     }
 
     const options_ = exportOptions({
@@ -237,6 +301,20 @@ export async function runExport(core, session, request) {
         locale,
     );
     return buildPdf(source, width(crop), height(crop), options_, footer, contourMm);
+}
+
+/**
+ * Die Aufloesung, bei der die laengere Kante hoechstens `maxPx` Pixel hat.
+ *
+ * Ohne Deckel - und ebenso bei einem Deckel, der gar nicht greift - kommt die
+ * eingestellte Aufloesung unveraendert zurueck. Der Druckweg geht damit durch
+ * diese Funktion hindurch, ohne dass sich an ihm etwas aendert; das ist die
+ * Bedingung dafuer, dass tiles.test.mjs weiter Bit fuer Bit dasselbe misst.
+ */
+function cappedDpi(dpi, widthMm, heightMm, maxPx) {
+    if (maxPx <= 0) return dpi;
+    const longestMm = Math.max(widthMm, heightMm, 1e-6);
+    return Math.min(dpi, (maxPx * constants.MM_PER_INCH) / longestMm);
 }
 
 /**
@@ -303,7 +381,8 @@ function footerMeta(core, session, solved, crop, request, contourMm, locale) {
         });
     }
 
-    const modeKey = solved.solution.mode === "sheet" ? "sheet" : "free";
+    // Der Modus IST der Schluessel - fuer jeden gibt es pdf.footer.mode_*.
+    const modeKey = solved.solution.mode;
     return {
         object_mm: objectText,
         dpi: request.dpi,

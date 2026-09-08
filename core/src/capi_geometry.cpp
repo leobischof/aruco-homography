@@ -144,6 +144,51 @@ std::int32_t aruco_fit_free(const double* corners_xy, std::int32_t marker_count,
     });
 }
 
+std::int32_t aruco_fit_scattered(const double* corners_xy, std::int32_t marker_count,
+                                 double marker_mm, double* out9, double* out_poses_xyt,
+                                 std::int32_t capacity_poses, char* error,
+                                 std::int32_t error_capacity) {
+    if (missing(out9, error, error_capacity, "aruco_fit_scattered") ||
+        missing(out_poses_xyt, error, error_capacity, "aruco_fit_scattered (Lagen)")) {
+        return ARUCO_ERR_ARGUMENT;
+    }
+    if (marker_count <= 0) {
+        set_error(error, error_capacity, "aruco_fit_scattered braucht mindestens einen Marker");
+        return ARUCO_ERR_ARGUMENT;
+    }
+
+    return guarded(error, error_capacity, [&]() -> std::int32_t {
+        const std::vector<aruco::Point2> corners =
+            points_of(corners_xy, marker_count * 4, "corners");
+
+        std::vector<std::array<aruco::Point2, 4>> quads;
+        quads.reserve(static_cast<std::size_t>(marker_count));
+        for (std::int32_t index = 0; index < marker_count; ++index) {
+            const std::size_t base = static_cast<std::size_t>(index) * 4U;
+            quads.push_back({corners[base], corners[base + 1U], corners[base + 2U],
+                             corners[base + 3U]});
+        }
+
+        const aruco::ScatteredFit fit = aruco::fit_scattered(quads, marker_mm);
+        // Erst die Lagen, dann die Homographie - aus demselben Grund wie bei
+        // aruco_fit_free: reicht der Platz nicht, soll nichts Halbes dastehen.
+        if (static_cast<std::size_t>(capacity_poses) < fit.poses.size()) {
+            set_error(error, error_capacity,
+                      "aruco_fit_scattered: Ausgabepuffer zu klein - " +
+                          std::to_string(fit.poses.size()) + " Lagen, Platz fuer " +
+                          std::to_string(capacity_poses));
+            return ARUCO_ERR_CAPACITY;
+        }
+        for (std::size_t index = 0; index < fit.poses.size(); ++index) {
+            out_poses_xyt[index * 3] = fit.poses[index].x;
+            out_poses_xyt[index * 3 + 1] = fit.poses[index].y;
+            out_poses_xyt[index * 3 + 2] = fit.poses[index].theta;
+        }
+        write_matrix(fit.homography, out9);
+        return static_cast<std::int32_t>(fit.poses.size());
+    });
+}
+
 std::int32_t aruco_pose_from_homography(const double* homography9, double focal_px,
                                         std::int32_t width, std::int32_t height, double* out4,
                                         char* error, std::int32_t error_capacity) {

@@ -189,6 +189,35 @@ py::tuple fit_free(const DoubleArray& quads, double marker_mm) {
     return py::make_tuple(array_of(fit.homography), array_of(fit.offsets));
 }
 
+py::tuple fit_scattered(const DoubleArray& quads, double marker_mm) {
+    if (quads.ndim() != 3 || quads.shape(1) != 4 || quads.shape(2) != 2) {
+        throw py::value_error("fit_scattered erwartet ein (M,4,2)-Array");
+    }
+    const py::ssize_t count = quads.shape(0);
+    const double* data = quads.data();
+
+    std::vector<std::array<aruco::Point2, 4>> markers;
+    markers.reserve(static_cast<std::size_t>(count));
+    for (py::ssize_t index = 0; index < count; ++index) {
+        std::array<aruco::Point2, 4> quad{};
+        for (std::size_t corner = 0; corner < 4; ++corner) {
+            const std::size_t base = static_cast<std::size_t>(index) * 8 + corner * 2;
+            quad[corner] = aruco::Point2{data[base], data[base + 1]};
+        }
+        markers.push_back(quad);
+    }
+
+    const aruco::ScatteredFit fit = aruco::fit_scattered(markers, marker_mm);
+    DoubleArray poses({static_cast<py::ssize_t>(fit.poses.size()), static_cast<py::ssize_t>(3)});
+    double* out = poses.mutable_data();
+    for (std::size_t index = 0; index < fit.poses.size(); ++index) {
+        out[3 * index] = fit.poses[index].x;
+        out[3 * index + 1] = fit.poses[index].y;
+        out[3 * index + 2] = fit.poses[index].theta;
+    }
+    return py::make_tuple(array_of(fit.homography), std::move(poses));
+}
+
 py::tuple pose_from_homography(const DoubleArray& homography, double focal_px, int width,
                                int height) {
     const aruco::Pose pose = aruco::pose_from_homography(
@@ -324,6 +353,10 @@ PYBIND11_MODULE(aruco_core, module) {
 
     module.def("fit_free", &fit_free, py::arg("quads"), py::arg("marker_mm"),
                "Frei-Modus: Homographie und Markerversaetze gemeinsam schaetzen. "
+               "Die Marker muessen absteigend nach Bildflaeche sortiert sein.");
+
+    module.def("fit_scattered", &fit_scattered, py::arg("quads"), py::arg("marker_mm"),
+               "Streu-Modus: Homographie und die Lage jedes Markers gemeinsam schaetzen. "
                "Die Marker muessen absteigend nach Bildflaeche sortiert sein.");
 
     module.def("pose_from_homography", &pose_from_homography, py::arg("homography"),

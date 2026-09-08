@@ -47,6 +47,23 @@ export function solveRequest(wire) {
     };
 }
 
+/**
+ * ExportImageRequest aus app/schemas.py.
+ *
+ * Kurz, weil ein Bild fast nichts von dem hat, was ein Ausdruck braucht: kein
+ * Seitenformat, keine Ueberlappung, keine Aufdrucke, keine Sprache.
+ */
+export function imageRequest(wire) {
+    return {
+        session_id: wire.session_id,
+        crop_mm: wire.crop_mm,
+        dpi: fallback(wire.dpi, constants.DPI_DEFAULT),
+        image_format: fallback(wire.image_format, "jpeg"),
+        adjust: wire.adjust || {},
+        filename: fallback(wire.filename, "schablone"),
+    };
+}
+
 /** ExportRequest aus app/schemas.py, samt OverlayFlags. */
 export function exportRequest(wire) {
     const overlays = wire.overlays || {};

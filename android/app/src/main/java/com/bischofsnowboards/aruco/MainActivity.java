@@ -1,6 +1,7 @@
 package com.bischofsnowboards.aruco;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -66,8 +67,9 @@ public final class MainActivity extends Activity {
     private static final String ORIGIN = "https://appassets.androidplatform.net";
     private static final int REQUEST_PICK_PHOTO = 1;
     private static final int REQUEST_TAKE_PHOTO = 2;
-    private static final int REQUEST_SAVE_PDF = 3;
+    private static final int REQUEST_SAVE_FILE = 3;
     private static final int REQUEST_FILE_CHOOSER = 4;
+    private static final int REQUEST_CHOOSER_CAPTURE = 5;
 
     private WebView webView;
     private WebViewAssetLoader assetLoader;
@@ -101,7 +103,7 @@ public final class MainActivity extends Activity {
      * einzelne Base64-Zeichenkette dieser Groesse zweimal im Speicher stuende - einmal als
      * JavaScript-String, einmal als Java-String.
      */
-    private ByteArrayOutputStream incomingPdf = new ByteArrayOutputStream();
+    private ByteArrayOutputStream incomingFile = new ByteArrayOutputStream();
 
     /**
      * Was Aussparung und Systemleisten dem Fenster wegnehmen - oben, rechts, unten, links,
@@ -115,9 +117,18 @@ public final class MainActivity extends Activity {
 
     /** Der Aufruf, der gerade auf einen Systemdialog wartet. */
     private long pendingCallId = -1L;
-    private byte[] pendingPdf;
+    private byte[] pendingFile;
     private ValueCallback<Uri[]> pendingFileChooser;
     private File pendingCapture;
+
+    /**
+     * Dieselbe Datei wie {@link #pendingCapture}, als content-URI.
+     *
+     * <p>Die WebView bekommt sie zurueckgereicht und baut daraus ihr File-Objekt. Eine
+     * {@code file://}-URI taugt dafuer nicht: Android verbietet sie nach draussen, und
+     * die WebView zaehlt hier als draussen.
+     */
+    private Uri pendingCaptureUri;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -276,7 +287,7 @@ public final class MainActivity extends Activity {
     private final class ApiHandler implements WebViewAssetLoader.PathHandler {
         @Override
         public WebResourceResponse handle(String path) {
-            // raster/<griff>/<guete>.jpg - ein Rasterbild der Rechenkette.
+            // raster/<griff>/<guete>.jpg oder .png - ein Rasterbild der Rechenkette.
             //
             // Ein GET und keine Bruecken-Methode, und das ist der Punkt: so kommen die
             // JPEG-Bytes als Binaerstrom in die Seite, nicht als Base64-Zeichenkette. Bei
@@ -285,13 +296,19 @@ public final class MainActivity extends Activity {
             // bekommt und keine Abfrageparameter - eine Luecke im WebView-API.
             if (path.startsWith("raster/")) {
                 String[] parts = path.substring("raster/".length()).split("/");
-                if (parts.length != 2 || !parts[1].endsWith(".jpg")) {
+                boolean png = parts.length == 2 && parts[1].endsWith(".png");
+                if (parts.length != 2 || (!png && !parts[1].endsWith(".jpg"))) {
                     return null;
                 }
                 try {
                     int handle = Integer.parseInt(parts[0]);
                     int quality = Integer.parseInt(
                             parts[1].substring(0, parts[1].length() - ".jpg".length()));
+                    if (png) {
+                        return new WebResourceResponse("image/png", null,
+                                new java.io.ByteArrayInputStream(
+                                        Rasters.toPng(images.require(handle))));
+                    }
                     // Das Foto selbst ist beim Laden schon kodiert worden. Ein
                     // 12-MP-Bild noch einmal zu kodieren dauert rund eine Sekunde,
                     // und das Erkennungs-Overlay fragt genau danach - auf einem
@@ -379,12 +396,18 @@ public final class MainActivity extends Activity {
         }
 
         /**
-         * Das {@code <input type="file">} der unveraenderten Oberflaeche.
+         * Die beiden {@code <input type="file">} der unveraenderten Oberflaeche.
          *
          * <p>Ohne diese Methode tut ein Dateifeld in einer WebView schlicht nichts - kein
          * Dialog, keine Meldung. Die gewaehlte URI wird hier zusaetzlich gemerkt: die
          * Bruecke laedt das Bild daraus selbst, statt es als Base64 durch JavaScript
          * zurueckzubekommen.
+         *
+         * <p><b>{@code capture} entscheidet, welcher Dialog aufgeht.</b> Ein Browser auf dem
+         * Handy zeigt bei einem Bildfeld ein Blatt mit Kamera UND Galerie; hinter einer
+         * WebView gibt es das nicht, hier waehlt diese Methode. Ohne die Abfrage von
+         * {@link FileChooserParams#isCaptureEnabled()} liefe auch der Kamera-Knopf im
+         * Dateiwaehler - das Attribut stuende in der Seite und bewirkte nichts.
          */
         @Override
         public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
@@ -394,11 +417,17 @@ public final class MainActivity extends Activity {
             }
             pendingFileChooser = callback;
             try {
-                startActivityForResult(imagePickerIntent(), REQUEST_FILE_CHOOSER);
+                if (params.isCaptureEnabled()) {
+                    startActivityForResult(captureIntent(), REQUEST_CHOOSER_CAPTURE);
+                } else {
+                    startActivityForResult(imagePickerIntent(), REQUEST_FILE_CHOOSER);
+                }
                 return true;
             } catch (Exception failure) {
                 pendingFileChooser = null;
-                Log.w(TAG, "Kein Dateidialog verfuegbar", failure);
+                pendingCapture = null;
+                pendingCaptureUri = null;
+                Log.w(TAG, "Kein Dialog verfuegbar", failure);
                 return false;
             }
         }
@@ -422,22 +451,43 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Die Kamera-App bitten, in unseren Cache zu schreiben.
+     *
+     * <p>Merkt sich das Ziel in {@link #pendingCapture} und {@link #pendingCaptureUri} -
+     * {@code onActivityResult} bekommt bei {@code EXTRA_OUTPUT} kein {@code Intent} zurueck
+     * und muesste sonst raten, wohin geschrieben wurde.
+     *
+     * <p><b>Die URI steht zusaetzlich als ClipData.</b> {@code FLAG_GRANT_WRITE_URI_PERMISSION}
+     * wirkt auf das, was das System im Intent als URI FINDET - und das ist {@code getData()}
+     * und die ClipData, nicht ein Extra. Manche Kamera-App kommt ohne den Umweg trotzdem an
+     * die Datei, andere liefern ein leeres Bild; mit der ClipData ist die Erlaubnis
+     * eindeutig erteilt.
+     */
+    private Intent captureIntent() throws IOException {
+        File directory = new File(getCacheDir(), "captures");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("Cache-Verzeichnis nicht anlegbar");
+        }
+        pendingCapture = new File(directory, "capture.jpg");
+        pendingCaptureUri = FileProvider.getUriForFile(this, getPackageName() + ".files",
+                pendingCapture);
+
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCaptureUri);
+        intent.setClipData(ClipData.newRawUri("", pendingCaptureUri));
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return intent;
+    }
+
     void takePhoto(long callId) {
         pendingCallId = callId;
         try {
-            File directory = new File(getCacheDir(), "captures");
-            if (!directory.exists() && !directory.mkdirs()) {
-                resolveError(callId, "Cache-Verzeichnis nicht anlegbar");
-                return;
-            }
-            pendingCapture = new File(directory, "capture.jpg");
-            Uri target = FileProvider.getUriForFile(this, getPackageName() + ".files",
-                    pendingCapture);
-            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, target);
-            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            startActivityForResult(intent, REQUEST_TAKE_PHOTO);
+            startActivityForResult(captureIntent(), REQUEST_TAKE_PHOTO);
         } catch (Exception failure) {
+            pendingCapture = null;
+            pendingCaptureUri = null;
             resolveError(callId, "Keine Kamera-App gefunden: " + failure.getMessage());
         }
     }
@@ -494,21 +544,23 @@ public final class MainActivity extends Activity {
     }
 
     /**
-     * Eine Scheibe des PDFs entgegennehmen, das die Seite gerade baut.
+     * Eine Scheibe der Datei entgegennehmen, die die Seite gerade baut.
      *
-     * <p>Die Seite ruft das mehrfach und danach einmal {@link #savePdf}. Warum nicht in
-     * einem Stueck: ein gekacheltes Schablonen-PDF mit eingebettetem 300-dpi-Raster sind
-     * zweistellige Megabyte, als Base64 ein Drittel mehr - und eine einzelne Zeichenkette
-     * dieser Groesse stuende zweimal im Speicher, einmal auf jeder Seite der Grenze.
+     * <p>Die Seite ruft das mehrfach und danach einmal {@link #saveFile} oder
+     * {@link #sharePdf}. Warum nicht in einem Stueck: ein gekacheltes Schablonen-PDF mit
+     * eingebettetem 300-dpi-Raster sind zweistellige Megabyte, derselbe Zuschnitt als PNG
+     * noch einmal mehr, als Base64 jeweils ein Drittel obendrauf - und eine einzelne
+     * Zeichenkette dieser Groesse stuende zweimal im Speicher, einmal auf jeder Seite der
+     * Grenze.
      */
-    void appendPdf(byte[] chunk) {
-        incomingPdf.write(chunk, 0, chunk.length);
+    void appendBytes(byte[] chunk) {
+        incomingFile.write(chunk, 0, chunk.length);
     }
 
-    /** Was bisher angekommen ist, und der Beginn eines neuen Dokuments. */
-    private byte[] takeIncomingPdf() {
-        byte[] data = incomingPdf.toByteArray();
-        incomingPdf = new ByteArrayOutputStream();
+    /** Was bisher angekommen ist, und der Beginn einer neuen Datei. */
+    private byte[] takeIncomingFile() {
+        byte[] data = incomingFile.toByteArray();
+        incomingFile = new ByteArrayOutputStream();
         return data;
     }
 
@@ -585,25 +637,41 @@ public final class MainActivity extends Activity {
         });
     }
 
-    // --- PDF nach draussen -------------------------------------------------------
+    // --- Dateien nach draussen ----------------------------------------------------
 
-    void savePdf(long callId, String filename) {
+    /**
+     * Der Typ zum Dateinamen.
+     *
+     * <p>Die eine Stelle, die diese Zuordnung kennt - und sie steht hier und nicht in der
+     * Seite, weil das System sie braucht und nicht die Seite. Was nicht erkannt wird, geht
+     * als {@code application/octet-stream} hinaus: eine Datei, die der Benutzer selbst
+     * einordnen muss, ist besser als eine falsch angekuendigte.
+     */
+    private static String typeFor(String filename) {
+        String lower = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        return "application/octet-stream";
+    }
+
+    void saveFile(long callId, String filename) {
         pendingCallId = callId;
-        pendingPdf = takeIncomingPdf();
+        pendingFile = takeIncomingFile();
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/pdf");
+        intent.setType(typeFor(filename));
         intent.putExtra(Intent.EXTRA_TITLE, filename);
         try {
-            startActivityForResult(intent, REQUEST_SAVE_PDF);
+            startActivityForResult(intent, REQUEST_SAVE_FILE);
         } catch (Exception failure) {
-            pendingPdf = null;
+            pendingFile = null;
             resolveError(callId, "Kein Speicherdialog verfuegbar: " + failure.getMessage());
         }
     }
 
     void sharePdf(long callId, String filename) {
-        byte[] data = takeIncomingPdf();
+        byte[] data = takeIncomingFile();
         try {
             File directory = new File(getCacheDir(), "documents");
             if (!directory.exists() && !directory.mkdirs()) {
@@ -649,6 +717,31 @@ public final class MainActivity extends Activity {
                 }
                 return;
             }
+            case REQUEST_CHOOSER_CAPTURE: {
+                // Der Gegenpart zu REQUEST_FILE_CHOOSER: die Antwort geht an die
+                // WebView und NICHT an eine callId - die Seite hat ein Dateifeld
+                // bedient und wartet auf dessen `change`, nicht auf die Bruecke.
+                File captured = pendingCapture;
+                Uri target = pendingCaptureUri;
+                pendingCapture = null;
+                pendingCaptureUri = null;
+
+                // Die Laenge und nicht nur RESULT_OK: bricht die Kamera-App nach dem
+                // Anlegen der Datei ab, bleibt eine leere zurueck, und die Oberflaeche
+                // meldete "Bild nicht lesbar" statt "abgebrochen".
+                boolean written = resultCode == RESULT_OK && captured != null
+                        && captured.length() > 0L;
+                if (written) {
+                    pickedPhotoUri = target;
+                }
+
+                ValueCallback<Uri[]> callback = pendingFileChooser;
+                pendingFileChooser = null;
+                if (callback != null) {
+                    callback.onReceiveValue(written ? new Uri[] {target} : null);
+                }
+                return;
+            }
             case REQUEST_PICK_PHOTO: {
                 if (resultCode != RESULT_OK || data == null || data.getData() == null) {
                     resolveError(callId, "abgebrochen");
@@ -679,9 +772,9 @@ public final class MainActivity extends Activity {
                 });
                 return;
             }
-            case REQUEST_SAVE_PDF: {
-                byte[] pdf = pendingPdf;
-                pendingPdf = null;
+            case REQUEST_SAVE_FILE: {
+                byte[] pdf = pendingFile;
+                pendingFile = null;
                 if (resultCode != RESULT_OK || data == null || data.getData() == null
                         || pdf == null) {
                     resolveError(callId, "abgebrochen");

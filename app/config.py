@@ -127,7 +127,7 @@ APP_NAME = "ArUco-Homographie"
 #
 # Bleibt bewusst in Python: eine Fassung ist eine Aussage ueber DIESES Programm,
 # nicht ueber das Produkt - der C++-Kern und der WASM-Bau bekommen eigene.
-APP_VERSION = "0.1.2-alpha"
+APP_VERSION = "0.1.3-alpha"
 
 # Windows will in den BINAEREN Versionsfeldern seiner Dateieigenschaften vier ganze
 # Zahlen sehen und vertraegt kein "-alpha". Die Vorabkennung wird deshalb hier
@@ -262,6 +262,12 @@ PAGE_MARGIN_MM_DEFAULT = SHARED_CONSTANTS["PAGE_MARGIN_MM_DEFAULT"]
 PRINTER_MARGIN_MM_DEFAULT = SHARED_CONSTANTS["PRINTER_MARGIN_MM_DEFAULT"]
 TILE_OVERLAP_MM_DEFAULT = SHARED_CONSTANTS["TILE_OVERLAP_MM_DEFAULT"]
 TILE_OVERVIEW_DEFAULT = SHARED_CONSTANTS["TILE_OVERVIEW_DEFAULT"]
+# Der Klebeplan zeigt den Zuschnitt als Bild unter der Kachelung - aber als
+# Daumennagel. Er wird ANGESEHEN und nicht nachgemessen: mehr als 1600 Pixel auf
+# der langen Kante sind auf einem A4-Blatt (hoechstens 250 mm hoch, also rund
+# 160 dpi) nicht mehr zu sehen, kosten aber Dateigroesse - und auf dem Telefon
+# Arbeitsspeicher, den der blattweise Export gerade erst eingespart hat.
+OVERVIEW_MAX_PX = SHARED_CONSTANTS["OVERVIEW_MAX_PX"]
 # Massstab links, Metadaten rechts (Spec 4.2)
 STRIP_H_MM = SHARED_CONSTANTS["STRIP_H_MM"]
 GRID_STEP_MM = SHARED_CONSTANTS["GRID_STEP_MM"]

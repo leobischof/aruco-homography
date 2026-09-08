@@ -15,8 +15,10 @@ import java.nio.ByteBuffer;
  * zweiter neben dem, den die Plattform ohnehin mitbringt.
  *
  * <p><b>Wozu ueberhaupt.</b> {@code web/pdf/build.js} bettet das entzerrte Bild als JPEG in
- * das PDF ein und nimmt dafuer JPEG-Bytes entgegen. Und die Vorschau in der Oberflaeche ist
- * ein {@code <img>}, also auch ein JPEG. Beide Wege enden hier.
+ * das PDF ein und nimmt dafuer JPEG-Bytes entgegen. Die Vorschau in der Oberflaeche ist ein
+ * {@code <img>}, also auch ein JPEG. Und wer den Zuschnitt als Bild speichert, bekommt
+ * wahlweise ein PNG - verlustfrei, weil JPEG genau die duennen Linien breitzieht, die auf
+ * einer Schablone das Produkt sind. Alle drei Wege enden hier.
  *
  * <p><b>Was es kostet.</b> {@code Bitmap} kann nur ARGB_8888, der Kern liefert BGR - also
  * entsteht zwischendurch eine Kopie mit vier Bytes je Pixel. Bei einem 300-dpi-Raster von
@@ -36,6 +38,27 @@ final class Rasters {
      *     (Invariante 4)
      */
     static byte[] toJpeg(NativeImages.Image image, int quality) {
+        return compress(image, Bitmap.CompressFormat.JPEG, quality);
+    }
+
+    /**
+     * Dasselbe Raster als PNG - verlustfrei.
+     *
+     * <p>Ohne Guete, weil PNG keine hat: {@code Bitmap.compress} nimmt die Zahl entgegen und
+     * wirft sie weg. Sie hier trotzdem entgegenzunehmen waere ein Versprechen, das die
+     * Bibliothek nicht haelt.
+     *
+     * <p><b>Die Auflösung steht NICHT drin.</b> {@code Bitmap.compress} schreibt kein
+     * {@code pHYs}, und diese Datei traegt es auch nicht nach - das tut
+     * {@code web/vision/density.js} auf der JavaScript-Seite, gemeinsam fuer Browser und
+     * App. Zwei Stempel waeren zwei Stellen, an denen eine falsche Zahl entstehen kann.
+     */
+    static byte[] toPng(NativeImages.Image image) {
+        return compress(image, Bitmap.CompressFormat.PNG, 100);
+    }
+
+    private static byte[] compress(NativeImages.Image image, Bitmap.CompressFormat format,
+            int quality) {
         if (image.channels != NativeCore.CHANNELS_BGR) {
             throw new IllegalArgumentException(
                     "Nur BGR laesst sich kodieren, nicht " + image.channels + " Kanaele");
@@ -60,7 +83,7 @@ final class Rasters {
                 Bitmap.Config.ARGB_8888);
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
+            bitmap.compress(format, quality, out);
             return out.toByteArray();
         } finally {
             bitmap.recycle();

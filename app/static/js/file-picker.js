@@ -20,25 +20,42 @@
  * 3. **Der Dateiname.** Er traegt kein data-i18n: applyTranslations() wuerde ihn
  *    beim naechsten Sprachwechsel durch den Katalogtext ersetzen. Stattdessen
  *    zeichnet diese Datei ihn neu, wenn die Sprache wechselt.
+ *
+ * ZWEI FELDER, EINE WAHL. Neben dem gewoehnlichen Dateifeld steht eines mit
+ * `capture` - das oeffnet die Kamera statt eines Dateiblatts (index.html sagt,
+ * warum das nicht ein Feld sein kann). Fuer alles danach sind sie dasselbe: es
+ * kommt eine Datei heraus, und die geht denselben Weg. Deshalb kennt der
+ * Aufrufer den Unterschied nicht - er bekommt `onFile`, wie vorher auch.
  */
 
 import { onLocaleChange, t } from "./i18n.js";
 
-export function createFilePicker({ input, dropZone, nameOutput, onFile }) {
+export function createFilePicker({ input, cameraInput, dropZone, nameOutput, onFile }) {
     let chosen = null;
+    const fields = [input, cameraInput].filter(Boolean);
 
     function renderName() {
         nameOutput.textContent = chosen ? chosen.name : t("ui.steps.upload.no_file");
     }
 
-    function accept(file) {
+    function accept(file, from) {
         if (!file) return;
+
+        // Die Wahl liegt bei genau EINEM Feld. Ohne das Leeren des anderen
+        // truege es weiter die vorige Datei - unsichtbar, aber das ist der
+        // Zustand, den ein Hilfsmittel vorliest, und er waere dann falsch.
+        for (const field of fields) {
+            if (field !== from) field.value = "";
+        }
+
         chosen = file;
         renderName();
         onFile(file);
     }
 
-    input.addEventListener("change", () => accept(input.files[0]));
+    for (const field of fields) {
+        field.addEventListener("change", () => accept(field.files[0], field));
+    }
 
     // preventDefault auf BEIDEN Ereignissen: ohne das auf dragover kommt es nie
     // zu einem drop, und ohne das auf drop oeffnet der Browser das Foto einfach
@@ -68,7 +85,7 @@ export function createFilePicker({ input, dropZone, nameOutput, onFile }) {
         transfer.items.add(file);
         input.files = transfer.files;
 
-        accept(file);
+        accept(file, input);
     });
 
     onLocaleChange(renderName);

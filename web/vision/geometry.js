@@ -141,3 +141,26 @@ export function markerPlaneCorners(centreX, centreY, sideMm) {
         centreY + half,
     ]);
 }
+
+/**
+ * Dasselbe fuer einen GEDREHTEN Marker - das Gegenstueck zu
+ * app/vision/solve.py::marker_plane_corners_at.
+ *
+ * Der Winkel steht im Bogenmass und dreht um den MITTELPUNKT; `angle === 0`
+ * liefert genau dieselben Ecken wie markerPlaneCorners. Gedreht wird um die
+ * Mitte und nicht um die obere linke Ecke, sonst waere eine Drehung zugleich
+ * eine Verschiebung.
+ */
+export function markerPlaneCornersAt(centreX, centreY, angle, sideMm) {
+    const half = sideMm / 2.0;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const corners = new Float64Array(8);
+    const local = [[-half, -half], [half, -half], [half, half], [-half, half]];
+    for (let corner = 0; corner < 4; corner += 1) {
+        const [x, y] = local[corner];
+        corners[corner * 2] = centreX + cos * x - sin * y;
+        corners[corner * 2 + 1] = centreY + sin * x + cos * y;
+    }
+    return corners;
+}

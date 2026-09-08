@@ -135,6 +135,7 @@ final class ChainCheck {
             System.arraycopy(image, source * 8, freeCorners, index * 8, 8);
         }
         exact(scene, "fit_free", NativeCore.fitFree(freeCorners, markerMm));
+        exact(scene, "fit_scattered", NativeCore.fitScattered(freeCorners, markerMm));
 
         // 4 - Kamerapose.
         exact(scene, "pose",

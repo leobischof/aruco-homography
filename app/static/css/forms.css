@@ -104,9 +104,30 @@ select:disabled {
 /* Die Eingabe zeigt nichts an - der Fokusring gehoert deshalb auf das, was man
    sieht. Ohne diese Regel liefe die Tabulatortaste durch ein unsichtbares
    Element, und die Oberflaeche waere ohne Maus nicht mehr zu bedienen. */
-.file-input:focus-visible + .file-drop {
+.file-input:focus-visible + .file-drop,
+.file-input:focus-visible + .file-camera {
     border-color: var(--ring);
     box-shadow: 0 0 0 3px var(--ring-soft);
+}
+
+/* Ablage und Kamera nebeneinander. Der Basiswert 16rem ist die Umbruchgrenze:
+   passt daneben nichts mehr, rutscht der Kamera-Knopf auf eine eigene Zeile und
+   nimmt sie ganz ein - auf einem Handy also fast immer. */
+.file-choice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.file-choice .file-drop { flex: 1 1 16rem; }
+
+/* Aufnehmen kann nur, wer eine Kamera hat, und das ist dieselbe Unterscheidung,
+   die schon .file-drop-hint trifft: an einem Zeigegeraet wird gezogen, am
+   Finger wird fotografiert. KEINE Abfrage des Geraetenamens - die Medienabfrage
+   beschreibt die Bedienung und nicht das Fabrikat. */
+.file-camera {
+    display: none;
+    flex: 1 1 auto;
 }
 
 /* Ein langer Dateiname soll umbrechen statt die Ablage zu sprengen. */
@@ -128,6 +149,7 @@ select:disabled {
    Hinweis waere dort eine Anweisung, die man nicht befolgen kann. */
 @media (pointer: coarse) {
     .file-drop-hint { display: none; }
+    .file-camera { display: inline-flex; }
 }
 
 /* --------------------------------------------------------------------------

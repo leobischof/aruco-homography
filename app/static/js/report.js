@@ -75,10 +75,10 @@ export function renderReport(reportRoot, warningsRoot, data) {
         ? "warn"
         : "good";
 
-    const modeKey =
-        data.mode_used === "sheet"
-            ? "ui.steps.report.value_mode_sheet"
-            : "ui.steps.report.value_mode_free";
+    // Der Modus IST der Schluessel - fuer jeden gibt es value_mode_*. Eine
+    // Fallunterscheidung waere eine zweite Liste derselben Namen, und die haette
+    // beim dritten Modus stillschweigend "frei" angezeigt.
+    const modeKey = `ui.steps.report.value_mode_${data.mode_used}`;
 
     reportRoot.replaceChildren(
         card(

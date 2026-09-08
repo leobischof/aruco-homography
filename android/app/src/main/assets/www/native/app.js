@@ -240,7 +240,7 @@ async function withSheet(button, action) {
 }
 
 el("save-sheet").addEventListener("click", (event) =>
-    withSheet(event.currentTarget, (bytes) => bridge.savePdf(bytes, "markerblatt_A4.pdf")));
+    withSheet(event.currentTarget, (bytes) => bridge.saveFile(bytes, "markerblatt_A4.pdf")));
 
 el("share-sheet").addEventListener("click", (event) =>
     withSheet(event.currentTarget, (bytes) => bridge.sharePdf(bytes, "markerblatt_A4.pdf")));
