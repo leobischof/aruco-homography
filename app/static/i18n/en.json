@@ -98,7 +98,10 @@
         "submit": "Create PDF",
         "submit_image": "Save as image",
         "image_format_label": "Image format",
+        "image_dpi_label": "Image resolution",
+        "image_dpi_source": "as fine as the photo",
         "image_result": "{filename} – {pixels} px at {dpi} dpi. The resolution is written into the file; one pixel is {mm_per_px} mm.",
+        "image_result_source": "{filename} – {pixels} px at {dpi} dpi, as fine as the photo. The resolution is written into the file; one pixel is {mm_per_px} mm.",
         "result": "PDF created: {pages} page(s), page size {page_size} mm.",
         "result_hint": "When printing, be sure to choose {emphasis}, then measure the printed 100 mm scale to check.",
         "result_emphasis": "100 % / no scaling"
