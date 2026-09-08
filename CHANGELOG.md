@@ -4,6 +4,110 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.7-alpha] – 2026-09-09
+
+**Der Sucher hört auf, eine Ebene zu zeigen, die er nicht glaubt — und die Griffe sind
+für einen Finger gemacht.** Wieder vom Telefon, wieder mit Bild.
+
+### Behoben
+
+- **Das Live-Bild zeichnet kein Raster mehr, wenn die Lage unbrauchbar ist.** Gemeldet
+  mit Bild: zwei lose auf dem Tisch liegende Marker, „2 Marker · 0,1072 mm/px ·
+  **Restfehler 64,47 px**", und darüber ein Raster, dessen Linien aus ein paar
+  Fluchtpunkten quer über den ganzen Schirm schossen.
+
+  Die Ebene *war* wild — und die App wusste es. `RMS_WARN_PX` ist **2**, und
+  `solve_plane` legt für genau diesen Fall `high_residual` und `collinear_markers` an.
+  Beide Wege haben diese Warnungen weggeworfen: der Live-Weg reichte eine frische
+  `NoticeList` hinein und sah nie wieder hinein. **Eine gelöste Lage ist nicht dasselbe
+  wie eine brauchbare.**
+
+  Von den zwei falschen Dingen auf dem Schirm war das Raster das schlimmere. Eine Zahl
+  kann man anzweifeln; ein Raster, das auf dem Werkstück liegt, sieht aus wie eine
+  Messung. Es ist dieselbe Regel, die für den Rasterschritt schon gilt — fehlt er, wird
+  nichts gezeichnet — und aus demselben Grund: *ein falsches Raster ist schlimmer als
+  keines.*
+
+  `/api/measure` und `local.js` liefern `warnings` jetzt in derselben Form wie
+  `/api/solve`, und entscheiden tut der Sucher (`PLANE_BREAKERS` in `live.js`): bei
+  `high_residual` oder `collinear_markers` kein Raster, und die Statuszeile nennt den
+  **Restfehler statt des Maßstabs**. Den Maßstab stehen zu lassen wäre die überzeugendste
+  Zahl auf dem Schirm gewesen und die falscheste — dieselbe Rechnung, die 64 px
+  danebenliegt, hat ihn erzeugt. Nicht dabei sind `single_marker`,
+  `marker_size_deviation` und `marker_rotation`: die sagen etwas über die Aufnahme, nicht
+  darüber, dass die Abbildung selbst unbrauchbar wäre.
+
+- **Ein verweigerter Zeigerfang macht den Zuschnittgriff nicht mehr tot.** `pointerdown`
+  rief `focus()` und `setPointerCapture()`, **bevor** der Griff gemerkt wurde.
+  `setPointerCapture` wirft laut Spezifikation `NotFoundError`, wenn der Zeiger gerade
+  nicht aktiv ist — und eine Ausnahme in einem Zuhörer schluckt der Browser. Der Griff
+  bliebe leer, es passierte nichts, und im Protokoll stünde nichts.
+
+  Jetzt zuerst der Griff, dann Fokus und Fang im `try`. Der Fang ist damit Beiwerk: ohne
+  ihn zieht man weiter, solange der Finger auf der Bühne bleibt, und `pointerup` wird
+  zusätzlich am Fenster gehört, damit ein Loslassen außerhalb des Canvas das Ziehen
+  beendet statt einen Griff am Finger kleben zu lassen.
+
+- **Das Zuschnitt-Canvas wird nicht mehr an seinen Ecken beschnitten.** `.crop-stage` trug
+  `border-radius` zusammen mit `overflow: hidden`; das schneidet jedes Kind ab, auch das
+  Canvas darüber, und die Treffererkennung folgt dem Schnitt. Die Zahl gehört dazu, weil
+  sie klein ist: gemessen war die Ecke bei **+0 px** tot und ab **+2 px** innen greifbar.
+  Zwei Pixel — eine Unsauberkeit, und ausdrücklich *nicht* die Erklärung für einen Griff,
+  den ein Finger nicht trifft.
+
+### Geändert
+
+- **Ein Finger bekommt einen größeren Griff als eine Maus.** Vom Telefon: „make the
+  hitboxes bigger". Die Griffe funktionieren — sie waren nur für einen Zeiger bemessen,
+  der ein Pixel breit ist und weiß, wo er steht.
+
+  | Zeiger | Trefferfläche |
+  |---|---|
+  | Maus, Stift | 44 px (unverändert) |
+  | alles andere (Finger, unbekannter Typ) | **60 px** |
+
+  Auf Android ist ein CSS-Pixel ein dp, 60 px sind also 9,5 mm — etwa eine Fingerkuppe,
+  und damit die Größe, ab der man nicht mehr zielen muss. Maus und Stift bekommen sie mit
+  Absicht nicht: bei 60 px wäre ein schmaler Zuschnitt vollständig Griff und ließe sich
+  nicht mehr als Ganzes verschieben.
+
+  Zwei Dinge machen die größere Fläche erst sicher. Eine **Obergrenze von einem Viertel
+  der Kantenlänge** lässt in der Mitte etwas zum Verschieben übrig. Und **`hitTest` gibt
+  jetzt den nächsten Griff zurück statt des ersten der Liste**: solange die Flächen klein
+  waren, kam das aufs selbe heraus, in dieser Größe überdecken sich Ecke und Kantenmitte
+  an einem schmalen Rechteck — und „der erste gewinnt" hätte die Reihenfolge in `HANDLES`
+  entscheiden lassen, also immer die Ecke.
+
+### Was der Prüfstand dieser Fassung neu kann
+
+**Berührung.** Der Prüflauf für den Zuschnitt fuhr bis hierher ausschließlich mit
+`Input.dispatchMouseEvent` — also mit genau dem, was auf einem Telefon nie passiert. Jetzt
+fährt er beides, mit echten `Input.dispatchTouchEvent`-Gesten bei eingeschalteter
+Berührungsnachbildung.
+
+Und er **misst** statt zu behaupten. Den Kantengriff oben greifen und nach unten ziehen
+unterscheidet die Fälle von selbst: wurde der Griff erwischt, wandert nur `y0` und `y1`
+bleibt stehen; wurde nur die Fläche getroffen, wandern beide. Der Abstand in 2-px-Schritten
+abgetastet ergibt die Trefferfläche als Zahl — 40 × 40 px für die Maus, 56 × 56 px für den
+Finger, und die Stufe liegt da, wo die Konstanten es sagen.
+
+Dazu ein Lauf, der die unbrauchbare Ebene herstellt, **ohne** eine zweite Kameradatei zu
+brauchen: dieselbe gute Szene, aber ein Blattabstand, den sie nicht hat. Gegen den Server
+und gegen den Browser-Bau, bis auf den Pixel gleich — 14650 Overlay-Pixel mit Maßstab,
+6573 ohne Raster bei 21,43 px Restfehler, und wieder 14650, wenn der Abstand stimmt. Es
+bleibt nicht blind.
+
+### Was NICHT belegt ist
+
+- **Auf einem Telefon ist von dieser Fassung nichts gelaufen.** Die vier Änderungen sind
+  auf dem Gerät gemeldet und hier gemessen worden; nachgesehen ist dort keine.
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig
+  belegt.** Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt, ist
+  ein Gegenstand *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem Ausdruck
+  nachgemessen.
+
+**Deshalb bleibt `alpha` im Namen.**
+
 ## [0.1.6-alpha] – 2026-09-08
 
 **Die erste Fassung, die ein Telefon korrigiert hat.** `0.1.5-alpha` war die erste, die

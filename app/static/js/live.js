@@ -64,6 +64,41 @@ const WANTED_PX = 4096;
  *  nicht diese ist - beide Zeichenketten stehen als Werte im Markup. */
 const MODE_PLANE = "plane";
 
+/**
+ * Warnungen, nach denen die Ebene NICHT gezeichnet wird.
+ *
+ * Eine geloeste Lage ist nicht dasselbe wie eine brauchbare. Auf dem Telefon
+ * gemeldet: zwei fast deckungsgleiche Marker, Restfehler 64,47 px - und der
+ * Sucher legte trotzdem ein Raster ueber das Bild, das quer ueber den Schirm
+ * schoss, neben einem Massstab mit vier Nachkommastellen. Beides war falsch,
+ * und das Raster war das Schlimmere: eine Zahl kann man anzweifeln, ein Raster
+ * sieht aus wie eine Messung.
+ *
+ * Es ist dieselbe Regel, die fuer den Rasterschritt schon gilt: fehlt er, wird
+ * nichts gezeichnet. **Ein falsches Raster ist schlimmer als keines.**
+ *
+ * Die zwei Codes und warum genau sie:
+ *
+ *   `high_residual`     Das Modell passt nicht einmal auf die Punkte, aus denen
+ *                       es gerechnet wurde (RMS_WARN_PX = 2 px). Meist liegen
+ *                       die Marker nicht dort, wo die gewaehlte Betriebsart sie
+ *                       vermutet - lose auf dem Tisch statt auf dem Blatt.
+ *   `collinear_markers` Quer zur Markerlinie stuetzt sich die Homographie
+ *                       kaum ab; genau dort schiesst das Raster davon. Zwei
+ *                       Marker loesen das immer aus.
+ *
+ * Nicht dabei: `single_marker`, `marker_size_deviation`, `marker_rotation`.
+ * Die sagen etwas ueber die Aufnahme, nicht darueber, dass die Abbildung selbst
+ * unbrauchbar waere - und der Sucher soll nicht bei jeder Kleinigkeit blind
+ * werden.
+ */
+const PLANE_BREAKERS = new Set(["high_residual", "collinear_markers"]);
+
+/** Traegt diese Loesung eine Warnung, die sie unbrauchbar macht? */
+function planeIsUsable(warnings) {
+    return !(warnings || []).some((notice) => PLANE_BREAKERS.has(notice.code));
+}
+
 /** Gibt es an diesem Ort ueberhaupt eine Kamera-Schnittstelle?
  *
  * `navigator.mediaDevices` fehlt in JEDEM unsicheren Ursprung - eine Seite, die
@@ -86,6 +121,7 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
     let lastRun = 0;
     let markers = [];
     let plane = null;
+    let usable = false;
     let gridMm = 0;
     let frameWidth = 0;
 
@@ -126,6 +162,7 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
             markers = found.markers || [];
             frameWidth = found.width || 0;
             plane = wantsPlane ? found.plane || null : null;
+            usable = Boolean(plane) && planeIsUsable(found.warnings);
             gridMm = found.grid_mm || gridMm;
             tellState();
         } catch (error) {
@@ -134,6 +171,7 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
             // Wahrheit: nichts gefunden.
             markers = [];
             plane = null;
+            usable = false;
             tellState();
         } finally {
             detecting = false;
@@ -170,6 +208,16 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
     }
 
     function tellState() {
+        if (plane && !usable) {
+            // Der Massstab steht hier mit Absicht NICHT. Er waere die
+            // ueberzeugendste Zahl auf dem Schirm und die falscheste: dieselbe
+            // Rechnung, die 64 px danebenliegt, hat ihn erzeugt.
+            status.textContent = t("ui.live.plane_unusable", {
+                rms_px: formatNumber(plane.rms_px, 2),
+                count: markers.length,
+            });
+            return;
+        }
         if (plane) {
             status.textContent = t("ui.live.plane", {
                 mm_per_px: formatNumber(plane.mm_per_px, 4),
@@ -191,7 +239,10 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
             void look();
         }
         const view = stage();
-        if (view) overlay.paint(view, { markers, plane, gridMm });
+        // `plane: null` und nicht ein zweiter Schalter im Overlay: dort gibt es
+        // schon genau einen Fall "keine Ebene, also kein Raster", und ein
+        // zweiter Weg dorthin waere ein zweiter Ort zum Danebengreifen.
+        if (view) overlay.paint(view, { markers, plane: usable ? plane : null, gridMm });
         requestAnimationFrame(tick);
     }
 
@@ -224,6 +275,7 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
 
         markers = [];
         plane = null;
+        usable = false;
         frameWidth = 0;
         tellState();
         dialog.showModal();
@@ -265,6 +317,7 @@ export function createLiveView({ dialog, video, canvas, status, modeSelect, shut
     modeSelect.addEventListener("change", () => {
         markers = [];
         plane = null;
+        usable = false;
         lastRun = 0;
         tellState();
     });

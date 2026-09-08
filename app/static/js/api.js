@@ -149,13 +149,17 @@ export async function detectFrame(blob) {
  * `plane` null. Das ist im Sucher kein Fehler, sondern der Zustand "noch nicht
  * genug zu sehen" - deshalb kommt er als Antwort und nicht als Ausnahme.
  *
+ * Dazu `warnings` in derselben Form wie bei /api/solve. Eine geloeste Lage ist
+ * nicht dasselbe wie eine brauchbare, und wer nur `plane` liest, sieht den
+ * Unterschied nicht.
+ *
  * Die Einstellungen reisen in der Abfrage, weil der Koerper das Bild ist.
  */
 export async function measureFrame(blob, params) {
     if (transport() === LOCAL) {
         const module = await local();
         try {
-            return await module.measureFrame(blob, params);
+            return await module.measureFrame(blob, params, getLocale());
         } catch (error) {
             return localError(error);
         }

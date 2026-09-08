@@ -46,9 +46,23 @@ const CORNER_PX = 12;
 const BAR_LONG_PX = 18;
 const BAR_SHORT_PX = 8;
 
-// Halbe Kantenlaenge der Trefferflaeche: 44px, der Wert von --touch-target.
-// Der Griff wird kleiner GEZEICHNET, aber nicht kleiner getroffen.
-const HIT_HALF_PX = 22;
+// Halbe Kantenlaenge der Trefferflaeche. Der Griff wird kleiner GEZEICHNET, aber
+// nicht kleiner getroffen - und wie viel groesser, entscheidet der ZEIGER.
+//
+// Ein Mauszeiger ist ein Pixel und sieht, wo er steht; 44 px (der Wert von
+// --touch-target) sind dafuer reichlich. Ein Finger ist rund einen Zentimeter
+// breit, verdeckt genau die Stelle, die er treffen soll, und der Bediener zielt
+// nach dem Gedaechtnis. Vom Telefon gemeldet: "make the hitboxes bigger".
+//
+// 60 px sind rund 12 mm auf einem heutigen Telefon - etwas mehr als eine
+// Fingerkuppe, und damit die Groesse, ab der man nicht mehr zielen muss.
+const HIT_HALF_MOUSE_PX = 22;
+const HIT_HALF_TOUCH_PX = 30;
+
+// Unter diese halbe Kantenlaenge wird nie geschrumpft: ein winziges Rechteck
+// haette sonst Griffe, die niemand mehr trifft - und gerade dort will man es
+// wieder groesser ziehen.
+const HIT_HALF_MIN_PX = 12;
 
 const NUDGE_MM = 1;
 const NUDGE_SHIFT_MM = 10;
@@ -120,6 +134,30 @@ export function createCropRect({ canvas, onChange }) {
         return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     }
 
+    /**
+     * Wie gross die Trefferflaeche fuer DIESEN Zeiger an DIESEM Rechteck ist.
+     *
+     * Zwei Groessen und eine Schranke:
+     *
+     * 1. Maus und Stift bekommen die kleine Flaeche. Bei 60 px liesse sich das
+     *    Rechteck mit der Maus kaum noch VERSCHIEBEN - an einem schmalen
+     *    Zuschnitt waere alles ein Griff.
+     * 2. Alles andere - Finger, unbekannter Zeigertyp - bekommt die grosse.
+     *    Im Zweifel lieber zu grosszuegig: ein Griff, der zu leicht kommt, ist
+     *    ein Aergernis, einer der nicht kommt ist ein Fehler.
+     * 3. Ein Viertel der Kantenlaenge als Obergrenze, damit in der Mitte etwas
+     *    zum Verschieben uebrig bleibt. Ohne sie waere ein 60-px-Rechteck
+     *    vollstaendig von Griffen bedeckt.
+     */
+    function hitHalfFor(event, rectPx) {
+        const half = event.pointerType === "mouse" || event.pointerType === "pen"
+            ? HIT_HALF_MOUSE_PX
+            : HIT_HALF_TOUCH_PX;
+        const width = Math.abs(rectPx.x1 - rectPx.x0);
+        const height = Math.abs(rectPx.y1 - rectPx.y0);
+        return Math.max(HIT_HALF_MIN_PX, Math.min(half, width / 4, height / 4));
+    }
+
     function commit(next, live) {
         crop = next;
         draw();
@@ -133,7 +171,8 @@ export function createCropRect({ canvas, onChange }) {
 
         const view = viewport();
         const point = localPoint(event);
-        const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
+        const rectPx = rectToPx(crop, view);
+        const hit = hitTest(point, rectPx, hitHalfFor(event, rectPx));
 
         // AUSSERHALB DES RECHTECKS PASSIERT NICHTS. Kein neues Rechteck, kein
         // Pointer-Capture, kein Neuzeichnen - und vor allem nichts davon
@@ -159,29 +198,49 @@ export function createCropRect({ canvas, onChange }) {
             return;
         }
 
-        // Fokus holen, damit die Pfeiltasten unmittelbar nach dem Ziehen
-        // wirken. preventScroll, weil der Sprung sonst die Buehne verschiebt.
-        canvas.focus({ preventScroll: true });
-        canvas.setPointerCapture(event.pointerId);
-
+        // ERST den Griff merken, DANN Fokus und Zeigerfang.
+        //
+        // Die Reihenfolge ist der Punkt. Bis hierher standen focus() und
+        // setPointerCapture() davor, und beide koennen werfen: setPointerCapture
+        // ist laut Spezifikation ein NotFoundError, wenn der Zeiger in diesem
+        // Augenblick nicht (mehr) aktiv ist. Eine Ausnahme in einem Zuhoerer
+        // schluckt der Browser - `drag` blieb dann null, und der Griff war
+        // lautlos tot. Genau so sieht "die Griffe gehen nicht" aus, und genau
+        // das kann ein Prueflauf im Browser nicht zeigen, weil dort nichts
+        // wirft.
+        //
+        // Jetzt ist beides Beiwerk: der Fang macht das Ziehen bequemer, indem
+        // die Bewegungen auch dann noch hier ankommen, wenn der Finger die
+        // Buehne verlaesst. Ohne ihn zieht man weiter, solange man auf der
+        // Flaeche bleibt - und beim Loslassen faengt der Horcher am Fenster
+        // (siehe endDrag) auf, was das Canvas dann nicht mehr sieht.
         const pointer = clampPoint(toMm(point.x, point.y, view), scene.extent);
-
-        if (hit.kind === "resize") {
-            drag = {
+        drag = hit.kind === "resize"
+            ? {
                 pointerId: event.pointerId,
                 kind: "resize",
                 axes: hit.handle.axes,
                 anchor: oppositeAnchor(hit.handle, crop),
                 base: { ...crop },
                 handleId: hit.handle.id,
-            };
-        } else {
-            drag = {
+            }
+            : {
                 pointerId: event.pointerId,
                 kind: "move",
                 grab: { x: pointer.x - crop.x0, y: pointer.y - crop.y0 },
                 handleId: null,
             };
+
+        try {
+            // Fokus, damit die Pfeiltasten unmittelbar nach dem Ziehen wirken.
+            // preventScroll, weil der Sprung sonst die Buehne verschiebt.
+            canvas.focus({ preventScroll: true });
+            canvas.setPointerCapture(event.pointerId);
+        } catch (error) {
+            // Kein Abbruch: der Griff steht schon. Gemeldet wird es trotzdem -
+            // ein stiller Fehlschlag hier ist genau der, der uns die Zeit
+            // gekostet hat.
+            console.warn("Zeigerfang nicht bekommen, Ziehen laeuft trotzdem", error);
         }
         event.preventDefault();
     });
@@ -192,7 +251,8 @@ export function createCropRect({ canvas, onChange }) {
         const point = localPoint(event);
 
         if (!drag || drag.pointerId !== event.pointerId) {
-            const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
+            const rectPx = rectToPx(crop, view);
+            const hit = hitTest(point, rectPx, hitHalfFor(event, rectPx));
             // Kein Fadenkreuz mehr ueber der freien Flaeche: es versprach eine
             // Geste, die es dort nicht mehr gibt.
             canvas.style.cursor =
@@ -223,8 +283,14 @@ export function createCropRect({ canvas, onChange }) {
         if (!drag || drag.pointerId !== event.pointerId) return;
         drag = null;
         hoverId = null;
-        if (canvas.hasPointerCapture(event.pointerId)) {
-            canvas.releasePointerCapture(event.pointerId);
+        try {
+            if (canvas.hasPointerCapture(event.pointerId)) {
+                canvas.releasePointerCapture(event.pointerId);
+            }
+        } catch (error) {
+            // Freigeben ist Aufraeumen. Eine Ausnahme daraus darf nicht das
+            // Uebernehmen des Rechtecks verhindern, das gleich darunter steht.
+            console.warn("Zeigerfang nicht freigegeben", error);
         }
         // Erst beim Loslassen die Mindestgroesse durchsetzen. Waehrend des
         // Ziehens waere sie im Weg: der gegriffene Griff soll am Zeiger kleben,
@@ -234,6 +300,14 @@ export function createCropRect({ canvas, onChange }) {
 
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
+
+    // Dieselben zwei am FENSTER, und nicht doppelt gemoppelt: ohne Zeigerfang
+    // bekommt das Canvas kein pointerup mehr, sobald der Finger es verlassen
+    // hat - das Rechteck haette dann fuer immer einen gegriffenen Griff. Mit
+    // Fang laufen die Ereignisse ohnehin ueber das Canvas und blubbern hierher,
+    // wo endDrag sie am schon geleerten `drag` erkennt und nichts mehr tut.
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
 
     // ---- Tastatur ---------------------------------------------------------
 
@@ -400,6 +474,10 @@ export function createCropRect({ canvas, onChange }) {
         destroy() {
             observer.disconnect();
             stopThemeWatch();
+            // Die zwei am Fenster ueberleben das Canvas sonst: sie haengen an
+            // window und nicht am Element, das mit ihm verschwindet.
+            window.removeEventListener("pointerup", endDrag);
+            window.removeEventListener("pointercancel", endDrag);
         },
     };
 }

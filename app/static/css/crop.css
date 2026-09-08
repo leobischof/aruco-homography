@@ -16,14 +16,34 @@
     max-width: 100%;
     line-height: 0;
     border-radius: var(--radius-lg);
-    overflow: hidden;
     background: var(--muted);
+    /* HIER STAND overflow: hidden, und es hat die Ecken gekostet.
+       ------------------------------------------------------------
+       Zusammen mit border-radius schneidet es die Ecken JEDES Kindes weg - auch
+       die des Canvas darueber -, und die Treffererkennung des Browsers folgt
+       diesem Schnitt. Nach dem Entzerren liegt der Zuschnitt auf dem ganzen
+       abbildbaren Bereich; seine vier Eckgriffe sitzen dann genau dort.
+
+       WIE GROSS DAS WIRKLICH IST, und die Zahl gehoert dazu, weil sie klein
+       ist: gemessen bei 390 px Breite und einer 324x248-Buehne war die Ecke
+       genau bei +0 px tot und ab +2 px innen greifbar. Zwei Pixel. Das ist
+       eine Unsauberkeit und NICHT die Erklaerung fuer einen Griff, den ein
+       Finger nicht trifft - wer das hier liest und einen toten Eckgriff sucht,
+       sucht weiter.
+
+       Weggenommen kostet es nichts: das Canvas ist `inset: 0` und damit genau
+       so gross wie die Buehne, es ragt also nirgends hinaus. Die runden Ecken
+       gehoeren ohnehin dem BILD und nicht der Bedienschicht - deshalb stehen
+       sie jetzt dort. */
 }
 
 .crop-image {
     display: block;
     max-width: 100%;
     height: auto;
+    /* Die runden Ecken der Buehne, aber nur am Bild: das Canvas darueber muss
+       bis in seine Ecken anfassbar bleiben. */
+    border-radius: inherit;
     /* Das Bild ist Untergrund, kein Bedienelement: ein versehentliches Ziehen
        soll das Rechteck bewegen, nicht das Bild aus der Seite reissen. */
     -webkit-user-drag: none;
@@ -46,8 +66,8 @@
     -webkit-tap-highlight-color: transparent;
 }
 
-/* Der Fokusring gehoert nach innen: aussen liegt er unter dem Rand der Buehne,
-   die ja overflow: hidden traegt, und waere unsichtbar. */
+/* Der Fokusring gehoert nach innen: aussen laege er ausserhalb des Bildes und
+   damit ueber dem Seitenhintergrund, wo er den Rand der Buehne verdoppelt. */
 .crop-overlay:focus-visible {
     outline: none;
     box-shadow: inset 0 0 0 3px var(--ring-soft), inset 0 0 0 1px var(--ring);

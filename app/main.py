@@ -182,6 +182,15 @@ async def measure_endpoint(
     `no_markers` ist hier KEIN Fehlerfall - im Sucher ist das der Normalzustand,
     solange die Kamera noch gesucht wird. Die Antwort sagt dann schlicht, dass es
     keine Ebene gibt (`plane: null`), und der Sucher zeichnet nichts.
+
+    **`warnings` gehoert zur Antwort und nicht zum Beiwerk.** Bis 0.1.6-alpha
+    bekam solve_plane hier eine WEGGEWORFENE NoticeList, und der Sucher zeigte
+    jede Loesung als Messwert - auch eine mit 64 px Restfehler bei zwei fast
+    deckungsgleichen Markern. Auf dem Telefon sah man dann ein Raster, das quer
+    ueber das Bild schoss, neben einer Zahl mit vier Nachkommastellen. Die
+    Schwellen dafuer gibt es laengst (RMS_WARN_PX, COLLINEARITY_WARN); es hat
+    nur niemand zugehoert. Was der Sucher daraus macht, entscheidet er selbst -
+    diese Route liefert die Warnungen in derselben Form wie /api/solve.
     """
     data = await http_request.body()
     size_mb = len(data) / (1024 * 1024)
@@ -205,19 +214,22 @@ async def measure_endpoint(
             for marker in markers
         ],
         "plane": None,
+        "warnings": [],
     }
     if not markers:
         return answer
 
+    notices = NoticeList()
     try:
         solution = solve_plane(
-            markers, marker_mm, mode, NoticeList(), (spacing_x_mm, spacing_y_mm)
+            markers, marker_mm, mode, notices, (spacing_x_mm, spacing_y_mm)
         )
     except AppError:
         # Zu wenige Marker fuer diesen Modus, ein unbekannter Modus, eine
         # entartete Lage: im Sucher ist das eine Zwischenstufe und kein Abbruch.
         return answer
 
+    answer["warnings"] = notices.as_dicts(request_locale(http_request))
     answer["plane"] = {
         "homography": [float(value) for value in solution.homography.reshape(9)],
         "hull_mm": solution.hull_mm.tolist(),
