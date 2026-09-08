@@ -37,6 +37,7 @@
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/forms.css">
   <link rel="stylesheet" href="/css/crop.css">
+  <link rel="stylesheet" href="/css/live.css">
 
   <!--
     Der Themen-Vorspann. Er muss SYNCHRON und VOR dem ersten Zeichnen laufen, sonst
@@ -165,6 +166,16 @@
              capture="environment">
       <label class="btn btn-secondary file-camera" id="file-camera" for="camera"
              data-i18n="ui.steps.upload.camera"></label>
+
+      <!--
+        Der dritte Weg, und der einzige, der etwas ZEIGT, bevor ein Foto
+        entsteht. Er startet versteckt: ohne sicheren Ursprung gibt es
+        navigator.mediaDevices gar nicht, und ein Knopf, der nur eine
+        Fehlermeldung erzeugen kann, ist schlimmer als kein Knopf. js/main.js
+        blendet ihn ein, wenn es die Kamera-Schnittstelle gibt.
+      -->
+      <button type="button" class="btn btn-secondary" id="live-open" hidden
+              data-i18n="ui.live.open"></button>
     </div>
 
     <p class="hint" data-i18n="ui.steps.upload.hint"></p>
@@ -434,5 +445,29 @@
 </div>
 
 <script type="module" src="/js/main.js"></script>
+  <!--
+    Der Sucher. Als <dialog> und nicht als Abschnitt: er will den ganzen
+    Bildschirm, und showModal() bringt Fokusfang, Esc-Taste und Verdunklung mit.
+    Ausserhalb der Schritte, weil er zu keinem gehoert - er fuettert Schritt 1.
+  -->
+  <dialog class="live-dialog" id="live-dialog"
+          data-i18n-attr="aria-label:ui.live.title">
+    <div class="live-body">
+      <div class="live-stage">
+        <!-- playsinline: ohne das schiebt iOS das Video in den Vollbildspieler
+             des Systems, und das Overlay bliebe dahinter zurueck. -->
+        <video class="live-video" id="live-video" playsinline muted></video>
+        <canvas class="live-overlay" id="live-overlay"></canvas>
+      </div>
+      <div class="live-bar">
+        <span class="live-status" id="live-status" role="status"></span>
+        <button type="button" class="btn btn-action" id="live-shutter"
+                data-i18n="ui.live.shutter"></button>
+        <button type="button" class="btn btn-secondary live-close" id="live-close"
+                data-i18n="ui.live.close"></button>
+      </div>
+    </div>
+  </dialog>
+
 </body>
 </html>

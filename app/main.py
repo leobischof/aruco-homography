@@ -30,7 +30,7 @@ from app.pipeline import (
 from app.schemas import AdjustRequest, ExportImageRequest, ExportRequest, SolveRequest
 from app.session import store
 from app.vision import backend, encode
-from app.vision.detect import load_photo
+from app.vision.detect import detect_markers, load_photo
 
 if TYPE_CHECKING:  # nur fuer die Typangabe - uvicorn wird erst beim Start geladen
     from uvicorn import Server
@@ -116,6 +116,44 @@ async def upload(file: UploadFile = File(...)) -> dict[str, object]:
             "printer_margin_mm": config.PRINTER_MARGIN_MM_DEFAULT,
             "page_margin_mm": config.PAGE_MARGIN_MM_DEFAULT,
         },
+    }
+
+
+@app.post("/api/detect")
+async def detect_endpoint(http_request: Request) -> dict[str, object]:
+    """Marker in EINEM Bild finden - ohne Sitzung, ohne Zustand. Fuer das Live-Bild.
+
+    Der Sucher schickt zehnmal in der Sekunde ein Einzelbild und will nur wissen,
+    wo die Marker liegen. Ueber /api/upload und /api/solve ginge das auch, aber
+    jeder dieser Aufrufe legt eine Sitzung an, behaelt das Foto und rechnet eine
+    Entzerrung - dreissigmal in drei Sekunden waere das ein Speicherleck mit
+    Ansage. Diese Route haelt nichts fest.
+
+    Der Koerper sind die Bytes eines Bildes (JPEG), nicht ein Formular: ein
+    Einzelbild hat keinen Dateinamen und keinen zweiten Teil. Die Obergrenze ist
+    dieselbe wie beim Upload - grosszuegig fuer ein Einzelbild, aber die Grenze
+    soll hier nicht die zweite Zahl sein, die jemand pflegen muss.
+    """
+    data = await http_request.body()
+    size_mb = len(data) / (1024 * 1024)
+    if size_mb > config.MAX_UPLOAD_MB:
+        raise AppError(
+            "upload_too_large", "file", size_mb=f"{size_mb:.0f}", limit_mb=config.MAX_UPLOAD_MB
+        )
+
+    try:
+        photo = load_photo(data)
+    except Exception as error:  # Pillow wirft je nach Format sehr Verschiedenes.
+        raise AppError("unreadable_image", "file", reason=str(error)) from error
+
+    markers = detect_markers(photo.bgr)
+    return {
+        "width": photo.width,
+        "height": photo.height,
+        "markers": [
+            {"id": marker.marker_id, "corners": marker.corners_px.tolist()}
+            for marker in markers
+        ],
     }
 
 

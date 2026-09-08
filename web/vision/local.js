@@ -26,6 +26,7 @@ import { decodeFile } from "./image.js";
 import { AppError } from "./notices.js";
 import { drawDetection, PreviewUrls } from "./preview.js";
 import {
+    detectMarkers,
     runAdjust,
     runExport,
     runExportImage,
@@ -95,6 +96,38 @@ export async function uploadPhoto(file) {
             printer_margin_mm: constants.PRINTER_MARGIN_MM_DEFAULT,
             page_margin_mm: constants.PAGE_MARGIN_MM_DEFAULT,
         },
+    };
+}
+
+/**
+ * Marker in EINEM Bild finden - ohne Sitzung, ohne Zustand. Fuer das Live-Bild.
+ *
+ * Die Sitzung bleibt ausdruecklich unberuehrt: der Sucher laeuft, bevor ein Foto
+ * gewaehlt ist, und er soll ein bereits geladenes auch nicht wegwerfen. Zurueck
+ * kommt Feld fuer Feld dieselbe Antwort wie von /api/detect.
+ */
+export async function detectFrame(blob) {
+    const module = await core();
+    // decodeFile nimmt alles, was createImageBitmap nimmt - ein Blob gehoert
+    // dazu. Der Name stammt aus dem Upload, der Weg ist derselbe.
+    const image = await decodeFile(blob);
+    const markers = detectMarkers(module, { image });
+    return {
+        width: image.width,
+        height: image.height,
+        markers: markers.map((marker) => ({
+            id: marker.id,
+            // Der Kern liefert ACHT ZAHLEN hintereinander (x0,y0,x1,y1,...), der
+            // Server vier Paare. Umgeformt wird hier, weil hier die Zusage
+            // dieser Datei steht: die Antwort ist Feld fuer Feld die des
+            // Servers. Ohne die Umformung fand der Sucher die Marker und
+            // zeichnete nichts - der Prueflauf mit eingespielter Kamera hat
+            // genau das gefunden.
+            corners: [0, 1, 2, 3].map((corner) => [
+                marker.corners[corner * 2],
+                marker.corners[corner * 2 + 1],
+            ]),
+        })),
     };
 }
 

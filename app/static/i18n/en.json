@@ -109,6 +109,17 @@
         "result_emphasis": "100 % / no scaling"
       }
     },
+    "live": {
+      "title": "Live view",
+      "open": "Live view",
+      "shutter": "Take photo",
+      "close": "Close",
+      "searching": "No marker in view.",
+      "found": "{count} markers found.",
+      "filename": "capture.jpg",
+      "denied": "The camera is not allowed. Grant it in the app settings and try again.",
+      "unavailable": "No camera available: {reason}"
+    },
     "adjust": {
       "title": "Image adjustment",
       "grayscale_label": "Grayscale",

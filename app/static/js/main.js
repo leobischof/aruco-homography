@@ -19,6 +19,7 @@ import { createCropRect } from "./crop-rect.js";
 import { createFilePicker } from "./file-picker.js";
 import { createHeader } from "./header.js";
 import { formatNumber, initI18n, onLocaleChange, richText, t, getLocale } from "./i18n.js";
+import { createLiveView, liveAvailable } from "./live.js";
 import { renderReport } from "./report.js";
 import { initTheme } from "./theme.js";
 import { MM_PER_INCH } from "./units.js";
@@ -187,6 +188,24 @@ function sourceDpi() {
     const mmPerPx = state.solve && state.solve.mm_per_px;
     if (!mmPerPx || !Number.isFinite(mmPerPx)) return null;
     return Math.max(1, Math.round(MM_PER_INCH / mmPerPx));
+}
+
+/**
+ * Was der Sucher meldet, wenn die Kamera nicht aufgeht.
+ *
+ * Das sind Ausnahmen des BROWSERS und keine Antworten dieser App - sie haben
+ * keinen Code aus errors.*, sondern einen DOMException-Namen. Der eine Fall, der
+ * einen eigenen Satz verdient, ist die abgelehnte Erlaubnis: dort weiss der
+ * Benutzer sonst nicht, wo er sie zuruecknimmt.
+ */
+function showLiveError(error) {
+    const denied = error && (error.name === "NotAllowedError"
+        || error.name === "SecurityError" || error.name === "PermissionDeniedError");
+    showError("upload-error", {
+        message: denied
+            ? t("ui.live.denied")
+            : t("ui.live.unavailable", { reason: (error && error.message) || String(error) }),
+    });
 }
 
 // --- Schritt 2: Entzerren ----------------------------------------------------
@@ -492,13 +511,36 @@ async function start() {
     // Die Dateiwahl bringt ihre eigene Beschriftung mit - das native Feld
     // beschriftet sich in der Sprache des Browsers und liesse sich sonst nicht
     // uebersetzen (siehe file-picker.js).
-    createFilePicker({
+    const filePicker = createFilePicker({
         input: el("file"),
         cameraInput: el("camera"),
         dropZone: el("file-drop"),
         nameOutput: el("file-name"),
         onFile: handleUpload,
     });
+
+    // Der Sucher wird nur gebaut, wenn es ihn geben kann. liveAvailable() ist
+    // ohne sicheren Ursprung falsch - dann bleibt der Knopf verborgen, statt
+    // eine Kamera zu versprechen, die die Umgebung gar nicht hergibt.
+    if (liveAvailable()) {
+        const live = createLiveView({
+            dialog: el("live-dialog"),
+            video: el("live-video"),
+            canvas: el("live-overlay"),
+            status: el("live-status"),
+            shutter: el("live-shutter"),
+            closeButton: el("live-close"),
+            onPhoto: (file) => {
+                // Erst die Beschriftung, dann der Upload: sonst steht waehrend
+                // des Hochladens "Keine Datei ausgewaehlt" neben dem Balken.
+                filePicker.adopt(file);
+                handleUpload(file);
+            },
+            onError: showLiveError,
+        });
+        el("live-open").hidden = false;
+        el("live-open").addEventListener("click", () => live.open());
+    }
 
     el("solve").addEventListener("click", handleSolve);
     el("export").addEventListener("click", handleExport);
