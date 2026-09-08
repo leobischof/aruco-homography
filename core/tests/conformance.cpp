@@ -10,7 +10,13 @@
 // (core/tools/make_fixture_pack.py), damit zwischen den beiden Messungen kein
 // PNG-Dekoder steht.
 //
-// Aufruf:  aruco_conformance <pfad/zu/fixtures.txt> [--ecken]
+// Aufruf:  aruco_conformance <pfad/zu/fixtures.txt> [--ecken] [--capi]
+//
+// `--capi` misst durch die C-Schnittstelle (aruco/capi.h) statt geradewegs durch
+// aruco::detect_markers. Dieselben Szenen, dieselbe Grundwahrheit, dieselbe
+// Toleranz - und damit ist die Grenze, an der Android andockt, keine Behauptung
+// mehr, sondern eine gemessene Strecke. Ohne diesen Schalter waere die C-Schicht
+// die einzige Stelle im Kern, die kein Pruefstand je ausfuehrt.
 //
 // `--ecken` haengt hinter jede Szene eine Zeile je Ecke mit der vollen
 // double-Genauigkeit (%.17g, also verlustfrei zurueckzulesen). Die gerundeten
@@ -31,6 +37,7 @@
 #include <string>
 #include <vector>
 
+#include "aruco/capi.h"
 #include "aruco/detect.hpp"
 
 namespace {
@@ -122,7 +129,7 @@ std::vector<std::uint8_t> read_raw(const std::string& path, std::size_t expected
 /// `mode` benennt den Durchlauf in der Ecken-Ausgabe ("clahe" oder "grau"); ist
 /// er leer, unterbleibt sie.
 double check(const SceneFixture& scene, const std::string& directory, bool enhance_contrast,
-             bool& ok, const char* mode = nullptr) {
+             bool& ok, const char* mode, bool through_capi) {
     const std::size_t expected =
         static_cast<std::size_t>(scene.width) * scene.height * scene.channels;
     const std::vector<std::uint8_t> pixels = read_raw(directory + "/" + scene.raw, expected);
@@ -134,7 +141,38 @@ double check(const SceneFixture& scene, const std::string& directory, bool enhan
     image.stride = scene.width * scene.channels;
     image.channels = scene.channels;
 
-    const std::vector<aruco::Marker> markers = aruco::detect_markers(image, enhance_contrast);
+    // Beide Wege fuellen dieselbe Liste. Hinter der C-Schnittstelle steckt genau
+    // dieselbe Funktion - geprueft wird also keine zweite Rechnung, sondern dass
+    // beim Umpacken nichts verlorengeht. Genau das kann schiefgehen: ein
+    // vertauschtes Eckenpaar in capi.cpp saehe in jeder Einzelzahl richtig aus
+    // und verzoege trotzdem jede Homographie, die darauf aufbaut.
+    std::vector<aruco::Marker> markers;
+    if (through_capi) {
+        const std::int32_t capacity = aruco_dictionary_size();
+        if (capacity < 0) {
+            throw std::runtime_error("aruco_dictionary_size() fehlgeschlagen");
+        }
+        std::vector<aruco_marker> found(static_cast<std::size_t>(capacity));
+        char error[512] = {0};
+        const std::int32_t count = aruco_detect_markers(
+            image.data, image.width, image.height, image.stride, image.channels,
+            enhance_contrast ? 1 : 0, found.data(), capacity, error,
+            static_cast<std::int32_t>(sizeof(error)));
+        if (count < 0) {
+            throw std::runtime_error(std::string("aruco_detect_markers: ") + error);
+        }
+        for (std::int32_t index = 0; index < count; ++index) {
+            aruco::Marker marker;
+            marker.id = found[index].id;
+            for (int corner = 0; corner < 4; ++corner) {
+                marker.corners[corner][0] = found[index].corners[corner * 2];
+                marker.corners[corner][1] = found[index].corners[corner * 2 + 1];
+            }
+            markers.push_back(marker);
+        }
+    } else {
+        markers = aruco::detect_markers(image, enhance_contrast);
+    }
 
     if (markers.size() != scene.corners.size()) {
         std::printf("  [x] %zu Marker gefunden, %zu erwartet\n", markers.size(),
@@ -191,17 +229,23 @@ double check(const SceneFixture& scene, const std::string& directory, bool enhan
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) {
-        std::fprintf(stderr, "Aufruf: aruco_conformance <pfad/zu/fixtures.txt> [--ecken]\n");
+    if (argc < 2) {
+        std::fprintf(stderr,
+                     "Aufruf: aruco_conformance <pfad/zu/fixtures.txt> [--ecken] [--capi]\n");
         return 2;
     }
     bool dump_corners = false;
-    if (argc == 3) {
-        if (std::string(argv[2]) != "--ecken") {
-            std::fprintf(stderr, "Unbekannter Schalter: %s\n", argv[2]);
+    bool through_capi = false;
+    for (int index = 2; index < argc; ++index) {
+        const std::string flag = argv[index];
+        if (flag == "--ecken") {
+            dump_corners = true;
+        } else if (flag == "--capi") {
+            through_capi = true;
+        } else {
+            std::fprintf(stderr, "Unbekannter Schalter: %s\n", argv[index]);
             return 2;
         }
-        dump_corners = true;
     }
 
     const std::string manifest = argv[1];
@@ -213,15 +257,16 @@ int main(int argc, char** argv) {
             std::printf("Szene %s (%dx%d, %d Kanaele)\n", scene.name.c_str(), scene.width,
                         scene.height, scene.channels);
 
-            std::printf("  CLAHE + Subpixel:\n");
-            check(scene, directory, true, ok, dump_corners ? "clahe" : nullptr);
+            std::printf("  CLAHE + Subpixel%s:\n",
+                        through_capi ? " (durch die C-Schnittstelle)" : "");
+            check(scene, directory, true, ok, dump_corners ? "clahe" : nullptr, through_capi);
 
             // Zweiter Lauf nur zur Anschauung: er belegt, dass CLAHE wirklich
             // greift. Waeren beide Zeilen gleich, liefe der Schalter ins Leere.
             // Gewertet wird er nicht - Python misst mit CLAHE (Vorgabe true).
             bool ignored = true;
             std::printf("  Nur Graustufen (nicht gewertet):\n");
-            check(scene, directory, false, ignored, dump_corners ? "grau" : nullptr);
+            check(scene, directory, false, ignored, dump_corners ? "grau" : nullptr, through_capi);
             std::printf("\n");
         }
 
