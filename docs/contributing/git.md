@@ -286,12 +286,23 @@ lokale Branch ist danach Geschichte und wird nicht weiterverwendet.
 **Eine Fassung, von `develop` nach `master`:**
 
 ```powershell
-gh pr create --base master --head develop --title "release: 0.1.0-alpha — …"
-gh pr merge --squash                      # OHNE --delete-branch!
+# Ein Zweig, der VON master abzweigt und den Baum von develop traegt.
+git fetch origin
+git checkout -b release/0.1.1-alpha origin/master
+git rm -rq --ignore-unmatch .          # alles weg ...
+git checkout origin/develop -- .       # ... und durch develops Baum ersetzen
+git commit -m "release: 0.1.1-alpha — …"
+git diff --stat origin/develop         # MUSS leer sein
+git push -u origin release/0.1.1-alpha
+
+gh pr create --base master --head release/0.1.1-alpha --title "release: 0.1.1-alpha — …"
+gh pr merge --squash --delete-branch
 ```
 
-`--delete-branch` wäre hier ein Fehler: `develop` ist kein Feature-Branch, sondern bleibt
-stehen.
+**Warum nicht `--head develop`?** Weil das ab der zweiten Fassung nicht mehr geht — der
+nächste Abschnitt sagt, warum. Die Zeile `git diff --stat origin/develop` ist die
+Prüfung, die das Verfahren trägt: sie muss **leer** sein. Ist sie es, hat `master` danach
+Zeichen für Zeichen den Baum von `develop`, und das ist der ganze Zweck der zweiten Stufe.
 
 **Danach passiert nichts mehr.** `develop` wird *nicht* auf `master` eingeholt — und das
 ist der Punkt, an dem eine frühere Fassung dieses Abschnitts falsch lag. Sie schrieb
@@ -312,28 +323,44 @@ remote:   Found 1 violation:
 deckungsgleich; verschieden ist nur, wie sie dorthin gekommen sind. Genau das war der
 Zweck der zweiten Stufe.
 
-### Der Preis dafür: der Release-PR zeigt zu viel
+### Warum der Release-Zweig sein muss: ab der zweiten Fassung kollidiert `develop`
 
-Weil der Squash-Commit auf `master` kein Vorfahr von `develop` ist, bleibt der
-gemeinsame Vorfahr der beiden Zweige stehen, wo er war. **Der zweite Release-PR listet
-deshalb wieder alles seit dem Abzweigpunkt** — auch, was längst ausgeliefert ist.
+Weil der Squash-Commit auf `master` **kein Vorfahr** von `develop` ist, bleibt der
+gemeinsame Vorfahr der beiden Zweige stehen, wo er war. In der Drei-Wege-Verschmelzung
+sieht Git deshalb **beide Seiten dieselben Dateien seither ändern** — `master` durch den
+Squash, `develop` durch die Commits, aus denen der Squash entstand — und ruft einen
+Konflikt aus, obwohl niemand widersprüchlich gearbeitet hat.
 
-Ebenfalls am 08.09.2026 durchgespielt, zwei Fassungen auf Wegwerf-Zweigen:
+Am 08.09.2026 beim Ausliefern von `0.1.1-alpha` eingetreten. `gh pr merge` wies ab, und
+`git merge-tree origin/develop origin/master` nannte den Grund:
 
-| | Fassung 1 | Fassung 2 |
-|---|---|---|
-| tatsächlich neu | `A`, `B` | `C` |
-| was der PR listete | `A`, `B` | `A`, `B`, **`C`** |
-| Baum nach dem Merge | stimmt | stimmt |
+```
+CONFLICT (content): Merge conflict in CHANGELOG.md
+CONFLICT (add/add): Merge conflict in android/app/build.gradle.kts
+```
+
+Zwei Sorten, und beide treffen **jedes** Release ab dem zweiten:
+
+| | |
+|---|---|
+| `add/add` | Jede Datei, die seit dem gemeinsamen Vorfahren **neu** dazugekommen ist. Für den Vorfahren gibt es sie nicht, also haben beide Seiten sie *angelegt* — mit verschiedenem Inhalt, weil `develop` sie inzwischen weiterentwickelt hat. |
+| `content` | `CHANGELOG.md`, immer. Jede Fassung fügt ihren Eintrag **an derselben Stelle** ein, direkt unter dem Kopf. |
+
+**Der erste Release merkt davon nichts** — da war der Squash-Commit selbst noch nicht da.
+Deshalb stand hier bis 0.1.1-alpha ein Verfahren, das genau einmal funktioniert hat.
+
+Der Release-Zweig umgeht das, weil er **von `master` abzweigt**: er verschmilzt nichts,
+er setzt den Baum. `git diff --stat origin/develop` ist danach leer, und das ist der
+einzige Beleg, auf den es ankommt.
 
 **Der Inhalt stimmt immer.** Was eine Fassung *enthält*, sagt `CHANGELOG.md` — nicht die
-Commit-Liste des Release-PRs. Wer sie für eine Inhaltsangabe hält, kündigt beim zweiten
-Mal Dinge an, die seit Wochen ausgeliefert sind.
+Commit-Liste des Release-PRs.
 
 Der Ausweg wäre, `required_linear_history` für `develop` abzuschalten; dann ginge der
-Merge zurück, und der gemeinsame Vorfahr wanderte mit. Das ist **nicht** getan: eine
-Schutzeinstellung wird nicht wegen einer Anzeige gelockert, und der Ersatz kostet nichts
-als das Wissen aus diesem Abschnitt.
+Merge zurück, der gemeinsame Vorfahr wanderte mit, und `--head develop` funktionierte
+wieder. Das ist **nicht** getan: eine Schutzeinstellung wird nicht gelockert, um vier
+Zeilen `git` zu sparen — und die vier Zeilen haben eine Prüfung, die der Merge nicht hat
+(`git diff --stat origin/develop` ist leer oder es stimmt etwas nicht).
 
 ### Wenn der Schutz einmal im Weg steht
 
