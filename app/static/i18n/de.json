@@ -176,7 +176,8 @@
     },
     "footer": {
       "claim": "Made with Bischof Snowboards Software",
-      "logo_alt": "Bischof Snowboards"
+      "logo_alt": "Bischof Snowboards",
+      "device_page": "Auf diesem Gerät"
     },
     "common": {
       "empty": "–",
