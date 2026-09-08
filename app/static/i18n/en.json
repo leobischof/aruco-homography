@@ -69,6 +69,8 @@
         "title": "Crop",
         "hint": "Grab the rectangle by a corner or an edge, or drag it to move it. The shaded area is the marker hull – anything well outside it is extrapolated and therefore uncertain.",
         "preview_alt": "Rectified preview",
+        "reset_label": "Reset crop",
+        "reset_hint": "The rectangle back to the proposal it started with.",
         "x0_label": "x0 (mm)",
         "y0_label": "y0 (mm)",
         "x1_label": "x1 (mm)",
