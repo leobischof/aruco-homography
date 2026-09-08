@@ -4,6 +4,83 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.1-alpha] – 2026-09-08
+
+**Die erste Fassung, die ein echtes Telefon hinter sich hat.** `0.1.0-alpha` lief auf
+einem Xiaomi 2312DRA50G mit Android 15 — und der Lauf hat beides getan, was ein erster
+Lauf tun kann: er hat den Prüfstand bestanden und zwei Fehler gefunden, die auf einem
+Rechner ohne Android gar nicht auftreten konnten.
+
+### Was das Gerät gemessen hat
+
+| | |
+|---|---|
+| **Prüfstand** | **BESTANDEN.** `flat` 0,2337 px in 83 ms, `thick` 0,2337 px in 84 ms, je 4/4 Marker, Toleranz 0,7500 px |
+| Die beiden SHA-256 der Prüfszenen | **genau die vorhergesagten** — `da8c60f0…` und `c3695fe4…` |
+| Umgebung | Android 15 (API 35), System-WebView 152.0.7977.64, `arm64-v8a`, Seitengröße 4096 B |
+
+**Die beiden Prüfsummen sind der eigentliche Fund.** Sie sagen, dass Androids PNG-Dekoder
+**dieselben Pixel** geliefert hat wie `cv2` auf dem Bau-Rechner — und erst dadurch ist der
+gleiche Eckfehler eine Aussage über den *Detektor* und nicht über das *Laden*. Damit ist
+der Satz „Android ist ungemessen", der in `0.1.0-alpha` noch unter *Was NICHT belegt ist*
+stand, eingelöst.
+
+### Behoben
+
+- **Der Export brach auf dem Telefon ab** — `Error invoking core: Java exception was raised
+  during method invocation`, ein Satz von Chromium, der keinen Grund nennt. Dahinter lag
+  ein `OutOfMemoryError` beim Anlegen des Ausgaberasters: der Vorgabeausschnitt ergab bei
+  300 dpi rund **169 Megapixel**, also 506 MB, und der Export hält zwei davon gleichzeitig.
+  Zwei Fehler machten sich dabei gegenseitig unsichtbar — `WebBridge` fing `Exception`,
+  aber ein `OutOfMemoryError` ist ein `Error`; und die Obergrenze war eine Aussage über das
+  **Format** (300 MPx, überall gleich) statt über die **Maschine**. Jetzt meldet Android
+  seinen wirklich verfügbaren Speicher an die Seite, die kleinere der beiden Zahlen gilt,
+  und der Abbruch kommt als übersetzte Meldung mit einem Vorschlag, der auch wirklich passt.
+- **Die Oberfläche lag unter Statusleiste und Navigationsleiste.** Android 15 erzwingt für
+  jede App mit `targetSdk 35`, dass sie bis an die Bildschirmkanten zeichnet; wer seinen
+  Inhalt dann nicht selbst einrückt, legt die Kopfzeile unter die Uhr und den Fuß hinter die
+  Navigationsleiste. Vier CSS-Variablen tragen den sicheren Bereich, gefüllt aus `env()` im
+  Browser und aus `WindowInsetsCompat` auf Android — `env()` allein reicht dort nicht, es
+  kennt nur die Kamera-Aussparung, nicht die Leisten.
+
+### Hinzugefügt
+
+- **Ein Release-APK.** Bis hierher trug das einzige APK den Schlüssel, den jedes
+  Android-SDK jedem Rechner mitgibt (`CN=Android Debug`) — installierbar, startbar, und
+  eben deshalb fiel nicht auf, dass es kein Auslieferungsstand ist. `./dev.ps1
+  build-apk-release` signiert mit einem eigenen Schlüssel, der **außerhalb des Repos** liegt
+  und beim ersten Bau angelegt wird; `check-apk-release` weist ein versehentlich
+  debug-signiertes APK ab, statt der Bauart zu glauben. Diese Fassung liegt in beiden
+  Ausführungen bei.
+- **`versionCode` steht jetzt in der Datei.** Er wird aus `APP_VERSION` abgeleitet
+  (`0.1.1` → `101`). Bis hierher stand dort Gradles Vorgabe `1`, für jede Fassung dieselbe:
+  `versionName` ist Text und interessiert Android nicht, `versionCode` ist die Zahl, an der
+  es entscheidet, ob etwas eine Aktualisierung ist.
+- **Sechs Prüfungen für die Speichergrenze** (`web/vision/budget.test.mjs`). Bei einem
+  Budget von 40 MPx wird derselbe Export mit `limit_mpx: 40` und `megapixels: 169`
+  abgewiesen, bei 300 MPx geht er durch — Windows und Browser bleiben unberührt.
+
+### Was NICHT belegt ist
+
+- **Keine der beiden Behebungen ist auf einem Gerät nachgesehen.** Der Speicherabbruch ist
+  in seiner JavaScript-Hälfte geprüft, der sichere Bereich in seiner Wirkung auf CSS — beide
+  in einem Chromium auf Windows, mit von Hand gesetzten Zahlen statt gemessenen.
+- **Ob das Release-APK auf einem Gerät startet.** Gelaufen ist bisher nur das Debug-APK.
+  Der Inhalt ist derselbe, aber das ist ein Vergleich am Zip, kein Startversuch.
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig
+  belegt.** Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt, ist
+  ein Gegenstand *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem Ausdruck
+  nachgemessen. Der Prüfstand sagt: *Android rechnet dasselbe wie Python.* Ob **Python** die
+  Wahrheit rechnet, sagt er nicht.
+
+Deshalb bleibt `alpha` im Namen.
+
+### Ein Hinweis zum Installieren
+
+Über ein installiertes Debug-APK lässt sich das Release-APK **nicht** installieren: Android
+vergleicht die Signaturen und weist die Aktualisierung ab. Erst deinstallieren, dann
+installieren. Wer bei der Debug-Ausführung bleibt, aktualisiert wie gewohnt.
+
 ## [0.1.0-alpha] – 2026-09-08
 
 **Dieselbe Messtechnik rechnet jetzt auf drei Zielen: Windows, Android und im Browser.**
