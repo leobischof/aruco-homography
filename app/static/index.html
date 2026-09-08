@@ -239,15 +239,34 @@
        das im Schritt darunter zugeschnitten wird, und beide sollen gleichzeitig
        zu sehen sein. -->
   <section class="step" id="step-adjust" hidden>
-    <h2><span class="step-num" aria-hidden="true">4</span>
-      <span data-i18n="ui.adjust.title"></span></h2>
-    <div class="adjust-grid" id="adjust-controls"></div>
-    <div class="step-actions">
-      <button type="button" class="btn btn-secondary" id="adjust-reset"
-              data-i18n="ui.adjust.reset_label"
-              data-i18n-attr="title:ui.adjust.reset_hint"></button>
-      <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
-    </div>
+    <!--
+      ZUGEKLAPPT als Vorgabe. Elf Regler sind der laengste Abschnitt der Seite,
+      und die meisten Fotos brauchen keinen einzigen davon - wer sie nicht will,
+      soll nicht an ihnen vorbeiscrollen muessen.
+
+      <details> und kein selbstgebautes Aufklappen: Tastatur, Vorlesen
+      ("eingeklappt"/"ausgeklappt") und das Suchen im Text bringt der Browser
+      mit. Nachgebaut waere das eine Menge aria-expanded, die irgendwann nicht
+      mehr stimmt.
+
+      Der Fehlerplatz steht ABSICHTLICH ausserhalb: eine Meldung hinter einem
+      zugeklappten Winkel ist keine Meldung.
+    -->
+    <details class="step-fold" id="adjust-fold">
+      <summary class="step-fold-summary">
+        <h2><span class="step-num" aria-hidden="true">4</span>
+          <span data-i18n="ui.adjust.title"></span></h2>
+      </summary>
+      <div class="step-fold-body">
+        <div class="adjust-grid" id="adjust-controls"></div>
+        <div class="step-actions">
+          <button type="button" class="btn btn-secondary" id="adjust-reset"
+                  data-i18n="ui.adjust.reset_label"
+                  data-i18n-attr="title:ui.adjust.reset_hint"></button>
+          <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
+        </div>
+      </div>
+    </details>
     <div class="notice-slot" id="adjust-error" role="alert"></div>
   </section>
 
