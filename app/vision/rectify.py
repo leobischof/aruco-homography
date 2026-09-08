@@ -15,15 +15,26 @@ import numpy as np
 from app import config
 from app.i18n import Phrase
 from app.notices import AppError
+from app.vision import backend
 from app.vision.extent import Extent
+
+
+def _output_size_python(
+    x0: float, y0: float, x1: float, y1: float, px_per_mm: float
+) -> tuple[int, int]:
+    """Rastergroesse in Pixeln fuer einen Zuschnitt bei gegebener Aufloesung."""
+    return (
+        max(1, int(round((x1 - x0) * px_per_mm))),
+        max(1, int(round((y1 - y0) * px_per_mm))),
+    )
+
+
+_output_size = backend.implementation("output_size", _output_size_python)
 
 
 def output_size(crop: Extent, px_per_mm: float) -> tuple[int, int]:
     """Rastergroesse in Pixeln fuer einen Zuschnitt bei gegebener Aufloesung."""
-    return (
-        max(1, int(round(crop.width * px_per_mm))),
-        max(1, int(round(crop.height * px_per_mm))),
-    )
+    return _output_size(crop.x0, crop.y0, crop.x1, crop.y1, px_per_mm)
 
 
 def px_per_mm_for_dpi(dpi: float) -> float:
@@ -64,16 +75,19 @@ def _megapixels(crop: Extent, dpi: int) -> float:
     return width * height / 1e6
 
 
-def rectify(
+def _rectify_python(
     image_bgr: np.ndarray,
     homography: np.ndarray,
-    crop: Extent,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
     px_per_mm: float,
-    source_px_per_mm: float | None = None,
+    source_px_per_mm: float = 0.0,
 ) -> np.ndarray:
     """Entzerrt den Zuschnitt in ein Raster mit exakt px_per_mm Pixeln je Millimeter."""
-    width, height = output_size(crop, px_per_mm)
-    scale_matrix = _output_to_plane(crop, px_per_mm)
+    width, height = _output_size_python(x0, y0, x1, y1, px_per_mm)
+    scale_matrix = _output_to_plane(x0, y0, px_per_mm)
     total = np.asarray(homography, dtype=np.float64) @ scale_matrix
 
     interpolation = _interpolation_for(px_per_mm, source_px_per_mm)
@@ -87,21 +101,50 @@ def rectify(
     )
 
 
-def _output_to_plane(crop: Extent, px_per_mm: float) -> np.ndarray:
+_rectify = backend.implementation("rectify", _rectify_python)
+
+
+def rectify(
+    image_bgr: np.ndarray,
+    homography: np.ndarray,
+    crop: Extent,
+    px_per_mm: float,
+    source_px_per_mm: float | None = None,
+) -> np.ndarray:
+    """Entzerrt den Zuschnitt in ein Raster mit exakt px_per_mm Pixeln je Millimeter.
+
+    `source_px_per_mm` ist None, solange niemand die Quellaufloesung kennt. An
+    der Grenze zum Kern wird daraus 0.0: eine sprachneutrale Schnittstelle kennt
+    kein None, und "unbekannt" und "null" bedeuten hier dasselbe - beides waehlt
+    Lanczos.
+    """
+    return _rectify(
+        image_bgr,
+        homography,
+        crop.x0,
+        crop.y0,
+        crop.x1,
+        crop.y1,
+        px_per_mm,
+        0.0 if source_px_per_mm is None else float(source_px_per_mm),
+    )
+
+
+def _output_to_plane(x0: float, y0: float, px_per_mm: float) -> np.ndarray:
     """Ausgabepixel -> Ebenen-mm, mit Pixelmitten-Versatz (siehe Modulkommentar)."""
     step = 1.0 / px_per_mm
     return np.array(
         [
-            [step, 0.0, crop.x0 + step / 2.0],
-            [0.0, step, crop.y0 + step / 2.0],
+            [step, 0.0, x0 + step / 2.0],
+            [0.0, step, y0 + step / 2.0],
             [0.0, 0.0, 1.0],
         ]
     )
 
 
-def _interpolation_for(px_per_mm: float, source_px_per_mm: float | None) -> int:
+def _interpolation_for(px_per_mm: float, source_px_per_mm: float) -> int:
     """INTER_AREA beim Verkleinern (vermeidet Aliasing), sonst Lanczos."""
-    if source_px_per_mm and px_per_mm < 0.9 * source_px_per_mm:
+    if source_px_per_mm > 0.0 and px_per_mm < 0.9 * source_px_per_mm:
         return cv2.INTER_AREA
     return cv2.INTER_LANCZOS4
 

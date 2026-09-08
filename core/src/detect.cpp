@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -21,6 +20,7 @@
 #include <opencv2/objdetect/aruco_detector.hpp>
 
 #include "dictionary.hpp"
+#include "image_bridge.hpp"
 
 namespace aruco {
 namespace {
@@ -48,34 +48,6 @@ cv::aruco::ArucoDetector build_detector() {
     params.minMarkerPerimeterRate = 0.01;
 
     return cv::aruco::ArucoDetector(configured_dictionary(), params);
-}
-
-/// Die ImageView als cv::Mat lesen, ohne sie zu kopieren.
-cv::Mat as_mat(const ImageView& image) {
-    if (image.data == nullptr) {
-        throw std::invalid_argument("ImageView ohne Daten");
-    }
-    if (image.width <= 0 || image.height <= 0) {
-        throw std::invalid_argument("ImageView ohne Flaeche");
-    }
-    if (image.channels != 1 && image.channels != 3) {
-        throw std::invalid_argument("ImageView: nur 1 (grau) oder 3 (BGR) Kanaele");
-    }
-    if (image.stride < image.width * image.channels) {
-        throw std::invalid_argument("ImageView: Schrittweite kleiner als eine Zeile");
-    }
-
-    // const_cast, weil cv::Mat keinen lesenden Konstruktor hat. Geschrieben wird
-    // in diesen Puffer nie: cvtColor und CLAHE bekommen beide ein eigenes Ziel.
-    //
-    // CV_8UC1/CV_8UC3 als MAKRO, nie als Zahl. Die Werte haben sich zwischen
-    // OpenCV 4 und 5 geaendert (CV_8UC3: 16 -> 64, CV_32FC2: 13 -> 37; hier
-    // nachgemessen an 5.0.0). Das Speicherbild ist dasselbe geblieben, nur die
-    // Konstante nicht - eine abgetippte 16 naehme in einem Bau gegen ein anderes
-    // OpenCV lautlos den falschen Zweig. Und "lautlos" ist die teure Sorte,
-    // denn Stufe 4 uebersetzt genau diesen Quelltext gegen NDK und Emscripten.
-    return cv::Mat(image.height, image.width, image.channels == 1 ? CV_8UC1 : CV_8UC3,
-                   const_cast<std::uint8_t*>(image.data), static_cast<std::size_t>(image.stride));
 }
 
 }  // namespace

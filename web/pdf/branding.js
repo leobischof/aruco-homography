@@ -17,7 +17,7 @@
  */
 
 import { LOGO_OPS, LOGO_VIEWBOX } from "./assets/logo.js";
-import * as constants from "./constants.js";
+import * as constants from "../constants.js";
 import { HELVETICA, HELVETICA_BOLD, colorFromHex } from "./draw.js";
 
 export const CLAIM_PT = 5.6;

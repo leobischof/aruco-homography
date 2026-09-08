@@ -66,7 +66,10 @@ class DetectedMarker:
 
     @property
     def image_area_px(self) -> float:
-        return float(cv2.contourArea(self.corners_px.astype(np.float32)))
+        # Auch das durch den Umschalter: die Flaeche entscheidet, welcher Marker
+        # im Frei-Modus der Anker wird und welcher bei doppelter ID gewinnt. Eine
+        # andere Reihenfolge waere ein anderer Startwert.
+        return float(_quad_area(self.corners_px))
 
 
 def load_photo(data: bytes) -> Photo:
@@ -135,6 +138,14 @@ def build_detector() -> cv2.aruco.ArucoDetector:
     params.minMarkerPerimeterRate = 0.01
 
     return cv2.aruco.ArucoDetector(dictionary, params)
+
+
+def _quad_area_python(quad: np.ndarray) -> float:
+    """Bildflaeche eines Markervierecks (contourArea auf float32-Ecken)."""
+    return float(cv2.contourArea(np.asarray(quad, dtype=np.float32)))
+
+
+_quad_area = backend.implementation("quad_area", _quad_area_python)
 
 
 def _detect_markers_python(

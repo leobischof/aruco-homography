@@ -19,7 +19,7 @@
 
 import de from "../../app/static/i18n/de.json" with { type: "json" };
 import en from "../../app/static/i18n/en.json" with { type: "json" };
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./constants.js";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "../constants.js";
 
 // Nur `{name}` wird ersetzt. Unbekannte Namen bleiben woertlich stehen - sichtbar,
 // aber harmlos; ein Absturz mitten im Fehlertext waere das schlechtere Ergebnis.

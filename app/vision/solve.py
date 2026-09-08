@@ -21,6 +21,7 @@ from scipy.optimize import least_squares
 
 from app import config
 from app.notices import AppError, NoticeList
+from app.vision import backend
 from app.vision.detect import DetectedMarker
 from app.vision.geometry import convex_hull, local_px_per_mm, polygon_area, project
 
@@ -134,42 +135,45 @@ def _solve_sheet(
 
     if len(usable) == 1:
         # Vier Punkte: exakt bestimmt, LMEDS braucht mehr. Kein Ausgleich moeglich.
-        homography = cv2.getPerspectiveTransform(
-            plane_pts.astype(np.float32), image_pts.astype(np.float32)
-        )
+        homography = _homography_from_quad(plane_pts, image_pts)
     else:
-        homography, _ = cv2.findHomography(plane_pts, image_pts, method=cv2.LMEDS)
-        if homography is None:
-            raise AppError("homography_failed")
+        try:
+            homography = _homography_lmeds(plane_pts, image_pts)
+        except RuntimeError as error:  # der Kern findet keine - siehe unten
+            raise AppError("homography_failed") from error
 
     return _refine_homography(homography, plane_pts, image_pts), plane_by_id
 
 
-def _solve_free(
-    markers: list[DetectedMarker], marker_mm: float
-) -> tuple[np.ndarray, dict[int, np.ndarray]]:
-    ordered = sorted(markers, key=lambda m: m.image_area_px, reverse=True)
-    anchor, others = ordered[0], ordered[1:]
-    image_pts = np.vstack([m.corners_px for m in ordered])
+def _fit_free_python(quads: np.ndarray, marker_mm: float) -> tuple[np.ndarray, np.ndarray]:
+    """Homographie UND Markerversaetze gemeinsam schaetzen.
+
+    `quads` ist (M,4,2) und ABSTEIGEND nach Bildflaeche sortiert - der erste
+    Marker ist der Anker. Sortiert wird beim Aufrufer, weil nur der die
+    Marker-IDs kennt, die hinterher wieder zugeordnet werden muessen; die Grenze
+    zum Rechenkern kennt keine IDs, sondern nur Ecken.
+    """
+    quads = np.asarray(quads, dtype=np.float64).reshape(-1, 4, 2)
+    image_pts = quads.reshape(-1, 2)
 
     # Startwert: der groesste Marker definiert Ursprung und Massstab der Ebene.
     anchor_plane = _UNIT_CORNERS * marker_mm
     homography = cv2.getPerspectiveTransform(
-        anchor_plane.astype(np.float32), anchor.corners_px.astype(np.float32)
+        anchor_plane.astype(np.float32), quads[0].astype(np.float32)
     )
 
     inverse = np.linalg.inv(homography)
     offsets = []
-    for marker in others:
-        plane_quad = project(inverse, marker.corners_px)
+    for quad in quads[1:]:
+        plane_quad = project(inverse, quad)
         offsets.append(plane_quad.mean(axis=0) - marker_mm / 2.0)
     offsets_array = np.array(offsets).reshape(-1, 2) if offsets else np.zeros((0, 2))
 
     def plane_points(offset_values: np.ndarray) -> np.ndarray:
-        quads = [anchor_plane]
+        parts = [anchor_plane]
         for offset in offset_values.reshape(-1, 2):
-            quads.append(_UNIT_CORNERS * marker_mm + offset)
-        return np.vstack(quads)
+            parts.append(_UNIT_CORNERS * marker_mm + offset)
+        return np.vstack(parts)
 
     def residual(params: np.ndarray) -> np.ndarray:
         matrix = np.append(params[:8], 1.0).reshape(3, 3)
@@ -178,16 +182,49 @@ def _solve_free(
     start = np.concatenate([_as_eight(homography), offsets_array.ravel()])
     fitted = least_squares(residual, start, method="trf", xtol=1e-14, ftol=1e-14, gtol=1e-14)
 
-    solved = np.append(fitted.x[:8], 1.0).reshape(3, 3)
-    final_offsets = fitted.x[8:].reshape(-1, 2)
+    return np.append(fitted.x[:8], 1.0).reshape(3, 3), fitted.x[8:].reshape(-1, 2)
 
+
+_fit_free = backend.implementation("fit_free", _fit_free_python)
+
+
+def _solve_free(
+    markers: list[DetectedMarker], marker_mm: float
+) -> tuple[np.ndarray, dict[int, np.ndarray]]:
+    ordered = sorted(markers, key=lambda m: m.image_area_px, reverse=True)
+    anchor, others = ordered[0], ordered[1:]
+
+    solved, final_offsets = _fit_free(np.stack([m.corners_px for m in ordered]), marker_mm)
+
+    anchor_plane = _UNIT_CORNERS * marker_mm
     plane_by_id = {anchor.marker_id: anchor_plane}
-    for marker, offset in zip(others, final_offsets):
+    for marker, offset in zip(others, np.asarray(final_offsets).reshape(-1, 2)):
         plane_by_id[marker.marker_id] = _UNIT_CORNERS * marker_mm + offset
-    return solved, plane_by_id
+    return np.asarray(solved, dtype=np.float64), plane_by_id
 
 
-def _refine_homography(
+def _homography_from_quad_python(plane: np.ndarray, image: np.ndarray) -> np.ndarray:
+    """Homographie aus GENAU vier Punktpaaren - exakt bestimmt, kein Ausgleich."""
+    return cv2.getPerspectiveTransform(
+        np.asarray(plane, dtype=np.float32), np.asarray(image, dtype=np.float32)
+    )
+
+
+def _homography_lmeds_python(plane: np.ndarray, image: np.ndarray) -> np.ndarray:
+    """Homographie aus vielen Punktpaaren, robust (LMEDS).
+
+    Wirft RuntimeError, statt None zurueckzugeben: eine sprachneutrale Grenze
+    kennt kein None, und der C++-Kern kann nur werfen. Welcher Fehlercode daraus
+    wird, entscheidet der Aufrufer - der Kern kennt keine Fehlertexte
+    (Invariante 7).
+    """
+    homography, _ = cv2.findHomography(plane, image, method=cv2.LMEDS)
+    if homography is None:
+        raise RuntimeError("homography_failed")
+    return homography
+
+
+def _refine_homography_python(
     homography: np.ndarray, plane_pts: np.ndarray, image_pts: np.ndarray
 ) -> np.ndarray:
     """Nichtlinearer Ausgleich des Reprojektionsfehlers ueber die 8 freien Parameter."""
@@ -200,6 +237,16 @@ def _refine_homography(
         residual, _as_eight(homography), method="trf", xtol=1e-14, ftol=1e-14, gtol=1e-14
     )
     return np.append(fitted.x, 1.0).reshape(3, 3)
+
+
+# Hier entstehen die Millimeter. Deshalb stehen genau diese drei hinter dem
+# Umschalter: ARUCO_CORE=cpp faehrt dieselbe Testsuite gegen die C++-Fassung,
+# und ein Auseinanderlaufen faellt am selben Tag auf, an dem es entsteht.
+_homography_from_quad = backend.implementation(
+    "homography_from_quad", _homography_from_quad_python
+)
+_homography_lmeds = backend.implementation("homography_lmeds", _homography_lmeds_python)
+_refine_homography = backend.implementation("refine_homography", _refine_homography_python)
 
 
 def _as_eight(homography: np.ndarray) -> np.ndarray:

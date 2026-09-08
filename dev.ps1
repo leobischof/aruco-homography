@@ -493,6 +493,39 @@ function Invoke-BuildCoreAndroid {
     Write-Warn 'Ungeprueft: auf diesem Rechner laeuft kein Android. Der Bau bindet, gemessen ist er nicht.'
 }
 
+# --- Browser-Bau -------------------------------------------------------------
+# Der dritte Auslieferungsweg: dieselbe Oberflaeche, aber ohne Server. Gerechnet
+# wird im Browser - der C++-Kern als WebAssembly, das PDF aus web/pdf/.
+#
+# Zwei Schritte, weil sie verschieden lange dauern: build-core-wasm baut das
+# wasm (rund eine Minute) und wird selten gebraucht; build-web stellt nur die
+# Seite zusammen (Sekunden) und wird bei jeder Aenderung an web/vision/ oder
+# app/static/ gebraucht.
+function Invoke-BuildWeb {
+    Confirm-Deps
+    Write-Step 'Assembling the browser build'
+    Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') --dist @Rest }
+    Write-Ok "Fertig: $(Join-Path $RepoRoot 'dist\web')"
+}
+
+# Ein reiner Dateiserver - KEINE Anwendung. Das ist der Punkt: der Browser-Bau
+# braucht nichts weiter als jemanden, der Dateien ausliefert, und genau das soll
+# man hier sehen koennen. Ausgeliefert wird der Quellbaum und nicht dist/web,
+# damit eine Aenderung an web/vision/ nach einem Neuladen wirkt.
+function Invoke-StartWeb {
+    Confirm-Deps
+    $port = if ($Rest.Count -gt 0) { $Rest[0] } else { 8020 }
+
+    Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') }
+
+    Write-Step "Serving the browser build on port $port (static files only)"
+    Write-Host "     http://127.0.0.1:$port/web/index.html" -ForegroundColor DarkGray
+    Write-Host '     Beenden mit Strg+C.' -ForegroundColor DarkGray
+    Invoke-Native -What 'start-web' -Action {
+        & $VenvPython -m http.server $port --bind 127.0.0.1 --directory $RepoRoot
+    }
+}
+
 function Invoke-BuildMarkersheet {
     Confirm-Deps
     Write-Step 'Building the A4 marker sheet PDF'
@@ -645,7 +678,8 @@ function Invoke-KillServers {
         if (-not $cmd) { continue }
         $lower = $cmd.ToLowerInvariant()
         if (-not $lower.Contains($needle)) { continue }
-        if ($lower.Contains('app.main') -or $lower.Contains('aruco-homographie.exe')) {
+        if ($lower.Contains('app.main') -or $lower.Contains('aruco-homographie.exe') -or
+            $lower.Contains('http.server')) {
             Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
             $killed = $killed + 1
         }
@@ -1010,6 +1044,8 @@ function Show-Help {
     Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und die sechs JNI-Symbole'
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
+    Write-Cmd 'build-web'         'Browser-Bau zusammenstellen (web/index.html + dist/web/) - laeuft ohne Server'
+    Write-Cmd 'start-web'         'Den Browser-Bau ausliefern (reiner Dateiserver, Vorgabeport 8020)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (baut den C++-Kern mit; ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
@@ -1035,6 +1071,8 @@ switch ($Command.ToLowerInvariant()) {
     'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
     'build-apk'         { Invoke-BuildApk }
     'check-apk'         { Invoke-CheckApk }
+    'build-web'         { Invoke-BuildWeb }
+    'start-web'         { Invoke-StartWeb }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
     'build-installer'   { Invoke-BuildInstaller }

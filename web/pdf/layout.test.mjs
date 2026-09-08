@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import * as constants from "./constants.js";
+import * as constants from "../constants.js";
 import { AppError } from "./errors.js";
 import { singlePage, stripHeight, tileLayout } from "./layout.js";
 
