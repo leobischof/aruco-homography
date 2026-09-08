@@ -212,6 +212,34 @@ try {
             + `identisch zum Blob: ${bytes.length === exported.blob.size}`);
         window.__probePdfBase64 = delivered.base64;
     }
+
+    // --- Und derselbe Export blattweise ---------------------------------
+    //
+    // Mit unangetasteten Reglern rastert web/vision/pipeline.js BLATT FUER
+    // BLATT statt einmal alles (needsWholeRaster). Das ist der Regelfall - und
+    // bis zu dieser Fassung war genau der hier ungeprueft, weil der Export
+    // oben `local_contrast` setzt und damit immer den anderen Weg nahm.
+    //
+    // Die Blob-Uebergabe wird nicht noch einmal gefahren: sie haengt am Anker
+    // und nicht am Export, und einmal reicht, um sie zu belegen.
+    const sheets = await local.exportPdf({
+        session_id: upload.session_id,
+        crop_mm: crop,
+        dpi: 300,
+        layout: "tiles",
+        page_format: "A4",
+        contour: false,
+        adjust: {},
+        overlays: { scalebar: true, grid: true, footer: true, marks: true },
+        locale: "de",
+    });
+    say(`export blattweise: ${sheets.pages} Seiten, ${sheets.pageSize} mm, `
+        + `${sheets.blob.size} Bytes`);
+    const raw = new Uint8Array(await sheets.blob.arrayBuffer());
+    let binary = "";
+    for (const byte of raw) binary += String.fromCharCode(byte);
+    window.__probeSheetsBase64 = btoa(binary);
+
     done();
 } catch (error) {
     say("AUSNAHME: " + (error && error.stack ? error.stack : JSON.stringify(error)));

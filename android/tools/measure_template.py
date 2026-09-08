@@ -2,7 +2,7 @@
 
 Aufruf (macht ./dev.ps1 check-android-ui):
 
-    python android/tools/measure_template.py <schablone.pdf>
+    python android/tools/measure_template.py <schablone.pdf> [--eigenes-bild-je-seite]
 
 WOZU. `check-android-ui` faehrt die Android-Rechenkette und bekommt am Ende ein
 PDF. Dass dabei eines herauskam, ist noch keine Aussage - ein PDF entsteht auch
@@ -12,6 +12,10 @@ mit falschen Zahlen. Hier wird nachgezaehlt, was auf dem Blatt steht:
   2. Das 50-mm-Raster hat 50-mm-Abstaende, gemessen an den VEKTORLINIEN im PDF
      und nicht an einem gerasterten Bild - eine Rasterung braechte ihre eigene
      Ungenauigkeit mit, und die will hier niemand mitmessen.
+  3. Mit --eigenes-bild-je-seite: jede Seite, die ein Bild traegt, traegt ihr
+     EIGENES. Das ist der Beleg fuer die blattweise Rasterung - teilen sich zwei
+     Seiten ein Bildobjekt, ist ein Raster ueber den ganzen Zuschnitt entstanden,
+     und genau das gibt auf einem Telefon den Speicherfehler vom 08.09.2026.
 
 WAS DIESE MESSUNG NICHT ZEIGT, und das gehoert in jeden Bericht darueber: Raster
 und Seitengroesse zeichnet die PDF-Schicht aus denselben Millimeterzahlen, in
@@ -63,14 +67,46 @@ def lines_of(page: pymupdf.Page) -> tuple[list[float], list[float]]:
     return merge(verticals), merge(horizontals)
 
 
+def eigenes_bild_je_seite(document: pymupdf.Document) -> bool:
+    """True, wenn etwas nicht stimmt - zwei Seiten teilen sich ein Bild.
+
+    Blattweise gerastert bekommt jedes Blatt sein eigenes Bildobjekt. Die
+    Uebersichtsseite traegt keines; ihr Fehlen ist kein Befund.
+    """
+    gesehen: dict[int, int] = {}
+    failed = False
+    for number, page in enumerate(document, start=1):
+        refs = sorted({item[0] for item in page.get_images(full=True)})
+        if not refs:
+            continue
+        geteilt = [ref for ref in refs if ref in gesehen]
+        for ref in geteilt:
+            print(f"  [x] Seite {number} teilt Bild {ref} mit Seite {gesehen[ref]} "
+                  f"- also NICHT blattweise gerastert")
+        if not geteilt:
+            print(f"  Seite {number}: eigenes Bild (xref {refs[0]})  [ok]")
+        failed = failed or bool(geteilt)
+        for ref in refs:
+            gesehen[ref] = number
+    if not gesehen:
+        print("  [x] Keine Seite traegt ein Bild")
+        failed = True
+    return failed
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    flags = {arg for arg in argv[1:] if arg.startswith("--")}
+    names = [arg for arg in argv[1:] if not arg.startswith("--")]
+    if len(names) != 1 or flags - {"--eigenes-bild-je-seite"}:
         print(__doc__, file=sys.stderr)
         return 2
 
-    document = pymupdf.open(Path(argv[1]))
+    document = pymupdf.open(Path(names[0]))
     failed = False
     print(f"{document.page_count} Seiten")
+
+    if "--eigenes-bild-je-seite" in flags:
+        failed = eigenes_bild_je_seite(document) or failed
 
     for number, page in enumerate(document, start=1):
         width = page.rect.width / PT_PER_MM
@@ -104,10 +140,13 @@ def main(argv: list[str]) -> int:
         print(f"  [x] Rasterabstand weicht um {worst:.6f} mm ab")
         return 1
 
+    if failed:
+        print("DURCHGEFALLEN - siehe die mit [x] gezeichneten Zeilen.")
+        return 1
     print(f"BESTANDEN - {measured} Rasterabstaende, alle {GRID_STEP_MM:.0f} mm "
           f"(groesste Abweichung {worst * 1e6:.4f} nm), jede Seite "
           f"{PAGE_MM[0]:.0f} x {PAGE_MM[1]:.0f} mm.")
-    return 1 if failed else 0
+    return 0
 
 
 if __name__ == "__main__":

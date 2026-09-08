@@ -162,6 +162,8 @@
       "subtitle": "Was der native Rechenkern hier kann — und was noch nicht.",
       "native_heading": "Der Rechenkern",
       "native_page_size": "Seitengröße",
+      "native_output_budget": "Speichergrenze",
+      "native_output_budget_missing": "nicht durchgereicht",
       "native_marker_mm": "Markerkante (nominal)",
       "native_dictionary": "Wörterbuch",
       "native_device": "Gerät",
