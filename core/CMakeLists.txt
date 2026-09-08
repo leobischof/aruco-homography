@@ -100,10 +100,12 @@ add_library(aruco_core_lib STATIC
   src/camera.cpp
   src/contour.cpp
   src/detect.cpp
+  src/dictionary.cpp
   src/enhance.cpp
   src/extent.cpp
   src/geometry.cpp
   src/image_bridge.cpp
+  src/markers.cpp
   src/rectify.cpp
   src/solve.cpp
   "${ARUCO_CONSTANTS_HPP}")
@@ -137,6 +139,44 @@ endif()
 if(ARUCO_BUILD_PYTHON)
   pybind11_add_module(aruco_core bindings/python.cpp)
   target_link_libraries(aruco_core PRIVATE aruco_core_lib)
+endif()
+
+# --- Die embind-Bindung fuer den Browser --------------------------------------
+# Das Gegenstueck zum Python-Modul: derselbe Kern, andere Huelle. Sie entsteht
+# nur im Emscripten-Bau - auf Windows und Android gaebe es nichts, wogegen sie
+# binden koennte.
+#
+# `.mjs` und nicht `.js`: mit EXPORT_ES6 verlangt emcc genau diese Endung, und
+# sie ist ausserdem die Antwort auf die Falle, ueber die der Node-Pruefstand
+# gestolpert ist (package.json mit "type": "module" faerbt jede .js darunter
+# ein). Eine .mjs ist in jedem Fall ein ES-Modul - das ist hier keine Not,
+# sondern das, was der Browser ohnehin laden soll.
+if(EMSCRIPTEN)
+  add_executable(aruco_core_web bindings/web.cpp)
+  target_link_libraries(aruco_core_web PRIVATE aruco_core_lib)
+  set_target_properties(aruco_core_web PROPERTIES OUTPUT_NAME "aruco_core" SUFFIX ".mjs")
+
+  target_link_options(aruco_core_web PRIVATE
+    -lembind
+    -O3
+    -sMODULARIZE=1
+    -sEXPORT_ES6=1
+    -sEXPORT_NAME=createArucoCore
+    # _malloc und _free: die Seite legt das Foto selbst in den Haldenspeicher.
+    # Ein Bild durch die JavaScript-Grenze zu reichen waere eine Kopie je Pixel.
+    -sEXPORTED_FUNCTIONS=_malloc,_free
+    -sEXPORTED_RUNTIME_METHODS=HEAPU8
+    # Ein 12-MP-Foto sind 36 MB, das entzerrte Raster kann ein Vielfaches sein.
+    # Der Vorgabespeicher (16 MiB) reicht dafuer nicht einmal fuer die Eingabe.
+    -sALLOW_MEMORY_GROWTH=1
+    # Emscriptens Stapel ist seit 3.1.27 nur 64 KiB gross, native Ziele geben
+    # Megabytes. OpenCVs Aufrufketten sind tief; ein zu kleiner Stapel aeussert
+    # sich als Absturz irgendwo in imgproc und sieht nach einem Datenfehler aus.
+    -sSTACK_SIZE=8MB
+    # Es gibt kein main(). Ohne diese beiden riesse die Laufzeit nach dem Laden
+    # ab und jeder spaetere Aufruf liefe ins Leere.
+    -sINVOKE_RUN=0
+    -sEXIT_RUNTIME=0)
 endif()
 
 # --- Der Pruefstand -----------------------------------------------------------

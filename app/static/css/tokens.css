@@ -48,12 +48,13 @@
    Repo nicht, und ein `font-style: italic` wuerde sonst synthetisch
    geneigt statt echt kursiv gesetzt.
 
-   Der Pfad ist absolut, weil main.py das ganze Verzeichnis app/static unter
-   "/" haengt - relativ zu dieser Datei waere es "../brand/...", was beim
-   Verschieben der Datei bricht. */
+   Der Pfad ist RELATIV zu dieser Datei. Absolut ("/brand/...") stimmte nur, so
+   lange app/static wirklich unter "/" haengt - das tut es beim Desktop-Server,
+   aber nicht im Browser-Bau, wo die Seite unter /web/ liegt und app/static
+   daneben. Relativ trifft beide, weil brand/ und css/ immer Geschwister sind. */
 @font-face {
     font-family: "Montserrat";
-    src: url("/brand/fonts/Montserrat-VariableFont_wght.woff2") format("woff2");
+    src: url("../brand/fonts/Montserrat-VariableFont_wght.woff2") format("woff2");
     font-weight: 100 900;
     font-style: normal;
     font-display: swap;

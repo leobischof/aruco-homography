@@ -18,14 +18,22 @@
  *    Trenner der Pluralformen und kuerzt still (design-system.md 8.4). Dieses
  *    Werkzeug benutzt kein vue-i18n, aber die Kataloge sind dieselben Dateien
  *    wie im Haus, und die Regel wandert mit ihnen.
+ *
+ * Geholt wird beides - Sprachliste und Katalog - ueber api.js und nicht mehr mit
+ * eigenem `fetch`. Dort steht, welche Betriebsart gilt; eine zweite Stelle mit
+ * eigenen Adressen waere im Ortsbetrieb eine Anfrage an einen Server, den es
+ * nicht gibt. Der Ringschluss zwischen den beiden Modulen ist harmlos: keiner
+ * benutzt den anderen beim Laden, nur in Funktionen.
  */
+
+import { fetchCatalogue, fetchLocales } from "./api.js";
 
 // Muss zu config.LOCALE_STORAGE_KEY passen - dort steht die Begruendung fuer den
 // Namen (er folgt free's "free-language").
 const STORAGE_KEY = "aruco-language";
 
 // Womit der Browser anfaengt, BEVOR er etwas geholt hat - und womit er weiter
-// macht, wenn /api/locales nicht antwortet. Die wirkliche Liste kommt von dort
+// macht, wenn die Sprachliste nicht kommt. Die wirkliche Liste kommt von api.js
 // und damit aus config.SUPPORTED_LOCALES; eine zweite Aufzaehlung der Sprachen
 // steht hier absichtlich nicht mehr (AGENTS.md, Invariante 4). Deutsch, weil die
 // Oberflaeche deutsch ist und der Benutzer in einer Werkstatt in der Schweiz steht.
@@ -53,14 +61,13 @@ function isSupported(code) {
  * Sprachliste und Vorgabesprache vom Server holen.
  *
  * Der Umweg ueber das Netz ist der Preis dafuer, dass es die Liste nur EINMAL
- * gibt: app/config.py sagt, welche Sprachen es gibt, /api/locales reicht sie
- * durch, und der Sprachwaehler im Kopf entsteht daraus. Eine neue Sprache ist
- * damit eine Katalogdatei plus ein Eintrag in config - kein Griff mehr hierher.
+ * gibt: shared/constants.json sagt, welche Sprachen es gibt, api.js reicht sie
+ * durch (vom Server oder aus der Seite selbst), und der Sprachwaehler im Kopf
+ * entsteht daraus. Eine neue Sprache ist damit eine Katalogdatei plus ein
+ * Eintrag in den Konstanten - kein Griff mehr hierher.
  */
 async function loadLocales() {
-    const response = await fetch("/api/locales", { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`locales: HTTP ${response.status}`);
-    const payload = await response.json();
+    const payload = await fetchLocales();
     if (Array.isArray(payload.locales) && payload.locales.length > 0) {
         locales = payload.locales;
     }
@@ -185,11 +192,7 @@ export function applyTranslations(root = document) {
 
 async function catalogue(wanted) {
     if (loaded.has(wanted)) return loaded.get(wanted);
-    const response = await fetch(`/i18n/${wanted}.json`, {
-        headers: { Accept: "application/json" },
-    });
-    if (!response.ok) throw new Error(`i18n ${wanted}: HTTP ${response.status}`);
-    const flat = flatten(await response.json());
+    const flat = flatten(await fetchCatalogue(wanted));
     loaded.set(wanted, flat);
     return flat;
 }

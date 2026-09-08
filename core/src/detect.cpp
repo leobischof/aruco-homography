@@ -10,9 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
-#include <stdexcept>
-#include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,58 +18,12 @@
 #include <opencv2/geometry.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/aruco_detector.hpp>
-#include <opencv2/objdetect/aruco_dictionary.hpp>
 
-#include "aruco/constants.hpp"
+#include "dictionary.hpp"
 #include "image_bridge.hpp"
 
 namespace aruco {
 namespace {
-
-// ARUCO_DICT_NAME ist ein NAME, keine Zahl. Python leitet die OpenCV-Kennung mit
-// getattr(cv2.aruco, NAME) daraus ab (app/config.py:178-182); C++ kennt keine
-// Reflexion, also steht die Tabelle hier. Sie ersetzt getattr - und sie WIRFT bei
-// einem unbekannten Namen, statt still auf ein Vorgabewoerterbuch zu fallen. Ein
-// falsches Woerterbuch findet einfach keine Marker; das saehe nach einem
-// schlechten Foto aus und nicht nach einem Tippfehler in einer Konstanten.
-struct DictionaryName {
-    std::string_view name;
-    cv::aruco::PredefinedDictionaryType id;
-};
-
-constexpr DictionaryName kDictionaries[] = {
-    {"DICT_4X4_50", cv::aruco::DICT_4X4_50},
-    {"DICT_4X4_100", cv::aruco::DICT_4X4_100},
-    {"DICT_4X4_250", cv::aruco::DICT_4X4_250},
-    {"DICT_4X4_1000", cv::aruco::DICT_4X4_1000},
-    {"DICT_5X5_50", cv::aruco::DICT_5X5_50},
-    {"DICT_5X5_100", cv::aruco::DICT_5X5_100},
-    {"DICT_5X5_250", cv::aruco::DICT_5X5_250},
-    {"DICT_5X5_1000", cv::aruco::DICT_5X5_1000},
-    {"DICT_6X6_50", cv::aruco::DICT_6X6_50},
-    {"DICT_6X6_100", cv::aruco::DICT_6X6_100},
-    {"DICT_6X6_250", cv::aruco::DICT_6X6_250},
-    {"DICT_6X6_1000", cv::aruco::DICT_6X6_1000},
-    {"DICT_7X7_50", cv::aruco::DICT_7X7_50},
-    {"DICT_7X7_100", cv::aruco::DICT_7X7_100},
-    {"DICT_7X7_250", cv::aruco::DICT_7X7_250},
-    {"DICT_7X7_1000", cv::aruco::DICT_7X7_1000},
-    {"DICT_ARUCO_ORIGINAL", cv::aruco::DICT_ARUCO_ORIGINAL},
-    {"DICT_APRILTAG_16h5", cv::aruco::DICT_APRILTAG_16h5},
-    {"DICT_APRILTAG_25h9", cv::aruco::DICT_APRILTAG_25h9},
-    {"DICT_APRILTAG_36h10", cv::aruco::DICT_APRILTAG_36h10},
-    {"DICT_APRILTAG_36h11", cv::aruco::DICT_APRILTAG_36h11},
-    {"DICT_ARUCO_MIP_36h12", cv::aruco::DICT_ARUCO_MIP_36h12},
-};
-
-cv::aruco::PredefinedDictionaryType dictionary_id(std::string_view name) {
-    for (const DictionaryName& entry : kDictionaries) {
-        if (entry.name == name) {
-            return entry.id;
-        }
-    }
-    throw std::invalid_argument("Unbekanntes ArUco-Woerterbuch: " + std::string(name));
-}
 
 // Die Parameter stehen hier als Zahlen, weil sie auch in app/vision/detect.py als
 // Zahlen stehen: sie sind keine Aussage ueber das PRODUKT (das waeren Millimeter),
@@ -81,8 +32,7 @@ cv::aruco::PredefinedDictionaryType dictionary_id(std::string_view name) {
 // etwas aendert, aendert es hier mit. Der Quervergleich in tests/test_backend.py
 // faellt sonst um, und das ist der Zweck jenes Tests.
 cv::aruco::ArucoDetector build_detector() {
-    const cv::aruco::Dictionary dictionary =
-        cv::aruco::getPredefinedDictionary(dictionary_id(constants::ARUCO_DICT_NAME));
+    const cv::aruco::Dictionary dictionary = predefined_dictionary();
     cv::aruco::DetectorParameters params;
 
     // Subpixel-Refinement: der wichtigste Genauigkeitsschalter dieses Projekts.
