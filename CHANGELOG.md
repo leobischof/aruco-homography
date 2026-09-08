@@ -4,6 +4,134 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.0-alpha] – 2026-09-08
+
+**Dieselbe Messtechnik rechnet jetzt auf drei Zielen: Windows, Android und im Browser.**
+Aus einem Quelltext, mit einer Testsuite, gegen dieselben eingefrorenen Szenen. Der
+Sprung von `0.0.x` auf `0.1.0` sagt nicht „ein bisschen mehr“, sondern: ein anderes
+Produkt.
+
+Bis hierher war dies ein Python-Programm mit einer Weboberfläche, das auf einem
+Windows-Rechner lief. Ab hier ist es ein C++-Rechenkern, um den drei Hüllen stehen.
+
+### Was in dieser Fassung liegt
+
+| | |
+|---|---|
+| **Windows** | Installer, rund 103 MB, ohne Adminrechte |
+| **Android** | APK, 10,30 MB, `arm64-v8a`, **ohne jede Berechtigung** |
+| **Browser** | `dist/web`, 4,5 MB, läuft von einem Dateiserver, danach **ohne Netz** |
+
+Alle drei rechnen mit `core/` — 4 951 Zeilen C++ (2 320 Rechnung, 781 Kopfdateien,
+1 567 Anbindungen, 283 Prüfstand), übersetzt mit MSVC, dem Android-NDK
+und Emscripten. **Kein einziges `#ifdef` unterscheidet die Ziele.**
+
+### Warum überhaupt
+
+Ein Foto entsteht am Handy und eine Schablone wird am Rechner gedruckt. Solange die
+Messung nur in Python existierte, brauchte jedes weitere Ziel eine **zweite Fassung
+derselben Millimeter** — und zwei Fassungen driften. Nicht laut, sondern in der
+vierten Stelle, und das merkt man am fertigen Teil.
+
+### Wie belegt ist, dass sie gleich rechnen
+
+**Es gibt keine zweite Testsuite.** `ARUCO_CORE=python|cpp` und `ARUCO_PDF=python|js`
+tauschen die Umsetzung hinter der Schnittstelle, und die **vorhandenen** Prüfungen
+laufen unverändert:
+
+```
+ARUCO_CORE=python  ARUCO_PDF=python   183 passed
+ARUCO_CORE=python  ARUCO_PDF=js       183 passed
+ARUCO_CORE=cpp     ARUCO_PDF=python   183 passed
+ARUCO_CORE=cpp     ARUCO_PDF=js       183 passed
+node --test                            18 passed
+```
+
+Dazu, gegen die **Grundwahrheit** aus `shared/fixtures/` — die Zahlen, aus denen die
+Szenen *gebaut* wurden, nicht die, die Python daraus errechnet:
+
+| Vergleich | Ergebnis |
+|---|---|
+| C++ gegen Python, ganze Kette | Ausdehnung **2,0·10⁻⁶ mm**, Kamerahöhe 8,0·10⁻⁹ mm, Maßstab 5,4·10⁻¹² px/mm |
+| C++ gegen die C-Schnittstelle | 64 Ecken, **0 verschieden** |
+| C++ gegen die JNI-Schicht (echte JVM) | 18 Größen je Szene, **bitgleich**, einschließlich SHA-256 der 5,9-MB-Raster |
+| Windows gegen WASM | 5 von 64 Ecken um **je ein `float32`-ULP** = 0,000122 px |
+| Server gegen Browser, dieselbe Szene | `rms` 0,095 px beidseits; eine von 32 Koordinaten um ein ULP |
+| Beide PDFs gerastert und durch den **echten** Detektor | Markerkanten **bis zur letzten Stelle gleich**, beide 62,6 µm von der Wahrheit |
+| Die Schablone aus der Android-Kette, an den Vektoren vermessen | 13 Rasterabstände, alle 50 mm, größte Abweichung **6,0 nm** |
+
+**Die 2 Nanometer zwischen Python und C++ sind kein Mangel.** `refine_homography` ist
+in Python eine `scipy`-Ausgleichsrechnung und in C++ `cv::LevMarq`. Zwei Verfahren auf
+demselben Problem enden nicht auf demselben Bit — die Toleranz einer Markerecke ist
+**155 000-mal größer**.
+
+### Was NICHT belegt ist
+
+Das gehört genauso in eine Fassungsnotiz wie das Übrige.
+
+- **Auf einem Android-Gerät ist nichts gelaufen.** Kein Telefon, kein Emulator. Das APK
+  ist gebaut, vermessen und signiert; dass es startet, ist **nicht** geprüft. Die genauen
+  Befehle für den ersten Versuch stehen in `docs/cpp-migration/stage-4-android.md`.
+- **Die Java-Schicht der App ist nirgends ausgeführt.** Sie ist übersetzt und dexed. Der
+  Browser-Prüfstand fährt einen Nachbau davon, der JNI-Prüfstand fährt an ihr vorbei —
+  die Naht dazwischen ist die eine Stelle, an der beide Prüfungen grün wären und die App
+  trotzdem kaputt.
+- **Nur Chromium.** Kein Safari, kein Firefox, keine System-WebView.
+- **`Foto → Marker → Millimeter` ist weiter nicht unabhängig belegt** — auf keinem Ziel.
+  Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Alles in dieser Fassung
+  sagt nur: *die drei Ziele rechnen dasselbe wie Python.* Ob **Python** die Wahrheit
+  rechnet, ist eine andere Messung — ein Gegenstand bekannter Länge mit aufs Foto,
+  Schablone drucken, **diesen Gegenstand** auf dem Papier nachmessen — und die steht aus.
+
+Deshalb bleibt `alpha` im Namen.
+
+### Hinzugefügt
+
+- **`core/` — der Rechenkern in C++.** Erkennung, Homographie, Ausgleich, Kamerapose,
+  Ausdehnung, Entzerrung, Aufbereitung, Kontur. Angebunden über pybind11 (Python), eine
+  C-Schnittstelle und JNI (Android) sowie Embind (Browser).
+- **`web/pdf/` — der PDF-Bau in JavaScript**, Modul für Modul das Spiegelbild von
+  `app/pdf/`. Ein Bau bedient alle drei Ziele; ReportLab gibt es auf Android nicht.
+- **`web/vision/` — die Messkette in JavaScript.** Browser und Android teilen sie sich
+  **byteweise**; verschieden sind genau zwei Dateien, die den Kern anbinden
+  (`core.js` für WASM, `core-android.js` für JNI).
+- **Die Android-App.** WebView über die unveränderte Oberfläche, darunter
+  `libaruco_core.so`. Kein WebAssembly im APK — nachgeprüft am fertigen Erzeugnis.
+  Ohne Netzberechtigung: offline ist keine Zusage, sondern eine Systemeigenschaft.
+- **Der Browser-Bau.** Die ganze Kette ohne Server. Nach dem Laden **null** weitere
+  Anfragen bis zum fertigen PDF, in Chromium mit abgeklemmtem Netz gemessen.
+- **`shared/`** — Konstanten und eingefrorene Prüfszenen, sprachneutral. Kein Zahlenwert
+  wird mehr abgeschrieben.
+- **Prüfstände, die auch ohne Gerät etwas belegen:** `check-jni` fährt dieselbe
+  `jni.cpp` als Windows-DLL auf einer echten JVM, `check-android-ui` fährt die
+  Oberfläche **aus dem gebauten APK** durch Chromium bis zum vermessenen PDF,
+  `check-apk` zählt nach, was wirklich im Erzeugnis liegt.
+
+### Geändert
+
+- **Die ausgelieferte `.exe` misst mit C++.** Im Quellbaum bleibt Python die Vorgabe —
+  es ist die geprüfte Referenz. Fehlt der Kern im Bundle, **startet die Anwendung
+  nicht**; ein stiller Rückfall auf Python wäre der teuerste Ausgang, weil alles grün
+  aussähe. Das Startbanner nennt den aktiven Kern.
+- **Der Ordner wächst von rund 308 MB auf 388 MB**, der Installer von 78 MB auf 103 MB.
+  `opencv_world500.dll` muss mit, solange `cv2` für Bild-Ein- und -Ausgabe gebraucht
+  wird.
+- **Zwei geschützte Zweige.** `develop` sammelt, `master` veröffentlicht.
+
+### Behoben
+
+- **`./dev.ps1 run-tests-js` war auf einem frischen Klon kaputt.** `npm` löst unter
+  Windows auf `npm.ps1` auf und stirbt am `Set-StrictMode`; und `--prefix` trug das
+  Projekt als Abhängigkeit von **sich selbst** in `package.json` ein. Beides traf
+  ausschließlich den ersten Bau — also genau den Fall, für den die Selbstheilung da ist.
+- **Gradle trug keine Aufgabenabhängigkeit aus `assets.srcDir()`.** Der Bau war grün und
+  das APK enthielt **nichts** von der Oberfläche. Nur eine Größenprüfung hätte es
+  gesehen; `check-apk` zählt jetzt die Dateien im fertigen Erzeugnis.
+- **Ein `undefined` überschrieb im Browser-Bau den Vorgabewert** für den Druckerrand und
+  wurde zehn Bilder später zu einem `NaN` beim Zeichnen des Klebeplans.
+
+---
+
 ## [0.0.3-alpha] – 2026-09-08
 
 **Die erste Fassung, die keine Vorabversion mehr ist** — und die erste, an der ein Messschieber
