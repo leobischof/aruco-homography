@@ -4,6 +4,119 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.6-alpha] – 2026-09-08
+
+**Die erste Fassung, die ein Telefon korrigiert hat.** `0.1.5-alpha` war die erste, die
+auf einem echten Gerät benutzt wurde — drei Fehler kamen zurück, und einer davon war so
+gebaut, dass kein Prüflauf ihn sehen konnte.
+
+### Behoben
+
+- **Die App startet auf der Oberfläche und nicht mehr auf der Geräteseite.**
+  `MainActivity.onCreate` lud fest verdrahtet `/native/index.html` — in **beiden**
+  Bauarten, seit es die Android-Hülle gibt. Gemeldet wurde es als Frage nach dem
+  Unterschied zwischen Debug und Release; es gab keinen.
+
+  Richtig war es, solange offen war, ob der native Kern auf einem Telefon überhaupt
+  läuft: dann ist die Werkbank die erste Seite, die man sehen will. Diese Frage ist seit
+  `0.1.2-alpha` beantwortet, und wer die App danach öffnet, will ein Werkstück vermessen
+  und nicht die Bibliotheksfassung lesen.
+
+  **Die Geräteseite bleibt erreichbar** — ihre Antworten sind genau das, was man braucht,
+  wenn etwas nicht stimmt. Der Weg dorthin ist der Fußknopf **„Auf diesem Gerät"**,
+  zurück führen der Knopf auf jener Seite und die Zurück-Taste.
+
+  Der Knopf liegt **verborgen** in `app/static/index.html`, und sichtbar macht ihn
+  `native/bridge-shim.js`. Umgekehrt ginge es nicht: `/native/index.html` liegt allein im
+  APK, im Browser und in der `.exe` wäre ein sichtbarer Knopf eine Sackgasse — und die
+  Alternative, aus `app/static/js/` heraus `window.__aruco` zu fragen, wäre das erste
+  Mal, dass die Oberfläche von Android weiß. Der Shim ist die eine Datei, die ihr Ziel
+  kennt; dafür gibt es ihn. Seine Beschriftung kommt aus dem gemeinsamen Katalog wie
+  jede andere.
+
+- **Die Knöpfe des Suchers liegen über dem Navigationsbalken.** „Aufnehmen" und
+  „Schließen" standen halb darunter — ausgerechnet die zwei, die man am wenigsten
+  verfehlen darf.
+
+  `live.css` fragte `env(safe-area-inset-*)`. Das ist die Quelle des Browsers, und in
+  dieser WebView ist sie **null**: Chromium füllt sie allein aus der Display-Aussparung
+  (`AwDisplayCutoutController`), nie aus den Systemleisten — und die untere Systemleiste
+  war genau das Hindernis. Die richtige Quelle hat das Projekt längst: Java misst
+  `systemBars() | displayCutout()` und schiebt die vier Zahlen als
+  `--safe-top/-right/-bottom/-left` in die Seite; `tokens.css` füllt dieselben vier Namen
+  im Browser aus `env()`. **Ein Satz Regeln für beide Ziele** — deshalb gibt es nur einen.
+
+  Der Rest der Oberfläche stand schon auf diesen Variablen. Dieser Dialog konnte sie auch
+  nicht erben: ein modales `<dialog>` liegt in der obersten Schicht und nimmt die
+  Polsterung des Körpers nicht mit.
+
+- **Der Sucher erkennt auf Android wieder Marker.** Er meldete „Kein Marker im Bild.",
+  während das Kamerabild einwandfrei war. Damit ist übrigens belegt, was vorher offen
+  war: Berechtigung und `getUserMedia` **laufen** auf dem Gerät — nur die Erkennung nicht.
+
+  Es lag an einem Aufruf. `web/vision/local.js` holte das Einzelbild mit `decodeFile`. Im
+  Browser ist das richtig, `createImageBitmap` nimmt jeden Blob. Auf Android heißt
+  `decodeFile` etwas ganz anderes: **„gib mir das gewählte Foto"**. Die Pixel liegen dort
+  in Java, und das `File`-Objekt aus dem `<input>` wird absichtlich nie gelesen — ein
+  12-MP-Foto ein zweites Mal durch die JavaScript-Grenze zu ziehen wären 48 MB ohne
+  Gegenwert. Im Sucher ist aber kein Foto gewählt: Java antwortete „Es wurde noch kein
+  Bild gewaehlt.", und der Fehlerfang je Einzelbild in `live.js` sagt genau einen Satz.
+
+  > **Mit einem gewählten Foto wäre es schlimmer gewesen als eine Fehlermeldung.** Dann
+  > hätte der Sucher dessen Marker gezeichnet — ruhig, plausibel und falsch, ganz gleich,
+  > wohin die Kamera zeigt.
+
+  Ein Einzelbild ist jetzt eine eigene Sache, bis nach unten durch: `decodeFrame` und
+  `releaseFrame` in beiden Bildschichten, `__aruco.decodeFrame` im Shim,
+  `WebBridge.decodeFrame` / `releaseFrame`, und in `MainActivity` dekodiert
+  `Photo.fromBytes`. Hier gehen die Bytes wirklich hinüber — rund 60 KB bei 960 px und
+  Güte 0,6, eine Scheibe desselben Kanals, durch den ein PDF hinausgeht. Ein zweiter
+  Kanal wäre eine zweite Stelle, an der sich Java und JavaScript über die Form einigen
+  müssten.
+
+  Das Bild bekommt einen **eigenen Platz** in der Arena, weder `pin` noch `allocate`:
+  `pin` gibt nie frei, und bei acht Bildern je Sekunde ist das ein Gigabyte in der
+  Minute; die Arena für Zwischenraster fasst drei, und eine halbe Sekunde Sucher hätte
+  jedes Zwischenraster der Kette verdrängt. Ein Platz genügt, weil `live.js` immer nur
+  eine Erkennung gleichzeitig laufen lässt — und weil ein neues Bild das vorige
+  verdrängt, kann ein vergessenes `releaseFrame` höchstens dieses eine liegenlassen.
+  **Das Foto bleibt unberührt**, und das ist der Punkt: der Sucher läuft, bevor eines
+  gewählt ist, und darf ein vorhandenes nicht wegwerfen.
+
+### Was der Prüfstand dieser Fassung neu kann
+
+Der dritte Fehler ist ausgeliefert worden, weil die Prüfung ihn nicht sehen **konnte**.
+Der Browser-Bau war grün — und das APK tauscht `image.js` gegen `image-android.js`. Es
+ist die eigene Regel dieses Projekts, gegen den Autor gewendet:
+
+> Ein Prüfstand, der nicht so scheitern kann wie das Gerät, ist kein Beleg.
+
+`./dev.ps1 check-android-ui` fährt deshalb jetzt auch den Sucher, und zwar **vor** dem
+Hochladen des Fotos — die Reihenfolge des Telefons. Nachgewiesen, indem der alte Aufruf
+zurückgesetzt und neu gebaut wurde: der Lauf fällt durch, und zwar aufschlussreich —
+`4 Marker in 2400x1800 px`, den Maßen des **Fotos**, nicht der 960×720 des Einzelbilds.
+Der Java-Ersatz zeigt damit das stille Gesicht desselben Fehlers, das Telefon zeigte das
+laute. Mit dem Fix: 4 Marker in 960×720, 1,2994 mm/px, 0,16 px Restfehler, und keine
+Sitzung hinterlassen.
+
+Dazu ein Prüflauf für den sicheren Bereich, der die **unveränderte `bridge-shim.js` aus
+dem APK** in ein Chromium einspielt und ihr `__arucoInsets(38, 0, 48, 0)` gibt: Auslöser
+und Schließen enden 60 px über dem Fensterboden, die Leiste selbst bei 48 — und
+`env(safe-area-inset-bottom)` liest im selben Lauf `0px`, so wie in der WebView.
+
+### Was NICHT belegt ist
+
+- **Auf einem Telefon ist von dieser Fassung nichts gelaufen.** Die drei behobenen Fehler
+  sind auf dem Gerät gemeldet und hier gemessen worden, nachgesehen ist keiner davon
+  dort. Die Startseite ist aus den Bytes des gebauten APK zurückgelesen (`classes*.dex`
+  trägt `/index.html` einmal und `/native/index.html` gar nicht).
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig
+  belegt.** Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt,
+  ist ein Gegenstand *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem
+  Ausdruck nachgemessen.
+
+**Deshalb bleibt `alpha` im Namen.**
+
 ## [0.1.5-alpha] – 2026-09-08
 
 **Die App bekommt einen Sucher, und der Bildexport hört auf, Pixel zu erfinden.** Vier
