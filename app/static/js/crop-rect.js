@@ -46,9 +46,23 @@ const CORNER_PX = 12;
 const BAR_LONG_PX = 18;
 const BAR_SHORT_PX = 8;
 
-// Halbe Kantenlaenge der Trefferflaeche: 44px, der Wert von --touch-target.
-// Der Griff wird kleiner GEZEICHNET, aber nicht kleiner getroffen.
-const HIT_HALF_PX = 22;
+// Halbe Kantenlaenge der Trefferflaeche. Der Griff wird kleiner GEZEICHNET, aber
+// nicht kleiner getroffen - und wie viel groesser, entscheidet der ZEIGER.
+//
+// Ein Mauszeiger ist ein Pixel und sieht, wo er steht; 44 px (der Wert von
+// --touch-target) sind dafuer reichlich. Ein Finger ist rund einen Zentimeter
+// breit, verdeckt genau die Stelle, die er treffen soll, und der Bediener zielt
+// nach dem Gedaechtnis. Vom Telefon gemeldet: "make the hitboxes bigger".
+//
+// 60 px sind rund 12 mm auf einem heutigen Telefon - etwas mehr als eine
+// Fingerkuppe, und damit die Groesse, ab der man nicht mehr zielen muss.
+const HIT_HALF_MOUSE_PX = 22;
+const HIT_HALF_TOUCH_PX = 30;
+
+// Unter diese halbe Kantenlaenge wird nie geschrumpft: ein winziges Rechteck
+// haette sonst Griffe, die niemand mehr trifft - und gerade dort will man es
+// wieder groesser ziehen.
+const HIT_HALF_MIN_PX = 12;
 
 const NUDGE_MM = 1;
 const NUDGE_SHIFT_MM = 10;
@@ -120,6 +134,30 @@ export function createCropRect({ canvas, onChange }) {
         return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
     }
 
+    /**
+     * Wie gross die Trefferflaeche fuer DIESEN Zeiger an DIESEM Rechteck ist.
+     *
+     * Zwei Groessen und eine Schranke:
+     *
+     * 1. Maus und Stift bekommen die kleine Flaeche. Bei 60 px liesse sich das
+     *    Rechteck mit der Maus kaum noch VERSCHIEBEN - an einem schmalen
+     *    Zuschnitt waere alles ein Griff.
+     * 2. Alles andere - Finger, unbekannter Zeigertyp - bekommt die grosse.
+     *    Im Zweifel lieber zu grosszuegig: ein Griff, der zu leicht kommt, ist
+     *    ein Aergernis, einer der nicht kommt ist ein Fehler.
+     * 3. Ein Viertel der Kantenlaenge als Obergrenze, damit in der Mitte etwas
+     *    zum Verschieben uebrig bleibt. Ohne sie waere ein 60-px-Rechteck
+     *    vollstaendig von Griffen bedeckt.
+     */
+    function hitHalfFor(event, rectPx) {
+        const half = event.pointerType === "mouse" || event.pointerType === "pen"
+            ? HIT_HALF_MOUSE_PX
+            : HIT_HALF_TOUCH_PX;
+        const width = Math.abs(rectPx.x1 - rectPx.x0);
+        const height = Math.abs(rectPx.y1 - rectPx.y0);
+        return Math.max(HIT_HALF_MIN_PX, Math.min(half, width / 4, height / 4));
+    }
+
     function commit(next, live) {
         crop = next;
         draw();
@@ -133,7 +171,8 @@ export function createCropRect({ canvas, onChange }) {
 
         const view = viewport();
         const point = localPoint(event);
-        const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
+        const rectPx = rectToPx(crop, view);
+        const hit = hitTest(point, rectPx, hitHalfFor(event, rectPx));
 
         // AUSSERHALB DES RECHTECKS PASSIERT NICHTS. Kein neues Rechteck, kein
         // Pointer-Capture, kein Neuzeichnen - und vor allem nichts davon
@@ -212,7 +251,8 @@ export function createCropRect({ canvas, onChange }) {
         const point = localPoint(event);
 
         if (!drag || drag.pointerId !== event.pointerId) {
-            const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
+            const rectPx = rectToPx(crop, view);
+            const hit = hitTest(point, rectPx, hitHalfFor(event, rectPx));
             // Kein Fadenkreuz mehr ueber der freien Flaeche: es versprach eine
             // Geste, die es dort nicht mehr gibt.
             canvas.style.cursor =

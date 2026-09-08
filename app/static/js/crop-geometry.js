@@ -160,12 +160,26 @@ export function moveRect(rect, dx, dy, extent) {
  * treffen kann, ist am Handy kein Griff.
  */
 export function hitTest(point, rect, half) {
+    // Der NAECHSTE Griff gewinnt, nicht der erste in der Liste.
+    //
+    // Solange die Trefferflaechen klein waren, kam das aufs selbe heraus - sie
+    // ueberlappten kaum. Fuer einen Finger sind sie groesser (crop-rect.js), und
+    // an einem schmalen Rechteck ueberdecken sich dann Ecke und Kantenmitte. Mit
+    // "der erste gewinnt" haette die Reihenfolge in HANDLES entschieden, welchen
+    // Griff man bekommt: nw vor n, also immer die Ecke, auch wenn der Finger
+    // eindeutig auf der Kantenmitte lag. Das ist keine Wahl, das ist ein Zufall
+    // mit fester Reihenfolge.
+    let best = null;
     for (const handle of HANDLES) {
         const centre = handlePoint(handle, rect);
-        if (Math.abs(point.x - centre.x) <= half && Math.abs(point.y - centre.y) <= half) {
-            return { kind: "resize", handle };
-        }
+        const dx = Math.abs(point.x - centre.x);
+        const dy = Math.abs(point.y - centre.y);
+        if (dx > half || dy > half) continue;
+        // Quadrat des Abstands - die Wurzel aendert die Reihenfolge nicht.
+        const distance = dx * dx + dy * dy;
+        if (best === null || distance < best.distance) best = { handle, distance };
     }
+    if (best !== null) return { kind: "resize", handle: best.handle };
     const inside =
         point.x >= rect.x0 && point.x <= rect.x1 && point.y >= rect.y0 && point.y <= rect.y1;
     // "outside" und nicht "new": frueher hiess dieser Fall so, weil eine Geste
