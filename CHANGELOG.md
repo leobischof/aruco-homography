@@ -4,6 +4,52 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.4-alpha] – 2026-09-08
+
+**Zwei Fehler, die erst auf dem Telefon sichtbar wurden.** Beide stammen aus `0.1.3-alpha`
+beziehungsweise waren dort noch nie jemandem aufgefallen — und beide sind der Grund, warum
+in dieser Fassung sonst nichts steht: gemeldete Fehler gehen vor neuen Funktionen.
+
+### Behoben
+
+- **Die Beschriftungen auf der Geräteseite waren unsichtbar.** Die Schlüsselspalte von
+  „Auf diesem Gerät" war mit `var(--muted)` eingefärbt — und das ist eine **Fläche**, keine
+  Textfarbe. Auf der Karte sind das **1,23 : 1**; die Wörter standen da und waren nicht zu
+  lesen. Richtig ist `var(--muted-foreground)`: 6,00 : 1 auf der Karte, 5,38 : 1 auf dem
+  Seitengrund. Es war die einzige Stelle im Baum, die eine Fläche als Textfarbe benutzt hat.
+
+- **Der Sprachwähler blieb auf dem ausgeschriebenen Namen hängen.** `0.1.3-alpha` tauschte
+  die Beschriftungen: geschlossen `DE`, aufgeklappt `Deutsch`. Der Rückweg hing an `change`
+  und `blur` — und auf einem Xiaomi unter Android 15 kommt **keines von beiden**, wenn man
+  das Systemrad öffnet und wieder schließt, **ohne die Sprache zu wechseln**. (Die schon
+  gewählte Sprache noch einmal anzutippen löst ebenfalls kein `change` aus.) Der Wähler stand
+  danach dauerhaft auf `Deutsch`, abgeschnitten in einem Feld, das für zwei Großbuchstaben
+  breit ist.
+
+  **Der Tausch ist ersatzlos zurückgenommen** — der Wähler zeigt `DE` und `EN`, geschlossen
+  wie aufgeklappt. HTML gibt einer Option **eine** Beschriftung, die für beides gilt; jede
+  Variante, die beide Texte behalten will, ist derselbe Tausch mit demselben Zeitproblem oder
+  ein nachgebautes Aufklappmenü. Das native `<select>` ist hier Absicht — Tastatur, Systemrad
+  und Bildlauf kommen mit ihm geschenkt. Wer die vollen Namen zurück will, braucht ein
+  breiteres Feld, und das kostet die eine Kopfzeile auf einem 390 px breiten Telefon.
+
+### Was daraus für den Prüfstand folgt
+
+Der Browser-Prüfstand hat den Sprachwähler in `0.1.3-alpha` **bestanden**. Er tippte den
+Tausch mit einem erzeugten `mousedown` an — dieselben Ereignisse in derselben Reihenfolge —
+und sah deshalb nicht, was das echte Systemrad tut. Er prüft jetzt genau den Fall, der schief
+ging: aufklappen, schließen, **nicht** wechseln, und danach muss alles stehen wie vorher.
+
+### Was NICHT belegt ist
+
+- **Auf einem Telefon ist von dieser Fassung nichts gelaufen** — wie bei den Fassungen davor.
+  Der eine Unterschied: die beiden behobenen Fehler *sind* auf einem Telefon aufgefallen, und
+  der Nachweis, dass sie weg sind, steht wieder nur im Chromium.
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig belegt.**
+  Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt, ist ein
+  Gegenstand *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem Ausdruck
+  nachgemessen.
+
 ## [0.1.3-alpha] – 2026-09-08
 
 **Das Foto entsteht jetzt in der App, und die Marker dürfen liegen, wie sie fallen.** Fünf

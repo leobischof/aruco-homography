@@ -36,40 +36,36 @@ export function createHeader({ themeButton, langSelect, sheetLink, getSheetParam
         themeButton.setAttribute("aria-label", label);
     }
 
-    /** Die Eintraege einmal aufbauen. Die Namen sind Eigennamen ("Deutsch",
-        "English") und stehen im Katalog IHRER Sprache - sie aendern sich beim
-        Wechsel also nicht, nur die Auswahl tut es.
-
-        Jeder Eintrag traegt ZWEI Beschriftungen: das Kuerzel ("DE") fuer die
-        geschlossene Auswahl und den Eigennamen ("Deutsch") fuer die aufgeklappte
-        Liste. Das Kuerzel wird gerechnet und nicht uebersetzt - eine dritte
-        Sprache bleibt damit eine Katalogdatei plus ein Eintrag in
-        config.SUPPORTED_LOCALES. */
+    /**
+     * Die Eintraege einmal aufbauen: das Kuerzel der Sprache, "DE" und "EN".
+     *
+     * Das Kuerzel wird aus dem Code GERECHNET und nicht uebersetzt - eine dritte
+     * Sprache bleibt damit eine Katalogdatei plus ein Eintrag in
+     * config.SUPPORTED_LOCALES.
+     *
+     * <b>Warum nicht der Eigenname.</b> Bis 0.1.3-alpha stand hier ein Tausch:
+     * geschlossen das Kuerzel, aufgeklappt "Deutsch"/"English", umgeschaltet auf
+     * mousedown/touchstart/focus und zurueck auf change/blur. Auf einem Xiaomi
+     * unter Android 15 blieb er haengen - wer das Systemrad oeffnet und wieder
+     * schliesst, ohne die Sprache zu WECHSELN, loest weder `change` noch `blur`
+     * aus. Der Waehler stand danach dauerhaft auf "Deutsch", abgeschnitten in
+     * einem Feld, das fuer zwei Grossbuchstaben breit ist.
+     *
+     * HTML kann das nicht: eine Option hat EINE Beschriftung, und sie gilt
+     * geschlossen wie aufgeklappt. Jede Loesung waere entweder ein Tausch mit
+     * demselben Zeitproblem oder ein nachgebautes Aufklappmenue - und das native
+     * <select> ist hier Absicht (index.html sagt, warum). Zwei Sprachen, zwei
+     * eindeutige Kuerzel, und was der Waehler tut, steht in aria-label und title.
+     */
     function buildLanguageOptions() {
         langSelect.replaceChildren(
-            ...getLocales().map(({ code, label }) => {
+            ...getLocales().map(({ code }) => {
                 const option = document.createElement("option");
                 option.value = code;
-                option.dataset.short = code.toUpperCase();
-                option.dataset.full = label;
+                option.textContent = code.toUpperCase();
                 return option;
             })
         );
-        showLanguageNames(false);
-    }
-
-    /**
-     * Kuerzel oder Eigennamen in die Eintraege schreiben.
-     *
-     * Ein natives <select> zeigt geschlossen den Text der gewaehlten Option; einen
-     * zweiten Text fuer die aufgeklappte Liste sieht HTML nicht vor - `label` gilt
-     * fuer beides. Also wird getauscht, und zwar BEVOR die Liste aufgeht: ist das
-     * Systemrad einmal offen, nimmt es Aenderungen an den Eintraegen nicht mehr an.
-     */
-    function showLanguageNames(full) {
-        for (const option of langSelect.options) {
-            option.textContent = full ? option.dataset.full : option.dataset.short;
-        }
     }
 
     function syncLanguage() {
@@ -93,16 +89,6 @@ export function createHeader({ themeButton, langSelect, sheetLink, getSheetParam
 
     themeButton.addEventListener("click", toggleTheme);
     onThemeChange(syncTheme);
-
-    // mousedown und touchstart laufen vor dem Oeffnen, focus faengt den Weg
-    // ueber die Tastatur. Zurueck auf die Kuerzel geht es, sobald die Liste
-    // wieder zu ist - nach der Wahl oder beim Verlassen.
-    for (const opening of ["mousedown", "touchstart", "focus"]) {
-        langSelect.addEventListener(opening, () => showLanguageNames(true));
-    }
-    for (const closing of ["change", "blur"]) {
-        langSelect.addEventListener(closing, () => showLanguageNames(false));
-    }
 
     langSelect.addEventListener("change", () => {
         // Schlaegt der Katalog fehl, zeigte die Auswahl eine Sprache, die gar
