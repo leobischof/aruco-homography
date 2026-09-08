@@ -156,6 +156,41 @@ function Invoke-RunTests {
     Invoke-Native -What 'run-tests' -Action { & $VenvPython -m pytest -q @Rest }
 }
 
+# Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node statt ReportLab. Kein
+# Auslieferungsweg, sondern ein Pruefstand: die vorhandenen PDF-Pruefungen lesen das
+# fertige PDF zurueck und messen es - sie interessiert nicht, wer es gebaut hat.
+# Siehe docs/cpp-migration/README.md und tools/pdf_js_bridge.py.
+function Invoke-RunTestsPdfJs {
+    Confirm-Deps
+    Confirm-NodeModules
+    Write-Step 'Running tests with the JavaScript PDF builder (ARUCO_PDF=js)'
+    $previous = $env:ARUCO_PDF
+    $env:ARUCO_PDF = 'js'
+    try {
+        Invoke-Native -What 'run-tests-pdf-js' -Action { & $VenvPython -m pytest -q @Rest }
+    } finally {
+        $env:ARUCO_PDF = $previous
+    }
+}
+
+# Die reine Rechnung von web/pdf/ (Seiten- und Kachelgeometrie, Textbreiten). Der
+# eigentliche Beweis bleibt run-tests-pdf-js; das hier laeuft ohne Python.
+function Invoke-RunTestsJs {
+    Confirm-NodeModules
+    Write-Step 'Running the JavaScript unit tests'
+    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/pdf/**/*.test.mjs' @Rest }
+}
+
+# Selbstheilend wie Confirm-Deps, nur fuer npm. Geprueft werden BEIDE Pakete:
+# pdf-lib baut das PDF, @techstark/opencv-js erzeugt im Pruefstand die Markermodule.
+# Ein "npm install --omit=dev" liesse das zweite fehlen, und das Markerblatt braucht es.
+function Confirm-NodeModules {
+    $needed = @('node_modules\pdf-lib', 'node_modules\@techstark\opencv-js')
+    if (-not ($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })) { return }
+    Write-Warn 'node_modules fehlt oder ist unvollstaendig - npm install laeuft jetzt'
+    Invoke-Native -What 'npm install' -Action { npm install --prefix $RepoRoot }
+}
+
 # --- C++-Rechenkern -----------------------------------------------------------
 # Warum das hier so umstaendlich aussieht: weder MSVC noch CMake stehen auf dem
 # PATH, und vcvars64.bat ist eine BATCHdatei - sie setzt Dutzende Variablen im
@@ -443,6 +478,9 @@ function Show-Help {
     Write-Host ''
     Write-Cmd 'install-deps'      'venv anlegen und requirements.txt installieren'
     Write-Cmd 'start-server'      'Server starten, Oberflaeche im eigenen Fenster zeigen, LAN-URL + QR ausgeben (--browser | --no-browser)'
+    Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
+    Write-Cmd 'run-tests-pdf-js'  'Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node (ARUCO_PDF=js)'
+    Write-Cmd 'run-tests-js'      'Die reine JavaScript-Rechnung pruefen (node --test)'
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest, Python-Kern)'
     Write-Cmd 'build-core'        'C++-Rechenkern nach core/build/ bauen (CMake + MSVC + OpenCV-SDK)'
     Write-Cmd 'run-tests-cpp'     'C++-Pruefstand und DIESELBE Testsuite gegen den C++-Kern (ARUCO_CORE=cpp)'
@@ -460,6 +498,8 @@ switch ($Command.ToLowerInvariant()) {
     'install-deps'      { Invoke-InstallDeps }
     'start-server'      { Invoke-StartServer }
     'run-tests'         { Invoke-RunTests }
+    'run-tests-pdf-js'  { Invoke-RunTestsPdfJs }
+    'run-tests-js'      { Invoke-RunTestsJs }
     'build-core'        { Invoke-BuildCore }
     'run-tests-cpp'     { Invoke-RunTestsCpp }
     'build-markersheet' { Invoke-BuildMarkersheet }

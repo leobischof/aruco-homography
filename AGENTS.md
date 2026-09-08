@@ -64,6 +64,15 @@ app/vision/          backend · geometry · detect · solve · camera · thickne
 app/pdf/             layout · overlays · branding · build · markersheet
 app/static/          Oberfläche: css/ (Tokens + Stylesheets), js/ (ES-Module, kein
                      Bundler), i18n/ (de.json · en.json), brand/ (Logo und Schrift)
+web/pdf/             derselbe PDF-Bau in JavaScript (pdf-lib), Modul für Modul das
+                     Spiegelbild von app/pdf/. Läuft im Browser, unter Node und
+                     später in der Android-Hülle. NOCH NICHT der Auslieferungsweg:
+                     die .exe baut weiter mit ReportLab. `ARUCO_PDF=js` lässt die
+                     vorhandene Testsuite gegen diesen Bau laufen (dev.ps1
+                     run-tests-pdf-js). Nichts hier darf `fs` oder `path` anfassen.
+tools/               Werkzeuge NEBEN der Anwendung, nie im Bundle: der Prüfstand
+                     pdf_js_bridge (Python ruft Node), die eingefrorenen Fixtures
+                     und der Backvorgang für das Logo als Pfaddaten.
 tests/               synthetische Szenen mit bekannter Grundwahrheit
 docs/                README.md ist der Index; docs/superpowers/specs/ die Spezifikation,
                      mit dem Code abgeglichen
