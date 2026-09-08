@@ -70,10 +70,10 @@ export async function buildPdf(source, cropWMm, cropHMm, options, footerLines, c
 }
 
 /**
- * Die Bytes fuer ein Rechteck des Zuschnitts - egal, welche der beiden Quellen.
+ * Liefert die Quelle je Blatt ein eigenes Bild - oder ist sie EIN fertiges Bild?
  *
- * Bei fertigen Bytes gibt es genau ein Rechteck, naemlich den ganzen Zuschnitt;
- * die Funktion reicht sie dann unveraendert durch.
+ * Eine Funktion heisst: blattweise, jedes Blatt fragt nach seinem Rechteck. Bytes
+ * heissen: ein Bild fuer alles, und die Blaetter schneiden sich ihren Teil daraus.
  */
 function isPerSheet(source) {
     return typeof source === "function";
