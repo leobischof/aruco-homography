@@ -345,6 +345,23 @@
 
     <div class="step-actions">
       <button type="button" class="btn btn-action" id="export" data-i18n="ui.steps.export.submit"></button>
+
+      <!--
+        Das Bild ist kein zweiter Ausdruck, sondern das Gegenteil davon: der
+        blosse Zuschnitt, ohne Massstab, Raster, Fusszeile und Kachelung. Alles
+        davon ist ein AUFDRUCK - in einem Bild waere es Bildinhalt, den ein
+        nachgelagertes Programm nicht von der Schablone unterscheiden koennte.
+        Deshalb steht der Knopf hier und nicht als dritter Wert im Feld
+        "Aufteilung": er erzeugt etwas anderes, nicht dasselbe anders verteilt.
+      -->
+      <span class="action-group">
+        <select id="image-format" data-i18n-attr="aria-label:ui.steps.export.image_format_label">
+          <option value="jpeg" selected>JPEG</option>
+          <option value="png">PNG</option>
+        </select>
+        <button type="button" class="btn btn-secondary" id="export-image"
+                data-i18n="ui.steps.export.submit_image"></button>
+      </span>
     </div>
     <div class="info" id="export-info" role="status"></div>
     <div class="notice-slot" id="export-error" role="alert"></div>

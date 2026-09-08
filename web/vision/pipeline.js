@@ -17,6 +17,7 @@ import { translate } from "../pdf/i18n.js";
 import { resolvePose } from "./camera.js";
 import { boundingBoxMm, findContourMm } from "./contour.js";
 import { withImage } from "./core.js";
+import { withResolution } from "./density.js";
 import { adjust, adjustOptions, isIdentity } from "./enhance.js";
 import {
     defaultCrop,
@@ -26,7 +27,7 @@ import {
     planeExtent,
     width,
 } from "./extent.js";
-import { toJpegBytes } from "./image.js";
+import { toJpegBytes, toPngBytes } from "./image.js";
 import { AppError, NoticeList } from "./notices.js";
 import {
     checkOutputBudget,
@@ -146,6 +147,61 @@ export function runAdjust(core, session, request) {
 
     solved.adjusted = adjust(core, solved.preview, options);
     return { kind: "adjusted", raster: solved.adjusted };
+}
+
+/**
+ * Denselben Zuschnitt als Bilddatei statt als PDF.
+ *
+ * **Was hier fehlt und fehlen muss:** Massstab, Raster, Fusszeile, Schnittmarken,
+ * Klebeplan. Alles davon ist ein AUFDRUCK auf einem Ausdruck - auf einem Bild
+ * waere es Bildinhalt, den ein nachgelagertes Programm nicht von der Schablone
+ * unterscheiden koennte.
+ *
+ * Was NICHT fehlt, ist die Massangabe: `withResolution` schreibt die Auflösung in
+ * die Datei. Ein Pixel ist damit 25,4/dpi Millimeter, und das laesst sich lesen
+ * statt raten (web/vision/density.js sagt, warum das noetig ist).
+ *
+ * Am Stueck und nicht blattweise: ein Bild HAT keine Blaetter. Bei einem grossen
+ * Zuschnitt kann deshalb die Speichergrenze zuschlagen - checkOutputBudget sagt
+ * das dann, bevor die Belegung scheitert.
+ */
+export async function runExportImage(core, session, request) {
+    const solved = session.solve;
+    if (solved === null) throw new AppError("not_solved", "session_id");
+
+    const crop = extent(
+        request.crop_mm.x0,
+        request.crop_mm.y0,
+        request.crop_mm.x1,
+        request.crop_mm.y1,
+    );
+    if (width(crop) <= 0.0 || height(crop) <= 0.0) throw new AppError("empty_crop", "crop_mm");
+
+    checkOutputBudget(core, crop, request.dpi);
+    const pxPerMm = pxPerMmForDpi(request.dpi);
+    const options = adjustOptions(request.adjust);
+
+    let raster = rectify(
+        core,
+        session.photo.image,
+        solved.homographyEffective,
+        crop,
+        pxPerMm,
+        solved.solution.pxPerMm,
+    );
+    if (!isIdentity(core, options)) {
+        raster = adjust(core, raster, options);
+    }
+
+    const format = request.image_format === "png" ? "png" : "jpeg";
+    const bytes = format === "png" ? await toPngBytes(raster) : await toJpegBytes(raster);
+    return {
+        data: withResolution(bytes, format, request.dpi),
+        format,
+        width: raster.width,
+        height: raster.height,
+        mmPerPx: constants.MM_PER_INCH / request.dpi,
+    };
 }
 
 /** Vom gewaehlten Zuschnitt zum druckfertigen PDF. */

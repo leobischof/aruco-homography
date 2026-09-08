@@ -86,6 +86,23 @@ class AdjustRequest(BaseModel):
     adjust: AdjustOptions = Field(default_factory=AdjustOptions)
 
 
+class ExportImageRequest(BaseModel):
+    """Der Zuschnitt als reine Bilddatei.
+
+    Bewusst OHNE Aufdrucke, Kachelung und Seitenformat: das sind Eigenschaften
+    eines Ausdrucks, und ein Bild wird nicht gedruckt, sondern weiterverarbeitet.
+    Was bleibt, ist der Zuschnitt, die Auflösung und die Aufbereitung - also
+    genau das, was auch im PDF im Bild steckt.
+    """
+
+    session_id: str
+    crop_mm: CropMm
+    dpi: int = config.DPI_DEFAULT
+    image_format: Literal["jpeg", "png"] = "jpeg"
+    adjust: AdjustOptions = Field(default_factory=AdjustOptions)
+    filename: str = "schablone"
+
+
 class ExportRequest(BaseModel):
     session_id: str
     crop_mm: CropMm

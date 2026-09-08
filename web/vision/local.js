@@ -25,8 +25,14 @@ import { readExif } from "./exif.js";
 import { decodeFile } from "./image.js";
 import { AppError } from "./notices.js";
 import { drawDetection, PreviewUrls } from "./preview.js";
-import { runAdjust, runExport, runSolve, solveResponse } from "./pipeline.js";
-import { exportRequest, solveRequest } from "./request.js";
+import {
+    runAdjust,
+    runExport,
+    runExportImage,
+    runSolve,
+    solveResponse,
+} from "./pipeline.js";
+import { exportRequest, imageRequest, solveRequest } from "./request.js";
 
 // Genau eine Sitzung. Am Server gibt es acht, weil dort mehrere Handys auf
 // denselben Rechner zeigen koennen; in einer Seite gibt es genau ein Foto, und
@@ -139,6 +145,22 @@ export async function exportPdf(request) {
         blob: new Blob([result.data], { type: "application/pdf" }),
         pages: String(result.pageCount),
         pageSize: `${result.pageSizeMm[0].toFixed(3)}x${result.pageSizeMm[1].toFixed(3)}`,
+    };
+}
+
+/** Denselben Zuschnitt als Bilddatei. */
+export async function exportImage(request) {
+    requireSession(request.session_id);
+    const module = await core();
+    const result = await runExportImage(module, session, imageRequest(request));
+
+    return {
+        blob: new Blob([result.data], {
+            type: result.format === "png" ? "image/png" : "image/jpeg",
+        }),
+        format: result.format,
+        pixels: `${result.width}×${result.height}`,
+        mmPerPx: result.mmPerPx,
     };
 }
 
