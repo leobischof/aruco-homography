@@ -1,3 +1,11 @@
+---
+title: Stufe 4 · Die Windows-Hülle misst mit C++
+description: Wie die ausgelieferte .exe an den C++-Kern kommt, womit das belegt ist und was es an Größe kostet.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Stufe 4 · Die Windows-Hülle misst mit C++
 
 **Ergebnis: die gebaute `.exe` rechnet mit dem C++-Kern, und das ist belegt — nicht

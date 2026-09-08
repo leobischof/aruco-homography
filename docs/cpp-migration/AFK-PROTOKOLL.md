@@ -1,3 +1,11 @@
+---
+title: AFK-Protokoll — C++-Umzug
+description: Laufendes Protokoll der unbeaufsichtigten Arbeit am C++-Umzug: Entscheidungen, Irrtümer und Prüflücken.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # AFK-Protokoll — C++-Umzug
 
 Unbeaufsichtigte Arbeit ab **2026-09-08**. Hier steht, was entschieden wurde, **während

@@ -3,7 +3,7 @@ title: Vorhaben — was noch nicht gebaut ist
 description: Beschlossene, aber ungebaute Vorhaben mit Lösungsweg, bekannten Stolpersteinen und offenen Fragen.
 audience: developer
 status: current
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Vorhaben — was noch nicht gebaut ist
@@ -293,6 +293,20 @@ verloren gehen.
   Ausgleichsrechnung gebaut, ein radialer Parameter ließe sich als weitere Unbekannte
   einhängen. Würde die Genauigkeit am Bildrand spürbar heben — und damit auch den
   DXF-Export aus Punkt 4.
+- **Ein Prüfskript für den Frontmatter-Block.** `docs/README.md`, §3 verlangt ihn
+  ausnahmslos und nennt das Skript, das ihn prüfen würde, ausdrücklich als noch nicht
+  vorhanden. Genau das ist dann eingetreten: der C++-Umzug hat **acht** Dokumente angelegt,
+  keines mit Block und keines im Verzeichnis; nachgetragen wurde erst am 08.09.2026. Eine
+  Regel, die nichts prüft, wird gebrochen, ohne dass es jemand merkt.
+
+  **Der Weg:** `tools/check_docs.py` liest jede Datei unter `docs/`, zerlegt den Block
+  zwischen den ersten beiden `---`-Zeilen und prüft die fünf Schlüssel, den Wertevorrat von
+  `audience` und `status`, `updated` als ISO-Datum, `title` gegen die erste `#`-Zeile und ob
+  die Datei in der Tabelle in §1 verlinkt ist. `.\dev.ps1 check-docs` ruft es auf. Ein
+  lauffähiger Entwurf ist beim Nachtragen entstanden und hat alle acht Fälle gefunden; er
+  liegt nicht im Repo, weil er dort ein eigenes Vorhaben wäre und nicht der Nebenertrag
+  eines anderen.
+
 - **Mehr als vier Marker.** Heute ist das Blatt auf IDs 0–3 festgelegt. Mehr Marker über eine
   größere Fläche würden die Extrapolation verkleinern, die die Oberfläche heute nur warnend
   anzeigt.

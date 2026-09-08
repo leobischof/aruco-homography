@@ -1,3 +1,11 @@
+---
+title: Stufe 0 · ArUco mit Subpixel im Browser — Ergebnis
+description: Der Vorabversuch, der über den ganzen Umzug entschieden hat: läuft die Markererkennung im Browser, und rechnet sie gleich?
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Stufe 0 · ArUco mit Subpixel im Browser — Ergebnis
 
 > **Ja, es geht.** ArUco mit `CORNER_REFINE_SUBPIX` läuft im Browser und liefert
