@@ -91,6 +91,20 @@
     justify-content: flex-end;
 }
 
+/* Sprachwaehler und Themenknopf als EIN Umbruchstueck. Der Kopf traegt drei
+   Bedienelemente, und auf einem schmalen Telefon passen sie nicht immer
+   nebeneinander. Ohne diese Huelle bricht dann der Themenknopf allein in die
+   zweite Zeile - ein einzelnes Symbol unter einem breiten Knopf, das wie ein
+   Fehler aussieht. Mit ihr bekommt der Verweis die erste Zeile und das Paar die
+   zweite, und zwar ohne dass irgendwo eine Pixelbreite hingeschrieben werden
+   muesste: es entscheidet der Textumfang, den die Sprache gerade hat. */
+.header-toggles {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 /* --------------------------------------------------------------------------
    Schrittfolge
    -------------------------------------------------------------------------- */
@@ -232,14 +246,19 @@
         justify-content: flex-start;
     }
 
-    /* Gemessen bei 390px: Verweis (199px) + Sprachpaar (88px) + Themenknopf
-       (44px) + zwei Luecken (16px) sind 347px und passen scheinbar in die
-       358px Innenbreite - der Knopf faellt trotzdem um, weil der Verweistext
-       je nach Sprache laenger wird. Statt um Pixel zu feilschen bekommt der
-       Verweis die ganze Zeile: er ist der groesste Knopf im Kopf und damit der,
-       den man einhaendig am ehesten treffen will. */
+    /* Eine Zeile fuer alle drei, solange sie hineingehen. Vorher bekam der
+       Verweis IMMER die ganze Zeile (`flex: 1 1 100%`), weil er mit dem
+       ausgeschriebenen Sprachnamen bei 390px nicht danebenpasste: Verweis
+       (213px) + Sprachwaehler (88px) + Themenknopf (44px) + zwei Luecken (16px)
+       = 361px in 358px Innenbreite.
+
+       Der Waehler zeigt jetzt nur das Kuerzel und misst 60px; damit sind es
+       333px, und sie passen. Bei 360px Bildschirmbreite (328px innen) tun sie es
+       nicht - dann faellt das Paar aus Sprache und Thema geschlossen in die
+       zweite Zeile, und der Verweis fuellt die erste. Das ist genau die alte
+       Aufteilung, nur nicht mehr erzwungen. */
     .header-actions .btn {
-        flex: 1 1 100%;
+        flex: 1 1 auto;
     }
 
     .app-main {

@@ -867,12 +867,20 @@ Modul ins Dunkle. Der `@media`-Block in `tokens.css` schließt `[data-theme="lig
 die Systemvorgabe eine ausdrückliche Wahl nicht überschreibt. Die Wahl liegt in `localStorage`
 unter `THEME_STORAGE_KEY`; im privaten Modus gilt sie eben nur für diese Sitzung.
 
-**Sprachwahl.** Zwei Knöpfe im Kopf (DE/EN) mit `aria-pressed`. Die Startsprache ist die
-gespeicherte Wahl (`LOCALE_STORAGE_KEY`), sonst die Browsersprache, sonst Deutsch. Der Katalog
-wird geladen, **bevor** irgendetwas gezeichnet wird — die Regler bekommen ihre Beschriftung beim
-Erzeugen, nicht nachträglich. Schlägt das Laden fehl, bleibt der Katalog leer und jede
-Beschriftung zeigt ihren Schlüssel: hässlich und genau deshalb richtig, denn die Oberfläche bleibt
-bedienbar und der Fehler ist nicht zu übersehen.
+**Sprachwahl.** Ein natives `<select>` im Kopf, das `header.js` aus `/api/locales` füllt — eine
+dritte Sprache ist damit eine Katalogdatei plus ein Eintrag in `config.SUPPORTED_LOCALES` und
+kein Markup. Geschlossen steht darin das **Kürzel** (`DE`, `EN`), aufgeklappt der Eigenname
+(`Deutsch`, `English`). HTML sieht dafür keine zwei Beschriftungen vor — `label` gilt für beides
+—, also tauscht `header.js` die Texte, und zwar bevor die Liste aufgeht: ein offenes Systemrad
+nimmt Änderungen nicht mehr an. Der Grund für das Kürzel ist die Breite: nur so stehen
+Markerblatt-Verweis, Sprache und Thema auf einem Telefon in **einer** Zeile. Der Wähler ist
+deshalb auch fest 60 px breit, sonst spränge der Themenknopf beim Aufklappen zur Seite.
+
+Die Startsprache ist die gespeicherte Wahl (`LOCALE_STORAGE_KEY`), sonst die Browsersprache,
+sonst Deutsch. Der Katalog wird geladen, **bevor** irgendetwas gezeichnet wird — die Regler
+bekommen ihre Beschriftung beim Erzeugen, nicht nachträglich. Schlägt das Laden fehl, bleibt der
+Katalog leer und jede Beschriftung zeigt ihren Schlüssel: hässlich und genau deshalb richtig,
+denn die Oberfläche bleibt bedienbar und der Fehler ist nicht zu übersehen.
 
 ---
 

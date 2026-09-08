@@ -85,28 +85,37 @@
        rel="noopener" data-i18n="ui.header.markersheet"></a>
 
     <!--
-      Die Sprachen stehen bewusst NICHT im Markup: js/header.js baut die Liste
-      aus /api/locales, und die kommt aus config.SUPPORTED_LOCALES. Eine weitere
-      Sprache ist damit eine Katalogdatei plus ein Eintrag dort - hier ist nichts
-      nachzutragen. Ein natives <select> ist Absicht: es laesst sich mit der
-      Tastatur bedienen, oeffnet auf dem Handy das Systemrad und braucht keine
-      Zeile Skript zum Aufklappen.
+      Sprache und Thema stehen zusammen in einer Huelle, damit sie beim Umbruch
+      zusammenbleiben. Wird der Kopf zu schmal fuer alle drei, soll der Verweis
+      die erste Zeile bekommen und das PAAR die zweite - nicht der Themenknopf
+      allein.
     -->
-    <select class="lang-select" id="lang-select"
-            data-i18n-attr="aria-label:ui.language.label,title:ui.language.label"></select>
+    <div class="header-toggles">
+      <!--
+        Die Sprachen stehen bewusst NICHT im Markup: js/header.js baut die Liste
+        aus /api/locales, und die kommt aus config.SUPPORTED_LOCALES. Eine weitere
+        Sprache ist damit eine Katalogdatei plus ein Eintrag dort - hier ist nichts
+        nachzutragen. Ein natives <select> ist Absicht: es laesst sich mit der
+        Tastatur bedienen, oeffnet auf dem Handy das Systemrad und braucht keine
+        Zeile Skript zum Aufklappen. Geschlossen zeigt es das Kuerzel, aufgeklappt
+        den Eigennamen - den Tausch macht js/header.js.
+      -->
+      <select class="lang-select" id="lang-select"
+              data-i18n-attr="aria-label:ui.language.label,title:ui.language.label"></select>
 
-    <button type="button" class="btn-icon" id="theme-toggle">
-      <!-- Mond im hellen Thema ("auf dunkel schalten"), Sonne im dunklen. -->
-      <svg data-theme-only="light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>
-      </svg>
-      <svg data-theme-only="dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="4"/>
-        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>
-      </svg>
-    </button>
+      <button type="button" class="btn-icon" id="theme-toggle">
+        <!-- Mond im hellen Thema ("auf dunkel schalten"), Sonne im dunklen. -->
+        <svg data-theme-only="light" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>
+        </svg>
+        <svg data-theme-only="dark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>
+        </svg>
+      </button>
+    </div>
   </div>
 </header>
 
