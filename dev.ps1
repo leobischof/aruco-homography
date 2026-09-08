@@ -372,6 +372,11 @@ function Invoke-BuildCoreWasm {
     }
 
     Write-Ok "Fertig: $buildDir"
+    # Der Browser-Bau liegt daneben und laesst sich nicht von hier aus starten -
+    # er braucht einen HTTP-Ursprung. Also wenigstens sagen, wie.
+    Write-Host '     Im Browser nachmessen: dieses Verzeichnis ausliefern' -ForegroundColor DarkGray
+    Write-Host ("       {0} -m http.server 8013 --directory ""{1}""" -f $VenvPython, $buildDir) -ForegroundColor DarkGray
+    Write-Host '       und http://127.0.0.1:8013/conformance_web.html oeffnen' -ForegroundColor DarkGray
 }
 
 function Invoke-BuildCoreAndroid {
