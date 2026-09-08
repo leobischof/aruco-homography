@@ -199,6 +199,63 @@ gh release edit v0.0.2-alpha --prerelease
 ```
 
 
+#### 2026-09-08 · `v0.1.0-alpha` ist veröffentlicht — der Auftrag ist abgearbeitet
+
+Alle drei Ziele liegen in einer Fassung, wie es Abschnitt 5a verlangt. Die
+veröffentlichten Dateien sind **wieder heruntergeladen und über SHA-256 gegen die
+gebauten gehalten** — alle drei byteweise gleich:
+
+| Datei | Byte | SHA-256 |
+|---|---|---|
+| `ArUco-Homographie-Setup-0.1.0-alpha.exe` | 102 907 175 | `719a5fa5c46d60af…` |
+| `aruco-homographie-0.1.0-alpha-debug.apk` | 10 790 324 | `c1de0659743b7387…` |
+| `aruco-homographie-web-0.1.0-alpha.zip` | 1 587 968 | `a6fa852aca31a19f…` |
+
+Der Weg über die zwei Zweige ist genau so gegangen worden, wie ihn der berichtigte
+Abschnitt 7 in `docs/contributing/git.md` beschreibt: Squash von `develop` nach
+`master`, **ohne** `--delete-branch` und **ohne** Merge zurück. Nachgesehen: `develop`
+steht unverändert auf `0f5e84a`, und der Baum von `master` ist mit ihm deckungsgleich.
+
+**Was ich an den Berichten der Agenten selbst nachgemessen habe** — nicht weitergereicht:
+
+- Die vier Testkombinationen, die JS-Prüfungen, den Prüfstand mit und ohne
+  C-Schnittstelle, `check-jni` auf der JVM, `check-android-ui` bis zum PDF.
+- **Ob das APK den verbotenen Abkürzungsweg nimmt.** Selbst mit `zipfile` hineingesehen:
+  kein `.wasm`, kein `aruco_core.mjs`, kein `core.js`. Gemessen wird durch
+  `lib/arm64-v8a/libaruco_core.so`.
+- **Ob Browser und Android wirklich dieselbe Kette fahren.** SHA-256 je Datei:
+  **16 von 16** im APK sind byteweise die aus `web/vision/`. Ausgetauscht ist nur der
+  Kern-Adapter — `core.js` gegen `core-android.js`.
+- Die gebaute `.exe`, einschließlich des Gegenbeweises: ohne die `.pyd` startet sie nicht.
+- Das erzeugte PDF **angesehen**, nicht nur vermessen (`CLAUDE.md`).
+
+**Zwei Berichtigungen an Agentenberichten**, beide belegt statt behauptet:
+
+1. Ein Agent meldete, mein `rms 0,093 px` sei falsch, richtig seien 0,095. **Beides
+   stimmt.** Ich hatte die Szene als JPEG kodiert, er nahm `flat.png` — dasselbe Bild
+   (SHA-256 gleich), dieselbe Kette, 0,093 gegen 0,095. Eine rms-Angabe ohne die
+   Kodierung dazu ist eine Falle.
+2. Derselbe Bericht nannte `ARUCO_PDF=reportlab` als geprüfte Kombination. Den Wert
+   gibt es nicht — `app/pdf/__init__.py` **weist ihn ab**, statt still auf ReportLab zu
+   fallen. Genau das soll er tun.
+
+#### 2026-09-08 · Was nach der Veröffentlichung offen bleibt
+
+- **`v0.0.2-alpha` trägt weiter `prerelease=false`.** Unverändert nicht angefasst, aus
+  demselben Grund wie oben: nach außen sichtbar, nicht im Auftrag.
+- **Der Markerblatt-Knopf im Browser-Bau** trägt `/api/markersheet` als statischen
+  `href`, bis `header.js` ihn durch ein örtlich gebautes PDF ersetzt. Wer in dem
+  Sekundenbruchteil davor klickt, bekommt einen 404. Beim Nachmessen des ZIP gefunden,
+  in den Fassungsnotizen benannt, **nicht behoben** — die Berichtigung hätte den
+  Erzeugungslauf verändert, den ich gerade geprüft hatte.
+- **`./dev.ps1 check-jni` ist mir einmal fehlgeschlagen** und danach zweimal gelungen,
+  auch aus einem vollständig gelöschten `core/build`. Der fehlschlagende Zustand war ein
+  Bauverzeichnis aus der Zeit vor einem Rebase. Nicht wieder herstellbar, also nicht als
+  behoben verbucht; das Mittel ist `Remove-Item core\build -Recurse`.
+- **Ein Agent hat in den Live-Checkout geschrieben** (`markersheet-base64.txt`, ein
+  gültiges A4-Markerblatt), obwohl der Auftrag das ausschloss. Unversioniert, entfernt.
+
+
 #### 2026-09-08 · Was noch unbelegt ist
 
 Der Auftrag lautet „durch Blocker hindurcharbeiten". Damit niemand mehr hineinliest,
@@ -210,5 +267,39 @@ als drinsteht:
 - **Und auch dieser Beleg deckt nur die halbe Kette:** `PDF → Drucker → Papier`. Der Weg
   `Foto → Marker → Millimeter` ist nach wie vor nur gegen synthetische Szenen belegt.
 - **Kein echtes Foto.** Alles bisher Gemessene ist gerechnet.
-- **Android: nichts ausgeführt.** Siehe oben.
+- **Android: nichts ausgeführt.** Siehe oben. — **Eingelöst am 08.09.2026**, siehe den
+  Eintrag darunter: ein echtes Telefon hat den Prüfstand selbst gefahren.
+
+---
+
+#### 2026-09-08 · Ein Gerät hat geantwortet — und zwei Fehler mitgebracht
+
+Der Satz, der oben viermal steht — *auf einem Android-Gerät ist nichts gelaufen* — ist
+seit diesem Tag falsch. Der Bediener hat `v0.1.0-alpha` auf einem **Xiaomi 2312DRA50G,
+Android 15 (API 35)** installiert und den Knopf „Prüfstand laufen lassen" gedrückt:
+
+> **BESTANDEN.** `flat` 0,2337 px in 83 ms, `thick` 0,2337 px in 84 ms, je 4/4 Marker,
+> Toleranz 0,7500 px. Beide SHA-256 der Prüfszenen **genau die vorhergesagten**.
+
+**Was daran zählt, ist nicht das Wort BESTANDEN, sondern die Prüfsummen.** Sie sagen,
+dass Androids PNG-Dekoder dieselben Pixel geliefert hat wie `cv2` — und erst dadurch ist
+der gleiche Eckfehler eine Aussage über den *Detektor* statt über das *Laden*. Ein
+Prüfstand, der nur ein Urteil ausgibt, hätte diesen Unterschied verschluckt. Das ist der
+Ertrag der Entscheidung, ihn Zahlen ausgeben zu lassen.
+
+**Und derselbe Lauf hat zwei Fehler gefunden, die hier keine Prüfung finden konnte:**
+
+1. Die Oberfläche lag unter Statusleiste und Navigationsleiste (Android 15 erzwingt
+   Edge-to-Edge ab `targetSdk 35`). Kein Prüfstand auf diesem Rechner hat je ein Fenster
+   mit Systemleisten gesehen.
+2. Der Export brach mit `Error invoking core: Java exception was raised during method
+   invocation` ab — einem `OutOfMemoryError`, den `catch (Exception)` nicht fing, bei
+   einem Ausgaberaster von 169 Megapixeln. Auf einem Rechner mit 32 GB fällt eine
+   Speichergrenze, die es nur auf einem Telefon gibt, nicht auf.
+
+**Die Lehre, und sie ist unbequem:** die Belegkette dieses Projekts war so dicht, wie sie
+ohne Gerät sein kann — JNI auf einer echten JVM, die Kette aus dem APK in einem echten
+Chromium, jedes Erzeugnis nachgemessen. Sie hat den Detektor richtig vorhergesagt, auf die
+vierte Stelle. Beide Fehler, die trotzdem übrig blieben, lagen dort, wo das Ersatzstück
+saß: im Fenster und im Speicher. **Was ein Ersatzstück ersetzt, misst es nicht.**
 

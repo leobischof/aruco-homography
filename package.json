@@ -6,7 +6,7 @@
   "type": "module",
   "license": "UNLICENSED",
   "scripts": {
-    "test": "node --test \"web/pdf/**/*.test.mjs\""
+    "test": "node --test \"web/**/*.test.mjs\""
   },
   "dependencies": {
     "pdf-lib": "1.17.1"

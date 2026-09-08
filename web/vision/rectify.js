@@ -39,10 +39,14 @@ export function previewPxPerMm(area) {
 export function checkOutputBudget(core, crop, dpi) {
     const [pixelWidth, pixelHeight] = outputSize(core, crop, pxPerMmForDpi(dpi));
     const megapixels = (pixelWidth * pixelHeight) / 1e6;
-    if (megapixels <= constants.MAX_OUTPUT_MPX) return;
+    // Die Grenze des GERAETS, nicht die des Formats: auf dem Telefon ist sie
+    // kleiner, und dann soll dieser Abbruch kommen und nicht ein
+    // OutOfMemoryError im Entzerren (web/constants.js).
+    const budget = constants.outputBudgetMpx();
+    if (megapixels <= budget) return;
 
     const affordable = constants.DPI_CHOICES.filter(
-        (choice) => megapixelsFor(core, crop, choice) <= constants.MAX_OUTPUT_MPX,
+        (choice) => megapixelsFor(core, crop, choice) <= budget,
     );
     // Welcher Rat hilft, steht hier fest - in welcher Sprache er ankommt, erst
     // am Rand. Deshalb reist der Vorschlag als Schluessel mit Parametern.
@@ -58,7 +62,7 @@ export function checkOutputBudget(core, crop, dpi) {
         width_px: pixelWidth,
         height_px: pixelHeight,
         megapixels: megapixels.toFixed(0),
-        limit_mpx: constants.MAX_OUTPUT_MPX.toFixed(0),
+        limit_mpx: budget.toFixed(0),
         hint,
     });
 }

@@ -727,6 +727,30 @@ $AndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
 # des Browser-Baus (8020): alle drei duerfen nebeneinander laufen.
 $UiProbePort = 8030
 
+# --- Der Release-Schluessel --------------------------------------------------
+#
+# WAS DIESER SCHLUESSEL IST: nicht ein Geheimnis, sondern die IDENTITAET der
+# App. Android verweigert jede Aktualisierung, deren Signatur von der
+# installierten abweicht. Geht er verloren, laesst sich die App auf keinem
+# Geraet mehr aktualisieren - nur deinstallieren und neu installieren. Seine
+# SICHERUNG ist deshalb wichtiger als seine Geheimhaltung.
+#
+# DESHALB LIEGT ER AUSSERHALB DES REPOS, neben den anderen Werkzeugketten. Ein
+# eingecheckter Schluessel steckte in jedem Klon, den je jemand gezogen hat,
+# und liesse sich nachtraeglich nicht mehr einsammeln.
+#
+# UND DESHALB WIRD ER NIE UEBERSCHRIEBEN: "gibt es schon" ist hier kein
+# Fehler, sondern der Normalfall. Ein zweiter Schluessel waere eine zweite App.
+$AndroidSigningDir = Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\aruco-signing'
+$AndroidKeystore   = Join-Path $AndroidSigningDir 'aruco-release.p12'
+$AndroidKeyPass    = Join-Path $AndroidSigningDir 'aruco-release.pass'
+$AndroidKeyAlias   = 'aruco'
+
+# Woran ein Debug-APK zu erkennen ist. Diesen Namen vergibt das Android-SDK
+# seinem mitgelieferten Schluessel, und er ist auf jedem Rechner derselbe -
+# ein damit signiertes APK ist genau das, was hier NICHT herauskommen soll.
+$AndroidDebugCertDn = 'CN=Android Debug'
+
 # Das ABI-Argument der Kommandozeile: "arm64-v8a,x86_64" oder nichts.
 function Get-AbiArgument {
     if ($Rest.Count -gt 0) { return $Rest[0].Split(',') | ForEach-Object { $_.Trim() } }
@@ -906,6 +930,78 @@ function Invoke-CheckAndroidSo {
     }
 }
 
+# Die Fassungsnummer, die Android VERGLEICHT - abgeleitet, nie getippt.
+#
+# versionName ist Text und interessiert Android nicht; versionCode ist die Zahl,
+# an der es entscheidet, ob etwas eine Aktualisierung ist. Bleibt sie stehen,
+# sieht jedes Geraet zwei verschiedene Fassungen als dieselbe an - und genau das
+# tat sie bis hierher: build.gradle.kts nahm mangels Angabe seine Vorgabe 1, und
+# 0.1.0-alpha und 0.1.1-alpha waeren fuer Android ununterscheidbar gewesen.
+#
+# 0.1.0 -> 100, 0.1.1 -> 101, 1.2.3 -> 10203. Streng steigend, solange Neben- und
+# Fehlerstand unter 100 bleiben. Die Vorabkennung (-alpha) faellt dabei weg: sie
+# laesst sich nicht ordnen, und 0.1.0-alpha und 0.1.0 sind fuer dieses Projekt
+# ohnehin nie beide erschienen.
+function Get-AndroidVersionCode {
+    param([Parameter(Mandatory)][string]$Version)
+    $match = [regex]::Match($Version, '^(\d+)\.(\d+)\.(\d+)')
+    if (-not $match.Success) {
+        throw "APP_VERSION '$Version' faengt nicht mit <major>.<minor>.<patch> an."
+    }
+    $major = [int]$match.Groups[1].Value
+    $minor = [int]$match.Groups[2].Value
+    $patch = [int]$match.Groups[3].Value
+    if ($minor -gt 99 -or $patch -gt 99) {
+        throw "APP_VERSION '$Version': Neben- oder Fehlerstand ueber 99, die Ableitung stiege nicht mehr."
+    }
+    return $major * 10000 + $minor * 100 + $patch
+}
+
+# Den Release-Schluessel bereitstellen und sein Kennwort in die Umgebung legen.
+#
+# DAS KENNWORT LIEGT ALS DATEI NEBEN DEM SCHLUESSEL. Das ist kein Versehen:
+# wer die eine Datei lesen kann, kann auch die andere lesen. Ein Kennwort zum
+# Merken waere hier das Gegenteil einer Sicherung - vergessen hiesse, die App
+# nie wieder aktualisieren zu koennen.
+#
+# AUF DIE BEFEHLSZEILE KOMMT ES TROTZDEM NICHT. keytool bekommt es ueber
+# -storepass:env, Gradle ueber providers.environmentVariable - denn die
+# Befehlszeile eines laufenden Vorgangs kann auf diesem Rechner jeder lesen,
+# und ein Kennwort, das in einer Prozessliste steht, ist keins mehr.
+function Enable-ReleaseSigning {
+    New-Item -ItemType Directory -Path $AndroidSigningDir -Force | Out-Null
+
+    if (-not (Test-Path $AndroidKeyPass)) {
+        $bytes = New-Object byte[] 24
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        # Hex und nicht Base64: keine '+', '/' oder '=', an denen sich auf dem
+        # Weg durch zwei Huellen noch etwas verschlucken kann.
+        $generated = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+        Set-Content -Path $AndroidKeyPass -Value $generated -Encoding ascii -NoNewline
+        Write-Ok ("Kennwort angelegt: {0}" -f $AndroidKeyPass)
+    }
+    $env:ARUCO_KEYSTORE_PASSWORD = (Get-Content $AndroidKeyPass -Raw).Trim()
+
+    if (-not (Test-Path $AndroidKeystore)) {
+        Write-Step 'Creating the release signing key (once - and then never again)'
+        $keytool = Join-Path (Find-Jdk) 'bin\keytool.exe'
+        # 10950 Tage sind 30 Jahre. Laeuft das Zertifikat ab, laesst sich keine
+        # Aktualisierung mehr signieren - das waere derselbe Schaden wie ein
+        # verlorener Schluessel, nur mit Termin.
+        Invoke-Native -What 'keytool' -Action {
+            & $keytool -genkeypair -keystore $AndroidKeystore -storetype PKCS12 `
+                -alias $AndroidKeyAlias -keyalg RSA -keysize 4096 -validity 10950 `
+                -dname 'CN=Bischof Snowboards, O=Bischof Snowboards, C=DE' `
+                -storepass:env ARUCO_KEYSTORE_PASSWORD `
+                -keypass:env ARUCO_KEYSTORE_PASSWORD
+        }
+        Write-Ok ("Angelegt: {0}" -f $AndroidKeystore)
+        Write-Warn 'Diese beiden Dateien sichern. Ohne sie ist keine Aktualisierung mehr moeglich:'
+        Write-Host ("       {0}" -f $AndroidKeystore) -ForegroundColor DarkGray
+        Write-Host ("       {0}" -f $AndroidKeyPass)  -ForegroundColor DarkGray
+    }
+}
+
 function Invoke-Gradle {
     param([Parameter(Mandatory)][string[]]$Arguments)
 
@@ -917,6 +1013,7 @@ function Invoke-Gradle {
 
     # Die Fassung kommt aus app/config.py und wird nicht abgetippt (Invariante 4).
     $version = Get-ConfigValue 'APP_VERSION'
+    $versionCode = Get-AndroidVersionCode -Version $version
 
     $previous = @{ JAVA_HOME = $env:JAVA_HOME; ANDROID_SDK_ROOT = $env:ANDROID_SDK_ROOT
                    ANDROID_HOME = $env:ANDROID_HOME }
@@ -926,7 +1023,8 @@ function Invoke-Gradle {
         $env:ANDROID_HOME = $sdk
         Push-Location $AndroidDir
         Invoke-Native -What 'gradle' -Action {
-            & $wrapper --no-daemon ("-Paruco.versionName={0}" -f $version) @Arguments
+            & $wrapper --no-daemon ("-Paruco.versionName={0}" -f $version) `
+                                   ("-Paruco.versionCode={0}" -f $versionCode) @Arguments
         }
     } finally {
         Pop-Location
@@ -936,33 +1034,68 @@ function Invoke-Gradle {
     }
 }
 
+# Wo das fertige APK liegt - eine Antwort fuer beide Bauarten, damit der Name
+# nicht an drei Stellen halb richtig steht.
+function Get-ApkPath {
+    param([switch]$Release)
+    if ($Release) { return Join-Path $AndroidOutDir 'aruco-homographie-release.apk' }
+    return Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+}
+
 # Das APK bauen: .so je ABI, dann Gradle, dann nachmessen.
 #
 #   ./dev.ps1 build-apk                            # arm64-v8a, debug
 #   ./dev.ps1 build-apk arm64-v8a,armeabi-v7a      # zwei ABIs
+#   ./dev.ps1 build-apk-release                    # mit dem echten Schluessel
+#
+# DER UNTERSCHIED IST DIE SIGNATUR, nicht der Inhalt. Beide Bauarten tragen
+# dieselbe Oberflaeche und dieselbe .so; R8 bleibt auch im Release aus
+# (android/app/build.gradle.kts sagt warum). Was sich aendert: das Debug-APK
+# traegt den Schluessel, den das SDK jedem Rechner mitgibt, das Release-APK den
+# aus _toolchain/aruco-signing/, und `debuggable` faellt weg.
+#
+# ACHTUNG BEIM ERSTEN MAL: ueber ein installiertes Debug-APK laesst sich das
+# Release-APK NICHT installieren (andere Signatur, INSTALL_FAILED_UPDATE_
+# INCOMPATIBLE). Erst deinstallieren, dann installieren.
 function Invoke-BuildApk {
+    param([switch]$Release)
+
     Confirm-NodeModules   # web/pdf/ braucht pdf-lib, und das APK traegt es mit
 
     $abis = Get-AbiArgument
     Invoke-BuildAndroidLibs -Abis $abis
     Invoke-CheckAndroidSo   -Abis $abis
 
-    Write-Step ("Building the APK ({0})" -f ($abis -join ', '))
-    Invoke-Gradle -Arguments @(('-Paruco.abis={0}' -f ($abis -join ',')), 'assembleDebug')
+    $arguments = @('-Paruco.abis={0}' -f ($abis -join ','))
+    if ($Release) {
+        Enable-ReleaseSigning
+        # Pfad und Alias duerfen in der Befehlszeile stehen, das Kennwort nicht -
+        # das holt sich Gradle aus der Umgebung, die Enable-ReleaseSigning setzt.
+        $arguments += ('-Paruco.keystore={0}' -f $AndroidKeystore)
+        $arguments += ('-Paruco.keyAlias={0}' -f $AndroidKeyAlias)
+        $arguments += 'assembleRelease'
+        $variant = 'release'
+    } else {
+        $arguments += 'assembleDebug'
+        $variant = 'debug'
+    }
+
+    Write-Step ("Building the {0} APK ({1})" -f $variant, ($abis -join ', '))
+    Invoke-Gradle -Arguments $arguments
 
     # Gradle baut neben dem Repo (MAX_PATH, siehe android/gradle.properties) -
     # also das Erzeugnis zurueckholen, damit es dort liegt, wo man es sucht.
     $buildRoot = (Get-Content (Join-Path $AndroidDir 'gradle.properties') |
         Select-String '^aruco\.buildRoot=(.+)$').Matches.Groups[1].Value
-    $apk = Join-Path $buildRoot 'app\outputs\apk\debug\app-debug.apk'
+    $apk = Join-Path $buildRoot ("app\outputs\apk\{0}\app-{0}.apk" -f $variant)
     if (-not (Test-Path $apk)) { throw "Gradle lief durch, aber $apk fehlt." }
 
     New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
-    $target = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    $target = Get-ApkPath -Release:$Release
     Copy-Item $apk $target -Force
     Write-Ok ("Fertig: {0}  ({1:N2} MB)" -f $target, ((Get-Item $target).Length / 1MB))
 
-    Invoke-CheckApk
+    Invoke-CheckApk -Release:$Release
 }
 
 # Die Android-Rechenkette in einem echten Chromium - so weit sie sich ohne
@@ -1067,8 +1200,14 @@ function Find-Chrome {
 # Was am fertigen APK nachgemessen wird. Alles hier ist eine Messung am
 # Erzeugnis - keine Zeile davon glaubt dem Bau.
 function Invoke-CheckApk {
-    $apk = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
-    if (-not (Test-Path $apk)) { throw "Kein APK: $apk  (./dev.ps1 build-apk)" }
+    param([switch]$Release)
+
+    $apk = Get-ApkPath -Release:$Release
+    if (-not (Test-Path $apk)) {
+        $builder = 'build-apk'
+        if ($Release) { $builder = 'build-apk-release' }
+        throw "Kein APK: $apk  (./dev.ps1 $builder)"
+    }
 
     $tools = Find-BuildToolsDir
     Write-Step 'Inspecting the APK'
@@ -1159,12 +1298,36 @@ function Invoke-CheckApk {
     } finally {
         $env:JAVA_HOME = $previousJavaHome
     }
-    $signature | Select-String 'Verified using|certificate DN' |
+    $signature | Select-String 'Verified using|certificate DN|certificate SHA-256 digest' |
         ForEach-Object { Write-Host ("     {0}" -f $_.ToString().Trim()) -ForegroundColor DarkGray }
-    Write-Ok 'apksigner: Signatur gueltig'
+
+    # WESSEN Signatur - und nicht nur, DASS eine da ist.
+    #
+    # Ohne diese Zeile waere "nicht-Debug-APK" eine Behauptung ueber den
+    # Bauweg: assembleRelease lief, also wird es schon stimmen. Genau so
+    # entsteht die Fassung, die aussieht wie ein Release und den Schluessel
+    # traegt, den jedes Android-SDK mitliefert - und niemandem faellt es auf,
+    # weil ein Debug-APK sich genauso installiert und startet.
+    $debugSigned = @($signature | Select-String -SimpleMatch $AndroidDebugCertDn).Count -gt 0
+    if ($Release -and $debugSigned) {
+        throw "Das Release-APK traegt den Debug-Schluessel ($AndroidDebugCertDn)."
+    }
+    if ((-not $Release) -and (-not $debugSigned)) {
+        Write-Warn "Dieses Debug-APK traegt NICHT den Debug-Schluessel - unerwartet."
+    }
+    if ($Release) {
+        Write-Ok 'apksigner: gueltig, und nicht mit dem Debug-Schluessel signiert'
+    } else {
+        Write-Ok 'apksigner: Signatur gueltig (Debug-Schluessel, wie erwartet)'
+    }
 
     Write-Host ''
     Write-Host '  Auf ein Telefon bringen (USB-Debugging einschalten):' -ForegroundColor White
+    if ($Release) {
+        # -r reicht hier NICHT: die Signatur ist eine andere als die des
+        # Debug-APK, und Android weist die Aktualisierung dann ab.
+        Write-Host '    adb uninstall com.bischofsnowboards.aruco   # falls das Debug-APK drauf ist' -ForegroundColor DarkGray
+    }
     Write-Host ("    adb install -r ""{0}""" -f $apk) -ForegroundColor DarkGray
     Write-Host '    adb shell am start -n com.bischofsnowboards.aruco/.MainActivity' -ForegroundColor DarkGray
     Write-Host '    adb logcat -s ArUco' -ForegroundColor DarkGray
@@ -1190,7 +1353,9 @@ function Show-Help {
     Write-Cmd 'build-android-libs' 'libaruco_core.so je ABI bauen und nach android/app/src/main/jniLibs/ legen'
     Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und jedes JNI-Symbol aus NativeCore.java'
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
+    Write-Cmd 'build-apk-release' 'Dasselbe APK, aber mit dem echten Schluessel signiert (_toolchain/aruco-signing/)'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
+    Write-Cmd 'check-apk-release' 'Dasselbe am Release-APK - und dass es NICHT der Debug-Schluessel ist'
     Write-Cmd 'check-android-ui'  'Die Kette aus dem APK in einem Chromium fahren (Java nachgebaut, Kern als WASM)'
     Write-Cmd 'build-web'         'Browser-Bau zusammenstellen (web/index.html + dist/web/) - laeuft ohne Server'
     Write-Cmd 'start-web'         'Den Browser-Bau ausliefern (reiner Dateiserver, Vorgabeport 8020)'
@@ -1218,7 +1383,9 @@ switch ($Command.ToLowerInvariant()) {
     'build-android-libs' { Invoke-BuildAndroidLibs -Abis (Get-AbiArgument) }
     'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
     'build-apk'         { Invoke-BuildApk }
+    'build-apk-release' { Invoke-BuildApk -Release }
     'check-apk'         { Invoke-CheckApk }
+    'check-apk-release' { Invoke-CheckApk -Release }
     'check-android-ui'  { Invoke-CheckAndroidUi }
     'build-web'         { Invoke-BuildWeb }
     'start-web'         { Invoke-StartWeb }

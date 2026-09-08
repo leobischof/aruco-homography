@@ -127,7 +127,7 @@ APP_NAME = "ArUco-Homographie"
 #
 # Bleibt bewusst in Python: eine Fassung ist eine Aussage ueber DIESES Programm,
 # nicht ueber das Produkt - der C++-Kern und der WASM-Bau bekommen eigene.
-APP_VERSION = "0.1.0-alpha"
+APP_VERSION = "0.1.1-alpha"
 
 # Windows will in den BINAEREN Versionsfeldern seiner Dateieigenschaften vier ganze
 # Zahlen sehen und vertraegt kein "-alpha". Die Vorabkennung wird deshalb hier

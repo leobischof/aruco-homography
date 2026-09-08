@@ -321,7 +321,7 @@ export function solveResponse(session, result, core, previewUrl, detectedUrl, de
         },
         limits: {
             dpi_choices: [...constants.DPI_CHOICES],
-            max_output_mpx: constants.MAX_OUTPUT_MPX,
+            max_output_mpx: constants.outputBudgetMpx(),
             extrapolation_warn: constants.EXTRAPOLATION_WARN_FRAC,
         },
         elapsed_s: round(result.elapsedS, 2),
