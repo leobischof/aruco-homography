@@ -32,11 +32,21 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    /* Der sichere Bereich: auf einem Telefon mit runden Ecken und Gestenbalken
-       liegt der untere Rand sonst unter dem Balken, und der Ausloeser ist der
-       Knopf, den man am wenigsten verfehlen darf. */
-    padding: env(safe-area-inset-top) env(safe-area-inset-right)
-             env(safe-area-inset-bottom) env(safe-area-inset-left);
+    /* Der sichere Bereich - ueber --safe-*, NICHT ueber env().
+
+       In dieser WebView liefert env(safe-area-inset-*) null. Android 15 zwingt
+       jede App mit targetSdk 35, unter den Systemleisten zu zeichnen; wie breit
+       die sind, misst MainActivity in Java und schiebt es der Seite als
+       --safe-top/-right/-bottom/-left herein (bridge-shim.js). tokens.css setzt
+       dieselben Variablen im Browser aus env(), also stimmt beides.
+
+       Der Fehler war am Telefon zu sehen: "Aufnehmen" und "Schliessen" lagen
+       halb unter dem Navigationsbalken - ausgerechnet die zwei Knoepfe, die man
+       am wenigsten verfehlen darf. Der Rest der Seite hatte den Rand schon
+       (base.css am <body>), nur dieser <dialog> nicht: ein modaler Dialog liegt
+       in der obersten Schicht und erbt die Polsterung des Koerpers nicht. */
+    padding: var(--safe-top, 0px) var(--safe-right, 0px)
+             var(--safe-bottom, 0px) var(--safe-left, 0px);
     box-sizing: border-box;
 }
 
