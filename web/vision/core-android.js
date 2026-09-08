@@ -100,6 +100,11 @@ const core = {
         return { homography: numbers(fit.homography), offsets: numbers(fit.offsets) };
     },
 
+    fitScattered(quads, markerMm) {
+        const fit = call("fitScattered", [flat(quads), markerMm]);
+        return { homography: numbers(fit.homography), poses: numbers(fit.poses) };
+    },
+
     poseFromHomography(homography, focalPx, width, height) {
         const pose = call("poseFromHomography", [flat(homography), focalPx, width, height]);
         return { heightMm: pose.heightMm, nadirMm: numbers(pose.nadirMm), tiltDeg: pose.tiltDeg };

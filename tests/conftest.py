@@ -21,7 +21,7 @@ import pytest
 from app import config
 from app.vision.detect import DetectedMarker
 from app.vision.geometry import project
-from app.vision.solve import marker_plane_corners
+from app.vision.solve import marker_plane_corners, marker_plane_corners_at
 
 # Aufloesung der virtuellen Ebene. Sie ist die Genauigkeitsgrenze des Renderers:
 # eine Kante kann nur auf 1/CANVAS_PPM mm genau gezeichnet werden, und im Foto
@@ -227,6 +227,25 @@ def ideal_markers(scene: Scene) -> list[DetectedMarker]:
     markers = []
     for marker_id, (cx, cy) in sorted(scene.centers_mm.items()):
         plane = marker_plane_corners(cx, cy, scene.marker_mm)
+        markers.append(DetectedMarker(marker_id, project(scene.homography, plane)))
+    return markers
+
+
+def rotated_markers(scene: Scene, angles_deg: dict[int, float]) -> list[DetectedMarker]:
+    """Ideale Ecken, aber jeder Marker um seinen eigenen Mittelpunkt gedreht.
+
+    Das ist die Lage, fuer die es den Streu-Modus gibt: Marker, die verstreut
+    auf einer Flaeche liegen, jeder in seinem Winkel.
+
+    Das gerenderte Foto der Szene zeigt sie weiterhin achsparallel - hier wird
+    nichts neu gezeichnet. Das ist kein Mangel, sondern dieselbe Trennung, die
+    ideal_markers schon macht: der Detektor ist anderswo geprueft, hier steht
+    der Ausgleich auf dem Pruefstand, und der sieht nichts als Ecken.
+    """
+    markers = []
+    for marker_id, (cx, cy) in sorted(scene.centers_mm.items()):
+        pose = np.array([cx, cy, np.radians(angles_deg.get(marker_id, 0.0))])
+        plane = marker_plane_corners_at(pose, scene.marker_mm)[0]
         markers.append(DetectedMarker(marker_id, project(scene.homography, plane)))
     return markers
 

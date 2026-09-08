@@ -303,7 +303,8 @@ function footerMeta(core, session, solved, crop, request, contourMm, locale) {
         });
     }
 
-    const modeKey = solved.solution.mode === "sheet" ? "sheet" : "free";
+    // Der Modus IST der Schluessel - fuer jeden gibt es pdf.footer.mode_*.
+    const modeKey = solved.solution.mode;
     return {
         object_mm: objectText,
         dpi: request.dpi,

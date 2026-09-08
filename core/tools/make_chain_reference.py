@@ -143,6 +143,10 @@ class CppCore:
         homography, offsets = self.core.fit_free(quads, marker_mm)
         return np.asarray(homography), np.asarray(offsets)
 
+    def fit_scattered(self, quads, marker_mm):
+        homography, poses = self.core.fit_scattered(quads, marker_mm)
+        return np.asarray(homography), np.asarray(poses)
+
     def pose_from_homography(self, homography, focal_px, width, height):
         return self.core.pose_from_homography(homography, focal_px, width, height)
 
@@ -192,6 +196,11 @@ class PythonCore:
 
     def fit_free(self, quads, marker_mm):
         return solve_module._fit_free_python(np.asarray(quads, dtype=np.float64), marker_mm)
+
+    def fit_scattered(self, quads, marker_mm):
+        return solve_module._fit_scattered_python(
+            np.asarray(quads, dtype=np.float64), marker_mm
+        )
 
     def pose_from_homography(self, homography, focal_px, width, height):
         return camera_module._pose_from_homography_python(homography, focal_px, width, height)
@@ -298,6 +307,14 @@ def write_chain(writer: Writer, prefix: str, core, scene: dict, image: np.ndarra
     free_h, free_offsets = core.fit_free(free_quads, marker_mm)
     writer.numbers(f"{prefix}.fit_free", np.concatenate([np.asarray(free_h).reshape(-1),
                                                         np.asarray(free_offsets).reshape(-1)]))
+
+    # Streu-Modus: dieselbe Reihenfolge, aber drei Zahlen je Marker statt zwei -
+    # und fuer JEDEN Marker eine, auch den ersten. Genau daran kann sich die
+    # JNI-Schicht verzaehlen, ohne dass eine einzelne Zahl auffiele.
+    scattered_h, scattered_poses = core.fit_scattered(free_quads, marker_mm)
+    writer.numbers(f"{prefix}.fit_scattered",
+                   np.concatenate([np.asarray(scattered_h).reshape(-1),
+                                   np.asarray(scattered_poses).reshape(-1)]))
 
     pose_height, nadir, tilt = core.pose_from_homography(h_refined, focal_px, width, height)
     writer.numbers(f"{prefix}.pose", [pose_height, nadir[0], nadir[1], tilt])
