@@ -125,23 +125,19 @@
    --accent), nicht wie die gefuellten Felder im Hauptteil: es steht im Kopf
    neben Verweis und Themenknopf und soll zu denen gehoeren, nicht zum Formular.
 
-   Geschlossen steht darin das Kuerzel ("DE"), aufgeklappt der Eigenname
-   ("Deutsch") - js/header.js tauscht die Beschriftungen. Der Grund ist die
-   Breite: nur mit dem Kuerzel stehen Markerblatt, Sprache und Thema auch auf
-   einem Telefon in EINER Zeile.
+   Darin steht das Kuerzel der Sprache, "DE" oder "EN". Der Grund ist die
+   Breite: nur so stehen Markerblatt, Sprache und Thema auch auf einem Telefon
+   in EINER Zeile. Warum nicht der Eigenname, steht in js/header.js.
    -------------------------------------------------------------------------- */
 .lang-select {
     /* Schlaegt die Feldregel aus forms.css (Klasse vor Element): das Feld waere
        sonst 100% breit und schoebe die Nachbarn aus dem Kopf.
 
-       FEST und nicht `auto`: beim Aufklappen stehen laengere Texte in den
-       Eintraegen, und eine inhaltsabhaengige Breite liesse den Waehler in diesem
-       Moment wachsen und den Themenknopf danebenspringen. Die Liste selbst darf
-       breiter werden als der Waehler - das entscheidet der Browser.
-
-       3.75rem sind 60px; das Kuerzel mit Pfeil und Innenabstand misst gemessene
-       59px. Der eine Pixel Luft ist Absicht - eine andere Schrift faellt sonst
-       ins Abschneiden. */
+       FEST und nicht `auto`: die Zeile im Kopf ist knapp, und eine
+       inhaltsabhaengige Breite haengt an der Schrift des Geraets. 3.75rem sind
+       60px; das Kuerzel mit Pfeil und Innenabstand misst gemessene 59px. Der
+       eine Pixel Luft ist Absicht - eine andere Schrift faellt sonst ins
+       Abschneiden. */
     width: 3.75rem;
     min-height: 2.25rem;
     padding: 0 0.5rem;
