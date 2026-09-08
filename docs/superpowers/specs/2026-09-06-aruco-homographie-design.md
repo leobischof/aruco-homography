@@ -869,12 +869,18 @@ unter `THEME_STORAGE_KEY`; im privaten Modus gilt sie eben nur für diese Sitzun
 
 **Sprachwahl.** Ein natives `<select>` im Kopf, das `header.js` aus `/api/locales` füllt — eine
 dritte Sprache ist damit eine Katalogdatei plus ein Eintrag in `config.SUPPORTED_LOCALES` und
-kein Markup. Geschlossen steht darin das **Kürzel** (`DE`, `EN`), aufgeklappt der Eigenname
-(`Deutsch`, `English`). HTML sieht dafür keine zwei Beschriftungen vor — `label` gilt für beides
-—, also tauscht `header.js` die Texte, und zwar bevor die Liste aufgeht: ein offenes Systemrad
-nimmt Änderungen nicht mehr an. Der Grund für das Kürzel ist die Breite: nur so stehen
-Markerblatt-Verweis, Sprache und Thema auf einem Telefon in **einer** Zeile. Der Wähler ist
-deshalb auch fest 60 px breit, sonst spränge der Themenknopf beim Aufklappen zur Seite.
+kein Markup. Darin steht das **Kürzel** der Sprache (`DE`, `EN`), aus dem Code gerechnet und
+nicht übersetzt. Der Grund ist die Breite: nur so stehen Markerblatt-Verweis, Sprache und Thema
+auf einem Telefon in **einer** Zeile; der Wähler ist deshalb fest 60 px breit.
+
+`0.1.3-alpha` zeigte hier noch den Eigennamen, sobald die Liste aufging — ein Tausch der
+Optionstexte auf `mousedown`/`touchstart`/`focus` und zurück auf `change`/`blur`. **Das ist
+zurückgenommen.** Auf einem Xiaomi unter Android 15 blieb der Tausch hängen: wer das Systemrad
+öffnet und wieder schließt, ohne die Sprache zu *wechseln*, löst weder `change` noch `blur` aus,
+und der Wähler stand danach dauerhaft auf `Deutsch` — abgeschnitten in einem Feld, das für zwei
+Großbuchstaben breit ist. HTML kennt für eine Option nur **eine** Beschriftung, geschlossen wie
+aufgeklappt; jede andere Lösung wäre derselbe Tausch mit demselben Zeitproblem oder ein
+nachgebautes Aufklappmenü, und das native `<select>` ist hier Absicht.
 
 Die Startsprache ist die gespeicherte Wahl (`LOCALE_STORAGE_KEY`), sonst die Browsersprache,
 sonst Deutsch. Der Katalog wird geladen, **bevor** irgendetwas gezeichnet wird — die Regler
