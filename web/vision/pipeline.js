@@ -223,19 +223,27 @@ export async function runExport(core, session, request) {
     // am unberuehrten Foto gemessen, ab hier aendert sich nur noch Farbe und Ton.
     const options = adjustOptions(request.adjust);
 
-    /** Entzerren, aufbereiten, kodieren - fuer ein Rechteck in Zuschnitt-Millimetern. */
-    const render = async (area) => {
+    /**
+     * Entzerren, aufbereiten, kodieren - fuer ein Rechteck in Zuschnitt-Millimetern.
+     *
+     * `maxPx` deckelt die laengere Pixelkante des Ergebnisses. Null heisst: in der
+     * eingestellten Aufloesung, also so, wie es gedruckt wird. Mit Deckel fragt
+     * genau ein Aufrufer - der Klebeplan in web/pdf/build.js, der den ganzen
+     * Zuschnitt als Daumennagel zeigt und ihn nie in Druckaufloesung braucht.
+     */
+    const render = async (area, maxPx = 0) => {
+        const areaDpi = cappedDpi(request.dpi, width(area), height(area), maxPx);
         // Dieselbe Pruefung wie bisher, nur auf dem, was wirklich belegt wird.
         // Blattweise ist das ein A4-Blatt und geht ueberall durch; am Stueck ist
         // es der ganze Zuschnitt, und dann soll dieser Abbruch kommen und nicht
         // ein OutOfMemoryError im Entzerren.
-        checkOutputBudget(core, area, request.dpi);
+        checkOutputBudget(core, area, areaDpi);
         let raster = rectify(
             core,
             session.photo.image,
             solved.homographyEffective,
             area,
-            pxPerMm,
+            pxPerMmForDpi(areaDpi),
             solved.solution.pxPerMm,
         );
         if (!isIdentity(core, options)) {
@@ -258,13 +266,13 @@ export async function runExport(core, session, request) {
         // Die Bildquelle fuer web/pdf/build.js: ein Blatt, ein Raster. Der
         // Spitzenbedarf haengt damit am Blatt und nicht mehr am Zuschnitt - genau
         // daran ist der Export auf dem Telefon gescheitert.
-        source = async (xMm, yMm, widthMm, heightMm) =>
+        source = async (xMm, yMm, widthMm, heightMm, maxPx = 0) =>
             (await render(extent(
                 crop.x0 + xMm,
                 crop.y0 + yMm,
                 crop.x0 + xMm + widthMm,
                 crop.y0 + yMm + heightMm,
-            ))).jpeg;
+            ), maxPx)).jpeg;
     }
 
     const options_ = exportOptions({
@@ -293,6 +301,20 @@ export async function runExport(core, session, request) {
         locale,
     );
     return buildPdf(source, width(crop), height(crop), options_, footer, contourMm);
+}
+
+/**
+ * Die Aufloesung, bei der die laengere Kante hoechstens `maxPx` Pixel hat.
+ *
+ * Ohne Deckel - und ebenso bei einem Deckel, der gar nicht greift - kommt die
+ * eingestellte Aufloesung unveraendert zurueck. Der Druckweg geht damit durch
+ * diese Funktion hindurch, ohne dass sich an ihm etwas aendert; das ist die
+ * Bedingung dafuer, dass tiles.test.mjs weiter Bit fuer Bit dasselbe misst.
+ */
+function cappedDpi(dpi, widthMm, heightMm, maxPx) {
+    if (maxPx <= 0) return dpi;
+    const longestMm = Math.max(widthMm, heightMm, 1e-6);
+    return Math.min(dpi, (maxPx * constants.MM_PER_INCH) / longestMm);
 }
 
 /**
