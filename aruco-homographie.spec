@@ -22,6 +22,7 @@ Details nichts, kein Herausgeber und keine Fassung. Die Werte werden nicht abget
 sondern aus `app/config.py` und den i18n-Katalogen gelesen.
 """
 
+import glob
 import os
 import sys
 
@@ -127,6 +128,37 @@ datas = [
     (os.path.join(ROOT, "shared"), "shared"),
 ]
 
+# --- Der C++-Rechenkern -------------------------------------------------------
+# Die ausgelieferte .exe misst mit C++, nicht mit der Python-Referenz: `config.FROZEN`
+# setzt ARUCO_CORE auf `cpp` (app/vision/backend.py). Ohne die drei Zeilen hier
+# startet sie deshalb NICHT - und das ist die gewollte Reihenfolge. Ein Bundle, das
+# den Kern vergisst und stillschweigend in Python weiterrechnet, waere der teuerste
+# Ausgang: er sieht wie ein Erfolg aus.
+#
+# Ziel ist die Wurzel des Bundles (`_internal/`), und zwar aus zwei Gruenden:
+# sie steht ohnehin auf `sys.path`, und Windows sucht die abhaengige DLL im
+# Verzeichnis der .pyd, bevor es den PATH befragt. .pyd und DLL muessen also
+# beisammen bleiben; wer eine von beiden verschiebt, bricht die andere.
+CORE_BUILD = os.path.join(ROOT, "core", "build")
+core_pyd = sorted(glob.glob(os.path.join(CORE_BUILD, "aruco_core*.pyd")))
+if len(core_pyd) != 1:
+    # Lieber hier abbrechen als eine .exe ausliefern, die beim ersten Start stirbt.
+    raise SystemExit(
+        f"Erwartet: genau eine aruco_core*.pyd in {CORE_BUILD}, gefunden: "
+        f"{[os.path.basename(p) for p in core_pyd]}.  Bauen mit:  .\\dev.ps1 build-core"
+    )
+
+# Die Laufzeit-DLLs, die CMake neben den Kern gelegt hat - heute nur
+# opencv_world500.dll. python313.dll steht dort ebenfalls, gehoert aber NICHT ins
+# Bundle: PyInstaller bringt seine eigene mit, und eine zweite daneben ist im
+# besten Fall 6 MB Ballast und im schlechtesten die falsche.
+core_dlls = [
+    dll for dll in sorted(glob.glob(os.path.join(CORE_BUILD, "*.dll")))
+    if not os.path.basename(dll).lower().startswith("python")
+]
+
+binaries = [(item, ".") for item in core_pyd + core_dlls]
+
 # ReportLab laedt Schriftmetriken und Type-1-Schriften erst zur Laufzeit aus dem
 # eigenen Paketverzeichnis nach. Die mitgelieferten Hooks decken die Module ab
 # (`reportlab.pdfbase._fontdata_*`, `reportlab.rl_settings`), die DATEIEN daneben
@@ -175,7 +207,7 @@ a = Analysis(  # noqa: F821
     # Die Projektwurzel, damit `from app import config` im Einstiegsskript
     # aufgeloest wird - PyInstaller legt von allein nur app/ auf den Pfad.
     pathex=[ROOT],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

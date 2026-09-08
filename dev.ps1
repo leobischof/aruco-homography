@@ -470,6 +470,12 @@ function Invoke-BuildExe {
     param([string[]]$ExtraArgs = $Rest)
 
     Confirm-Deps
+
+    # Der Kern zuerst: die ausgelieferte .exe misst mit C++ (app/vision/backend.py
+    # setzt ARUCO_CORE=cpp, sobald eingefroren wurde). Ohne ihn bricht schon die
+    # Bauvorschrift ab - lieber hier als beim ersten Start auf einem fremden Rechner.
+    Invoke-BuildCore
+
     Write-Step 'Building the Windows .exe (PyInstaller, one-folder)'
     Invoke-Native -What 'build-exe' -Action {
         & $VenvPython -m PyInstaller --noconfirm $ExeSpec @ExtraArgs
@@ -502,6 +508,14 @@ function Test-BundleFresh {
     $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app'), (Join-Path $RepoRoot 'shared') -Recurse -File |
         Where-Object { $_.FullName -notlike '*__pycache__*' })
     $sources += Get-Item $ExeSpec
+
+    # Der C++-Kern liegt mit im Bundle, also gehoert er in diese Frage. Ohne die
+    # naechsten Zeilen galte ein Bundle als frisch, in dem noch der Kern von
+    # vorgestern steckt - und gemessen wird mit genau diesem Kern.
+    if (Test-Path $CoreBuildDir) {
+        $sources += @(Get-ChildItem -Path $CoreBuildDir -File |
+            Where-Object { $_.Extension -in '.pyd', '.dll' })
+    }
     $newest = ($sources | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
 
     return ($newest -le $built)
@@ -633,7 +647,7 @@ function Show-Help {
     Write-Cmd 'build-core-wasm'   'Denselben Kern fuer den Browser bauen (Emscripten) und unter Node messen'
     Write-Cmd 'build-core-android' 'Denselben Kern fuer Android bauen (NDK; Vorgabe arm64-v8a) - baut nur, misst nicht'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
-    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
+    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (baut den C++-Kern mit; ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
     Write-Cmd 'kill-servers'      'Aus diesem Repo gestartete Server beenden'
     Write-Cmd 'clean-all'         'venv, out/, build/, dist/ und Caches entfernen'
