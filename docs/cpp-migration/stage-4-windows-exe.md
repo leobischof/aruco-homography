@@ -16,6 +16,11 @@ Messung ist Zahl für Zahl dieselbe wie die des Quellbaums mit `ARUCO_CORE=cpp`.
 `opencv_world500.dll` (80,1 MB) mit muss. Dazu unten mehr — das ist der ehrliche Preis
 dieser Stufe und keine Nebensache.
 
+> **Nachtrag 08.09.2026:** inzwischen liegt die **ganze** Messkette in `core/` (PR #30),
+> nicht mehr nur der Detektor. Die `.exe` rechnet damit von der Markererkennung bis zur
+> Kontur in C++. An der Größe ändert das nichts — der Kern ist 0,18 MB, die DLL daneben
+> war schon vorher der ganze Preis. An Abschnitt 2.4 ändert es alles.
+
 ---
 
 ## 1 · Was sich geändert hat
@@ -34,6 +39,9 @@ Vier Stellen, mehr war es nicht:
 | `dev.ps1` | `build-exe` baut den Kern mit; die Frischeprüfung sieht ihn |
 
 Dazu eine Zeile im Startbanner, die sagt, welcher Kern gerade misst.
+
+An diesen vier Stellen hat sich seither nichts geändert; erweitert wurde nur, **was**
+der Kern kann (PR #30, fünfzehn Funktionen hinter `backend.implementation`).
 
 ### Die Vorgabe hängt am Ort, nicht an einer Umgebungsvariablen
 
@@ -83,10 +91,38 @@ Export      : 673 783 B, 29 Seiten, 210.000x297.000 mm
               Bildrechteck 5.000,23.000,200.000,269.000
 ```
 
-Denselben Vergleich gibt es auch zwischen den beiden **Kernen** im Quellbaum:
-`ARUCO_CORE=python` und `ARUCO_CORE=cpp` liefern auf dieselbe Szene Antworten, die
-sich **nur** in Sitzungskennung, Zeitstempel und `elapsed_s` (0,18 s ↔ 0,19 s)
-unterscheiden. Kein einziger gemessener Wert weicht ab.
+### 2.4 Und die beiden Kerne gegeneinander
+
+> **Nachgetragen am 08.09.2026.** Als dieses Dokument entstand, umfasste `core/` genau
+> eine Rechnung, und die beiden Kerne waren auf allen Feldern bitgleich. Seither sind
+> **fünfzehn** Funktionen dazugekommen (PR #30) — die `.exe` misst jetzt die
+> **vollständige** Kette in C++. Damit stimmt der frühere Satz, kein einziger gemessener
+> Wert weiche ab, nicht mehr — und was an seine Stelle tritt, ist die eigentliche
+> Aussage dieses Abschnitts.
+
+Dieselbe Szene durch `ARUCO_CORE=python` und `ARUCO_CORE=cpp`, Feld für Feld über den
+ganzen Antwortkörper verglichen. **Von allen Zahlen weichen genau vier ab**, jede
+dreimal aufgeführt (Ausschnitt, Ausdehnung, Vorschau):
+
+| Feld | Python | C++ | Δ |
+|---|---|---|---|
+| `extent_mm.x1` | 716,8210079205405 | 716,8210104374368 | 2,517·10⁻⁶ mm |
+| `extent_mm.y1` | 625,7669995023339 | 625,7669974898539 | 2,012·10⁻⁶ mm |
+| `extent_mm.x0` | −541,221446669155 | −541,2214474138532 | 7,447·10⁻⁷ mm |
+| `extent_mm.y0` | −336,0211545042241 | −336,0211550054414 | 5,012·10⁻⁷ mm |
+
+**Alles andere ist identisch** — alle 32 Eckkoordinaten, `rms_px` 0,093, `rms_mm`
+0,0482, jede gemessene Markerkante, jedes Residuum, die Seitengeometrie.
+
+**Die größte Abweichung ist 2,5 Nanometer** auf einem 1258 mm breiten Ausschnitt, also
+relativ 2,0·10⁻⁹ — und **155 000-mal kleiner als die Toleranz** einer einzelnen
+Markerecke (0,75 px ≈ 0,39 mm).
+
+Dass sie überhaupt auftritt, ist erwartbar und kein Mangel: `refine_homography` ist in
+Python eine `scipy`-Ausgleichsrechnung und in C++ `cv::LevMarq`. Zwei verschiedene
+Verfahren auf demselben Problem enden nicht auf demselben Bit; sie enden hier auf
+demselben Nanometer. Die Ausdehnung der Ebene ist die einzige Größe, die weit genug
+hinter der Homographie steht, um es überhaupt zu zeigen.
 
 ### 2.3 Lädt sie ihn wirklich? — der Gegenbeweis
 
@@ -129,12 +165,23 @@ Das ist verkraftbar, weil nichts zwischen ihnen überquert: die Bindung nimmt ei
 numpy-Array entgegen und gibt Zahlen zurück — kein `cv::Mat` wandert über die Grenze
 (`core/bindings/python.cpp`).
 
-**Beseitigt wird der Doppelbestand erst, wenn mehr als der Detektor in C++ liegt.**
-Heute umfasst `core/` genau eine Rechnung: `detect_markers`. Homographie, Entzerrung,
-Kontur, Dicke und Ausdehnung rechnen weiter in Python und brauchen `cv2`. Solange das
-so ist, müssen beide mit. Ein schlanker OpenCV-Bau (nur `core`, `imgproc`, `objdetect`
-statt `world`) wäre die andere Hälfte der Ersparnis und verlangt, OpenCV selbst neu zu
-übersetzen — mehrere Stunden, und deshalb hier nicht getan.
+**Der Doppelbestand bleibt, auch jetzt, wo die ganze Messung in C++ liegt.** `cv2`
+wird weiterhin außerhalb von `app/vision/` gebraucht, und zwar an fünf Stellen, die
+mit Messen nichts zu tun haben:
+
+| Datei | wofür |
+|---|---|
+| `app/session.py` | Foto dekodieren |
+| `app/pipeline.py` | Vorschau kodieren |
+| `app/pdf/build.py` | Bild ins PDF |
+| `app/pdf/markersheet.py` | Marker zeichnen |
+| `app/config.py` | Wörterbuchnamen auflösen |
+
+Das ist Ein- und Ausgabe, nicht Geometrie. Solange die Python-Fassung überhaupt
+ausgeliefert wird — und sie ist die geprüfte Referenz —, müssen beide OpenCV-Bauten
+mit. Ein schlanker OpenCV-Bau (nur `core`, `imgproc`, `objdetect` statt `world`) wäre
+die andere Hälfte der Ersparnis und verlangt, OpenCV selbst neu zu übersetzen —
+mehrere Stunden, und deshalb hier nicht getan.
 
 ---
 
