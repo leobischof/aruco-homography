@@ -84,6 +84,50 @@ public final class WebBridge {
         }
     }
 
+    /**
+     * Eine Funktion des Rechenkerns aufrufen. Die ganze Messkette geht hier durch.
+     *
+     * <p><b>Ein Loch statt siebzehn.</b> Jede Methode dieser Klasse ist von jedem Skript in
+     * dieser WebView aus erreichbar. Die siebzehn Kernfunktionen einzeln zu oeffnen waeren
+     * siebzehn Signaturen, die zur JavaScript-Seite passen muessen und die kein Uebersetzer
+     * vergleicht. Die Zuordnung Name -&gt; Funktion steht deshalb an einer Stelle:
+     * {@link CoreBridge#call}.
+     *
+     * <p><b>Synchron, und das ist Absicht.</b> {@code web/vision/pipeline.js} ist eine
+     * gewoehnliche Funktionskette ohne {@code await} zwischen den Rechenschritten - und muss
+     * es bleiben, weil genau dieselbe Datei im Browser laeuft. Der Aufruf blockiert also den
+     * JavaScript-Faden der Seite, so wie WebAssembly es im Browser auch tut. Die Oberflaeche
+     * des Systems bleibt bedienbar: diese Methode laeuft auf Androids JavaBridge-Faden und
+     * nicht auf dem der Anzeige.
+     *
+     * <p><b>Bilder gehen hier NICHT durch.</b> Sie liegen in {@link NativeImages} und heissen
+     * nach aussen nur noch eine Zahl.
+     *
+     * @param method der Name, wie ihn {@code core/bindings/web.cpp} vergibt
+     * @param arguments die Argumente als JSON-Feld, in der Reihenfolge der Signatur
+     */
+    @JavascriptInterface
+    public String core(String method, String arguments) {
+        try {
+            Object value = activity.core().call(method, new JSONArray(arguments));
+            JSONObject payload = new JSONObject();
+            payload.put("value", value);
+            return ok(payload);
+        } catch (Exception failure) {
+            return error(failure);
+        }
+    }
+
+    /** Der Griff auf das geladene Foto - die Eingabe jedes Rechenschritts. */
+    @JavascriptInterface
+    public String photoHandle() {
+        try {
+            return ok(new JSONObject().put("handle", activity.photoHandle()));
+        } catch (Exception failure) {
+            return error(failure);
+        }
+    }
+
     /** Einen Systemdialog zur Fotowahl oeffnen. Antwort ueber {@code callId}. */
     @JavascriptInterface
     public void pickPhoto(long callId) {
@@ -130,30 +174,38 @@ public final class WebBridge {
     }
 
     /**
-     * Ein PDF speichern. Der Benutzer waehlt den Ort im Systemdialog.
+     * Eine Scheibe des PDFs herueberreichen. Danach {@link #savePdf} oder {@link #sharePdf}.
      *
-     * <p>Die Bytes kommen als Base64 - ein A4-Markerblatt sind wenige Dutzend Kilobyte,
-     * das traegt die Bruecke ohne weiteres. Fuer ein gekacheltes Schablonen-PDF mit
-     * eingebettetem Raster gilt das nicht mehr; wenn dieser Weg spaeter dafuer gebraucht
-     * wird, gehoert das Bild vorher auf die native Seite und nicht durch diese Grenze.
+     * <p><b>In Scheiben und nicht am Stueck.</b> Ein A4-Markerblatt sind wenige Dutzend
+     * Kilobyte - das ginge auch in einem Zug. Ein gekacheltes Schablonen-PDF mit
+     * eingebettetem 300-dpi-Raster sind zweistellige Megabyte, als Base64 ein Drittel mehr,
+     * und eine einzelne Zeichenkette dieser Groesse stuende zweimal im Speicher: einmal als
+     * JavaScript-String, einmal als Java-String, waehrend gleichzeitig das Rasterbild noch
+     * liegt. Zwei Wege - einer fuer kleine, einer fuer grosse Dokumente - waeren ein Weg zu
+     * viel, also gehen beide durch diesen.
      */
     @JavascriptInterface
-    public void savePdf(long callId, String base64, String filename) {
+    public String appendPdf(String base64) {
         try {
-            activity.savePdf(callId, Base64.decode(base64, Base64.DEFAULT), filename);
-        } catch (IllegalArgumentException failure) {
-            activity.resolveError(callId, "Base64 nicht lesbar: " + failure.getMessage());
+            activity.appendPdf(Base64.decode(base64, Base64.DEFAULT));
+            return ok(new JSONObject());
+        } catch (Exception failure) {
+            return error(failure);
         }
+    }
+
+    /**
+     * Das herübergereichte PDF speichern. Der Benutzer waehlt den Ort im Systemdialog.
+     */
+    @JavascriptInterface
+    public void savePdf(long callId, String filename) {
+        activity.savePdf(callId, filename);
     }
 
     /** Dasselbe, aber zum Teilen (Drucken, Mail, Cloud) statt zum Ablegen. */
     @JavascriptInterface
-    public void sharePdf(long callId, String base64, String filename) {
-        try {
-            activity.sharePdf(callId, Base64.decode(base64, Base64.DEFAULT), filename);
-        } catch (IllegalArgumentException failure) {
-            activity.resolveError(callId, "Base64 nicht lesbar: " + failure.getMessage());
-        }
+    public void sharePdf(long callId, String filename) {
+        activity.sharePdf(callId, filename);
     }
 
     /** Zu einer anderen Seite der App wechseln (die Oberflaeche, oder zurueck). */

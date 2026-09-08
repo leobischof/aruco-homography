@@ -131,6 +131,24 @@ val gatherWebAssets by tasks.registering(Sync::class) {
     into("www/web/pdf") {
         from(repoRoot.resolve("web/pdf")) { exclude("**/*.test.mjs") }
     }
+    // Die Rechenkette. DIESELBEN Dateien, die im Browser laufen - nur core.js
+    // und image.js bleiben draussen: fuer die beiden gibt es hier eine
+    // Android-Fassung (core-android.js, image-android.js), und die Importkarte
+    // in native/bridge-shim.js tauscht sie.
+    //
+    // Der Ausschluss ist nicht Sparsamkeit. web/vision/core.js laedt
+    // web/vendor/core/aruco_core.wasm - 3,6 MB WebAssembly. Auf diesem Ziel
+    // rechnet aber die native Bibliothek ueber JNI (Stufe 4, "Architektur"), und
+    // ein zweiter Rechenkern im APK waere genau die Fassung, die niemand mehr
+    // mitmisst. Liegt die Datei nicht im Paket, kann sie auch niemand aus
+    // Versehen laden: eine fehlgeschlagene Importkarte gibt dann einen
+    // Ladefehler statt eines stillen zweiten Kerns.
+    into("www/web/vision") {
+        from(repoRoot.resolve("web/vision")) {
+            exclude("core.js", "image.js", "**/*.test.mjs")
+        }
+    }
+    into("www/web") { from(repoRoot.resolve("web/constants.js")) }
     into("www/shared") { from(repoRoot.resolve("shared/constants.json")) }
     into("www/vendor") {
         from(repoRoot.resolve("node_modules/pdf-lib/dist/pdf-lib.esm.min.js"))

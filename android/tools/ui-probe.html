@@ -1,0 +1,220 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Android-Kette im Chromium</title>
+<pre id="out">laeuft...</pre>
+
+<!--
+  ui-probe.html - die Android-Rechenkette, gefahren in einem echten Chromium.
+
+  WAS HIER GEMESSEN WIRD. Auf diesem Rechner laeuft kein Android. Was sich
+  trotzdem ausfuehren laesst, ist alles oberhalb der JNI-Grenze: die
+  Importkarte, web/vision/core-android.js, web/vision/image-android.js, und
+  darueber die unveraenderte Kette (local.js, pipeline.js, solve.js, ...) bis zum
+  fertigen Schablonen-PDF. Geladen wird dabei GENAU DER BAUM AUS DEM APK - der
+  Pruefer packt ihn aus, er wird nicht nachgebaut.
+
+  WAS DABEI EIN ERSATZ IST, und das gehoert in jeden Bericht darueber:
+
+    * Die Java-Seite ist ein Nachbau (android/tools/bridge-stub.mjs).
+    * Der Rechenkern ist der WASM-Bau desselben core/, nicht libaruco_core.so.
+      Dieselbe C++-Funktion, anderes Ziel. Dass die JNI-Schicht bitgenau
+      dasselbe liefert, misst core/tools/ChainCheck.java auf einer echten JVM.
+    * Chromium auf Windows ist nicht die System-WebView eines Telefons.
+
+  Was also NICHT gemessen ist: Androids Linker, die WebView, die Kamera-Wege,
+  der Speicherbedarf auf einem Geraet. Was gemessen ist: dass diese Kette in
+  dieser Reihenfolge mit diesen Dateien ein maszhaltiges PDF ergibt.
+-->
+
+<script>
+  // Der Stummel muss VOR bridge-shim.js stehen: der liest window.AndroidCore
+  // beim Laden. Die Methoden schlagen den Kern erst beim Aufruf nach - da ist
+  // das WASM laengst geladen (das Modul unten wartet darauf, bevor es rechnet).
+  window.__probe = { bridge: null, photo: null, file: null, pdf: null };
+
+  function answer(payload) {
+    return JSON.stringify(Object.assign({ ok: true }, payload));
+  }
+
+  window.AndroidCore = {
+    core(method, argumentsJson) {
+      try {
+        return answer({ value: window.__probe.bridge.core(method, JSON.parse(argumentsJson)) });
+      } catch (error) {
+        return JSON.stringify({ ok: false, error: String((error && error.message) || error) });
+      }
+    },
+    photoHandle() {
+      return answer({ handle: window.__probe.photo.handle });
+    },
+    nativeInfo() {
+      return answer({ opencv: "stub", dictionary: "stub" });
+    },
+    markerBits(id, modules) {
+      return answer({ bits: Array.from(window.__probe.bridge.core("markerBits", [id, modules])) });
+    },
+    loadPickedPhoto(callId) {
+      // Auf dem Geraet dekodiert BitmapFactory und legt BGR ab. Hier tut es die
+      // Leinwand - dieselbe Rolle, dieselbe Ausgabe.
+      window.__probe.decodePhoto().then(
+        (photo) => window.__arucoResolve(callId, Object.assign({ ok: true }, photo)),
+        (error) => window.__arucoResolve(callId, { ok: false, error: String(error) }),
+      );
+    },
+    appendPdf(base64) {
+      window.__probe.chunks.push(base64);
+      return answer({});
+    },
+    savePdf(callId, filename) {
+      window.__probe.pdf = { filename, base64: window.__probe.chunks.join("") };
+      window.__probe.chunks = [];
+      window.__arucoResolve(callId, { ok: true, saved: true });
+    },
+    sharePdf(callId, filename) { this.savePdf(callId, filename); },
+    navigate() {},
+  };
+  window.__probe.chunks = [];
+</script>
+
+<!-- Genau die Datei aus dem APK, unveraendert. Auf dem Geraet legt sie
+     addDocumentStartJavaScript vor jedes Seitenskript; hier tut es ein
+     klassisches <script> vor dem ersten Modul - dieselbe Reihenfolge. -->
+<script src="/native/bridge-shim.js"></script>
+
+<script type="module">
+import { makeBridgeStub } from "/probe/bridge-stub.mjs";
+import createArucoCore from "/probe/core/aruco_core.mjs";
+
+const lines = [];
+const say = (text) => {
+    lines.push(text);
+    document.getElementById("out").textContent = lines.join("\n");
+};
+const done = () => say("FERTIG");
+
+try {
+    // --- Der Kern und das Foto ---------------------------------------------
+    const wasm = await createArucoCore();
+    window.__probe.bridge = makeBridgeStub(wasm);
+
+    const response = await fetch("/probe/flat.png");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    window.__probe.file = new File([bytes], "flat.png", { type: "image/png" });
+
+    window.__probe.decodePhoto = async () => {
+        const bitmap = await createImageBitmap(window.__probe.file);
+        // Die Masse VOR dem Schliessen merken: ein geschlossenes ImageBitmap
+        // meldet 0x0, und ein Bild ohne Flaeche weist der Kern zu Recht ab.
+        const width = bitmap.width;
+        const height = bitmap.height;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.drawImage(bitmap, 0, 0);
+        const rgba = context.getImageData(0, 0, width, height).data;
+        bitmap.close();
+        const bgr = new Uint8Array((rgba.length / 4) * 3);
+        for (let pixel = 0; pixel * 4 < rgba.length; pixel += 1) {
+            bgr[pixel * 3] = rgba[pixel * 4 + 2];
+            bgr[pixel * 3 + 1] = rgba[pixel * 4 + 1];
+            bgr[pixel * 3 + 2] = rgba[pixel * 4];
+        }
+        const handle = window.__probe.bridge.put(bgr, width, height, 3);
+        window.__probe.photo = { handle, width, height };
+        return { width, height, filename: "flat.png" };
+    };
+
+    // Die Rasterbilder holt image-android.js als GET. Auf dem Geraet bedient
+    // das der WebViewAssetLoader aus Rasters.java; hier die Leinwand.
+    const nativeFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input.url, location.origin);
+        const match = url.pathname.match(/^\/api\/raster\/(\d+)\/(\d+)\.jpg$/);
+        if (!match) return nativeFetch(input, init);
+        const image = window.__probe.bridge.image(Number(match[1]));
+        const pixels = new Uint8Array(wasm.HEAPU8.buffer, image.pointer,
+            image.width * image.height * image.channels);
+        const rgba = new Uint8ClampedArray(image.width * image.height * 4);
+        for (let pixel = 0; pixel < image.width * image.height; pixel += 1) {
+            rgba[pixel * 4] = pixels[pixel * 3 + 2];
+            rgba[pixel * 4 + 1] = pixels[pixel * 3 + 1];
+            rgba[pixel * 4 + 2] = pixels[pixel * 3];
+            rgba[pixel * 4 + 3] = 255;
+        }
+        const canvas = new OffscreenCanvas(image.width, image.height);
+        canvas.getContext("2d").putImageData(new ImageData(rgba, image.width, image.height), 0, 0);
+        const blob = await canvas.convertToBlob({
+            type: "image/jpeg",
+            quality: Number(match[2]) / 100,
+        });
+        return new Response(blob, { status: 200, headers: { "Content-Type": "image/jpeg" } });
+    };
+
+    // --- Die Kette ----------------------------------------------------------
+    const local = await import("/web/vision/local.js");
+
+    const upload = await local.uploadPhoto(window.__probe.file);
+    say(`upload: ${upload.width}x${upload.height} px, Marker-Kante ${upload.defaults.marker_mm} mm`);
+
+    const solved = await local.solve({
+        session_id: upload.session_id,
+        marker_mm: upload.defaults.marker_mm,
+        spacing_x_mm: upload.defaults.spacing_x_mm,
+        spacing_y_mm: upload.defaults.spacing_y_mm,
+        mode: "sheet",
+        thickness_mm: 0.0,
+        camera_height_mm: null,
+    }, "de");
+    say(`solve: ${solved.markers.length} Marker, rms_px=${solved.rms_px}, `
+        + `rms_mm=${solved.rms_mm}, mm_per_px=${solved.mm_per_px}`);
+    say(`extent_mm: ${JSON.stringify(solved.extent_mm)}`);
+    say(`default_crop_mm: ${JSON.stringify(solved.default_crop_mm)}`);
+
+    const adjusted = await local.adjust({
+        session_id: upload.session_id,
+        adjust: { contrast: 0.25, local_contrast: 0.3 },
+    });
+    say(`adjust: Vorschau ${adjusted.preview.url.startsWith("blob:") ? "als Blob" : "?"}, `
+        + `${adjusted.preview.px_per_mm.toFixed(4)} px/mm`);
+
+    // Ein enger Zuschnitt, damit das PDF mehrere Seiten bekommt - genau der
+    // Fall, den die Base64-Bruecke frueher nicht getragen haette.
+    const crop = { x0: 0.0, y0: 15.0, x1: 210.0, y1: 282.0 };
+    const exported = await local.exportPdf({
+        session_id: upload.session_id,
+        crop_mm: crop,
+        dpi: 300,
+        layout: "tiles",
+        page_format: "A4",
+        contour: false,
+        adjust: { contrast: 0.25, local_contrast: 0.3 },
+        overlays: { scalebar: true, grid: true, footer: true, marks: true },
+        locale: "de",
+    });
+    say(`export: ${exported.pages} Seiten, ${exported.pageSize} mm, `
+        + `${exported.blob.size} Bytes`);
+
+    // Und der Weg nach draussen, ueber genau die Stelle, die auf dem Geraet
+    // greift: ein Anker mit blob:-Adresse, den niemand einhaengt.
+    const url = URL.createObjectURL(exported.blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "schablone.pdf";
+    link.click();
+    for (let attempt = 0; attempt < 200 && window.__probe.pdf === null; attempt += 1) {
+        await new Promise((wait) => setTimeout(wait, 50));
+    }
+    const delivered = window.__probe.pdf;
+    if (delivered === null) {
+        say("FEHLER - der Anker hat das PDF nicht uebergeben");
+    } else {
+        const bytes = Uint8Array.from(atob(delivered.base64), (c) => c.charCodeAt(0));
+        say(`uebergeben: ${delivered.filename}, ${bytes.length} Bytes, `
+            + `identisch zum Blob: ${bytes.length === exported.blob.size}`);
+        window.__probePdfBase64 = delivered.base64;
+    }
+    done();
+} catch (error) {
+    say("AUSNAHME: " + (error && error.stack ? error.stack : JSON.stringify(error)));
+    done();
+}
+</script>

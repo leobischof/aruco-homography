@@ -235,15 +235,19 @@ aber ungemessen:** auf dem Entwicklungsrechner gibt es weder Gerät noch Emulato
 Vorgezogen wurde das, weil es die Frage ist, für die der ganze Umzug betrieben wird.
 Wäre sie erst hier gestellt worden, stünden die Stufen 2 und 3 auf einer Annahme.
 
-**Die Android-Hülle steht ebenfalls: [`stage-4-android.md`](stage-4-android.md).** Eine
+**Android rechnet die ganze Kette: [`stage-4-android.md`](stage-4-android.md).** Eine
 WebView liefert `app/static/` **unverändert** aus, eine JNI-Schicht bindet denselben
-`core/`, und `libaruco_core.so` ist für alle vier ABIs 16-KB-ausgerichtet. Die
-JNI-Schicht ist auf einer echten JVM **gemessen** — Windows-DLL desselben Quelltextes,
-64 von 64 Ecken identisch zum C++-Weg. **Auf einem Telefon ist weiterhin nichts
-gelaufen**, und die App misst noch keine Schablone: der Kern kann bis heute nur
-`detect_markers`. Fertig ist das **Markerblatt**; neu ist, dass ein Telefon den
-Prüfstand aus `shared/fixtures/` selbst fahren kann — damit lässt sich der Satz
-„Android ist ungemessen" in dreißig Sekunden streichen.
+`core/`, und `libaruco_core.so` ist für alle vier ABIs 16-KB-ausgerichtet. Foto,
+Marker, Ausgleich, Kamerapose, Entzerren, Schablonen-PDF — alles nativ, ohne Server
+und ohne Netzberechtigung. `web/vision/` hat dafür **drei neue Dateien** bekommen und
+**keine einzige geänderte**: eine Importkarte tauscht `core.js` gegen eine Fassung,
+die statt zu WebAssembly zu JNI greift. Die JNI-Schicht ist auf einer echten JVM
+**gemessen** — 18 Größen je Prüfszene, bitgenau gleich zu demselben Kern durch
+pybind11, die Rasterbilder per SHA-256. **Auf einem Telefon ist weiterhin nichts
+gelaufen**; die JavaScript-Hälfte fährt stattdessen aus dem gebauten APK in einem
+echten Chromium bis zum nachgemessenen PDF. Und ein Telefon kann den Prüfstand aus
+`shared/fixtures/` selbst fahren — damit lässt sich der Satz „Android ist ungemessen"
+in dreißig Sekunden streichen.
 
 ### Stufe 5 · Aufräumen — Tage
 

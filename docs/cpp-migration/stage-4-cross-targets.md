@@ -362,9 +362,11 @@ Windows-Ausgabe, und die Erwartung ist „wenige ULP".
   unabhängig, als er aussieht.
 - **Nur synthetische Szenen.** Wie die ganze Suite. Der Messschieber-Beleg
   (100 mm = 100 mm) hängt weiterhin allein an der Python-Kette.
-- **Nur die Erkennung.** `core/` kann heute nur `detect_markers`. Homographie,
-  Kamerazerlegung, Dickenkorrektur und `LevMarq` sind nicht portiert und also auch nicht
-  quergeprüft.
+- **Quergeprüft ist nur die Erkennung.** `core/` kann inzwischen die ganze Kette —
+  Homographie, Kamerazerlegung, Dickenkorrektur, `LevMarq`, Entzerren, Umriss —, aber die
+  Ecke-für-Ecke-Gegenüberstellung Windows gegen WASM in diesem Dokument deckt nur
+  `detect_markers` ab. Für die JNI-Seite holt das `stage-4-android.md` nach (18 Größen je
+  Szene, bitgenau); zwischen Windows und WASM steht es aus.
 - **Kein Speicherbedarf gemessen.** Das WASM läuft mit `ALLOW_MEMORY_GROWTH` und
   8 MB Stapel gegen 2400×1800; ob ein Handy mit wenig RAM ein 12-MP-Foto verträgt, steht
   nicht fest.

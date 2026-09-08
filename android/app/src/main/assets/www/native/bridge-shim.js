@@ -3,24 +3,33 @@
  *
  * Diese Datei laeuft VOR jedem Skript jeder Seite dieser App
  * (WebViewCompat.addDocumentStartJavaScript). Genau dadurch bleibt
- * app/static/index.html Byte fuer Byte unveraendert: die Oberflaeche ruft weiter
- * `fetch("/api/solve")`, und was sie erreicht, ist nicht mehr uvicorn, sondern
- * der native Kern nebenan.
+ * app/static/index.html Byte fuer Byte unveraendert.
  *
- * **Drei Aufgaben, und keine vierte.**
+ * **VIER AUFGABEN, und keine fuenfte.**
  *
- *  1. Eine Importkarte legen, damit `import ... from "pdf-lib"` auch in einer
- *     Seite aufloest, die nichts davon weiss.
- *  2. `window.__aruco` bereitstellen: die Bruecke nach Java als Versprechen
- *     statt als Rueckruf.
- *  3. `fetch` fuer /api/-Pfade ersetzen.
+ *  1. `window.ARUCO_TRANSPORT = "local"` setzen. Das ist die ganze Umschaltung:
+ *     app/static/js/api.js kennt zwei Betriebsarten, und in der oertlichen holt
+ *     es sich `web/vision/local.js` und rechnet in der Seite. Dieselbe Zeile
+ *     setzt web/index.html fuer den Browser-Bau. Kein zweiter Aufruf, kein
+ *     zweites Schema, keine zweite Fassung der Oberflaeche.
+ *
+ *  2. Eine Importkarte legen - und zwar fuer DREI Dinge. `pdf-lib` liegt hier
+ *     woanders als in node_modules. Und `web/vision/core.js` und
+ *     `web/vision/image.js` werden gegen ihre Android-Fassungen getauscht: die
+ *     eine erreicht den Kern ueber JNI statt ueber WebAssembly, die andere holt
+ *     die Bildbytes aus Java statt aus einer Leinwand. **Das sind die einzigen
+ *     beiden Dateien unter web/vision/, die auf diesem Ziel anders sind.**
+ *     Alles darueber - solve.js, rectify.js, extent.js, contour.js, camera.js,
+ *     enhance.js, pipeline.js, local.js - ist dieselbe Datei wie im Browser.
+ *
+ *  3. `window.__aruco` bereitstellen: die Bruecke nach Java als Versprechen
+ *     statt als Rueckruf, und der synchrone Weg in den Rechenkern.
+ *
+ *  4. Das fertige PDF nach draussen bringen. In einer WebView tut ein
+ *     `<a download>` von allein nichts - siehe unten.
  *
  * **Was hier NICHT passiert: rechnen.** Kein Millimeter entsteht in dieser
- * Datei. Was der native Kern kann, wird durchgereicht; was er nicht kann, gibt
- * einen ehrlichen Fehler mit Code zurueck - denselben Weg, den der Server fuer
- * fachliche Fehler nimmt (422 mit {code, params, field}), damit
- * app/static/js/api.js ihn ohne Aenderung uebersetzt. Eine zweite Rechnung in
- * JavaScript waere eine dritte Fassung derselben Messtechnik, und die driftet.
+ * Datei. Sie schaltet um, sie packt um, und sie reicht durch.
  */
 
 (() => {
@@ -31,22 +40,42 @@
 
     const bridge = window.AndroidCore;
 
-    // --- 1 · Importkarte ------------------------------------------------------
+    // --- 1 · Die Betriebsart --------------------------------------------------
+    // Vor jedem Modul der Seite, also bevor api.js sie liest. Danach ist sie
+    // fest; api.js liest sie einmal beim Laden.
+    window.ARUCO_TRANSPORT = "local";
+
+    // --- 2 · Importkarte ------------------------------------------------------
     // Sie muss VOR dem ersten Modul-Import im Dokument stehen. Zu diesem
     // Zeitpunkt ist <head> noch nicht geparst, deshalb haengt sie an
     // documentElement - das gibt es ab dem ersten Augenblick.
+    //
+    // Die beiden Schluessel mit Schraegstrich sind URL-Schluessel: die
+    // Importkarte loest sie gegen den Ursprung der Seite auf und vergleicht
+    // danach die AUFGELOESTEN Adressen. `import ... from "./core.js"` in
+    // web/vision/local.js zeigt damit auf core-android.js, ohne dass jene Datei
+    // etwas davon wuesste.
+    //
+    // Greift die Karte nicht, laedt die Seite das echte core.js, sucht das
+    // `.wasm` - das absichtlich nicht im APK liegt - und bricht mit einem
+    // Ladefehler ab. Ein lautes Scheitern ist hier richtig: die stille
+    // Alternative waere ein zweiter Rechenkern im Gepaeck.
     try {
         const map = document.createElement("script");
         map.type = "importmap";
         map.textContent = JSON.stringify({
-            imports: { "pdf-lib": "/vendor/pdf-lib.esm.min.js" },
+            imports: {
+                "pdf-lib": "/vendor/pdf-lib.esm.min.js",
+                "/web/vision/core.js": "/web/vision/core-android.js",
+                "/web/vision/image.js": "/web/vision/image-android.js",
+            },
         });
         document.documentElement.appendChild(map);
     } catch (error) {
         console.error("Importkarte konnte nicht gesetzt werden", error);
     }
 
-    // --- 2 · Die Bruecke als Versprechen --------------------------------------
+    // --- 3 · Die Bruecke ------------------------------------------------------
     // Java antwortet ueber window.__arucoResolve(callId, payload). Ein Aufruf,
     // dessen Antwort nie kommt, bliebe sonst fuer immer haengen - deshalb die
     // Karte mit den offenen Aufrufen und nicht ein einzelner Rueckruf.
@@ -94,15 +123,50 @@
         callSync,
         info: () => callSync("nativeInfo"),
         markerBits: (id, modules) => callSync("markerBits", id, modules).bits,
+
+        /**
+         * Eine Funktion des Rechenkerns. Synchron, wie WebAssembly im Browser -
+         * web/vision/pipeline.js ist eine gewoehnliche Funktionskette ohne
+         * `await` zwischen den Rechenschritten, und das soll sie bleiben, weil
+         * genau dieselbe Datei im Browser laeuft.
+         */
+        core: (method, args) => callSync("core", method, JSON.stringify(args)).value,
+
+        /** Der Griff auf das geladene Foto - die Eingabe jedes Rechenschritts. */
+        photoHandle: () => callSync("photoHandle").handle,
+
         pickPhoto: () => callAsync("pickPhoto"),
         takePhoto: () => callAsync("takePhoto"),
         loadPickedPhoto: () => callAsync("loadPickedPhoto"),
         detectMarkers: (enhance = true) => callAsync("detectMarkers", enhance),
         runConformance: (dumpCorners = false) => callAsync("runConformance", dumpCorners),
-        savePdf: (bytes, filename) => callAsync("savePdf", toBase64(bytes), filename),
-        sharePdf: (bytes, filename) => callAsync("sharePdf", toBase64(bytes), filename),
+        savePdf: (bytes, filename) => sendPdf(bytes).then(() => callAsync("savePdf", filename)),
+        sharePdf: (bytes, filename) => sendPdf(bytes).then(() => callAsync("sharePdf", filename)),
         navigate: (path) => bridge && bridge.navigate(path),
     };
+
+    /**
+     * Ein PDF in Scheiben nach Java schieben.
+     *
+     * Zwei Groessenordnungen, ein Weg: das A4-Markerblatt sind wenige Dutzend
+     * Kilobyte, ein gekacheltes Schablonen-PDF mit eingebettetem 300-dpi-Raster
+     * zweistellige Megabyte. Am Stueck stuende die Base64-Zeichenkette zweimal im
+     * Speicher - einmal hier, einmal als Java-String -, und zwar genau in dem
+     * Augenblick, in dem das Rasterbild noch daneben liegt.
+     *
+     * 192 KB je Scheibe sind 256 KB Text: klein genug, dass es nicht ins Gewicht
+     * faellt, und ein Vielfaches von 3, damit keine Scheibe mit
+     * Base64-Fuellzeichen endet. Ohne das ergaeben zwei aneinandergehaengte
+     * Scheiben beim Dekodieren Unsinn.
+     */
+    const PDF_CHUNK_BYTES = 192 * 1024;
+
+    async function sendPdf(bytes) {
+        const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+        for (let offset = 0; offset < view.length; offset += PDF_CHUNK_BYTES) {
+            callSync("appendPdf", toBase64(view.subarray(offset, offset + PDF_CHUNK_BYTES)));
+        }
+    }
 
     /**
      * Uint8Array -> Base64, in Scheiben.
@@ -121,158 +185,48 @@
         return btoa(binary);
     }
 
-    // --- 3 · fetch fuer /api/ -------------------------------------------------
+    // --- 4 · Das fertige PDF nach draussen ------------------------------------
+    //
+    // In der oertlichen Betriebsart entsteht jedes PDF in der Seite und wird ueber
+    // eine `blob:`-Adresse angeboten - das Markerblatt in header.js als Verweis in
+    // der Seite, die Schablone in main.js als Anker, den niemand einhaengt.
+    //
+    // Beides tut in einer WebView von allein NICHTS: es gibt keinen Downloadordner
+    // und keinen PDF-Betrachter dahinter. Und die Java-Seite kann eine
+    // blob:-Adresse nicht lesen - sie gilt nur im Fenster, das sie vergeben hat.
+    // Also wird sie HIER gelesen und der Inhalt herueberreicht.
+    //
+    // Zwei Abfangstellen, weil es zwei Wege gibt: ein Klick des Benutzers auf
+    // einen Anker IM Dokument (der steigt bis hierher auf), und `link.click()`
+    // auf einem Anker, den niemand eingehaengt hat (der steigt NIRGENDWOHIN auf -
+    // ein losgeloester Knoten hat keinen Aufstiegsweg). Der zweite Fall ist der
+    // Export, und wer nur die erste Stelle baut, bekommt einen Knopf, der still
+    // nichts tut.
 
-    const nativeFetch = window.fetch.bind(window);
-
-    /** Antwort in der Form, die app/static/js/api.js erwartet. */
-    function jsonResponse(body, status = 200) {
-        return new Response(JSON.stringify(body), {
-            status,
-            headers: { "Content-Type": "application/json" },
-        });
-    }
-
-    /**
-     * Ein fachlicher Fehler, so wie der Server ihn schickt: 422 mit Code.
-     *
-     * Der Code wird in app/static/i18n/*.json unter `errors.<code>` gesucht -
-     * also gehoert jeder Code, der hier entsteht, in BEIDE Kataloge
-     * (AGENTS.md, Invariante 7; tests/test_i18n.py besteht darauf).
-     */
-    function appError(code, field = null, params = {}) {
-        return jsonResponse({ code, params, field, message: "" }, 422);
-    }
-
-    /**
-     * Was der native Kern heute nicht kann.
-     *
-     * Dieser eine Fehler ist der ehrlichste Teil dieser Datei. Der C++-Kern misst
-     * bis heute NUR die Markerecken (core/src/detect.cpp); Ausgleich, Kamerapose,
-     * Dickenkorrektur, Entzerrung und Kontur stehen weiterhin allein in
-     * app/vision/ und damit in Python. Auf dem Telefon gibt es kein Python. Also
-     * endet die Kette hier - sichtbar, benannt und uebersetzt, statt mit einem
-     * Netzfehler, den niemand einordnen kann.
-     */
-    function notInNativeCore(step) {
-        return appError("android_core_incomplete", null, { step });
-    }
-
-    async function handleApi(url, init) {
-        const path = url.pathname;
-        const method = (init && init.method ? init.method : "GET").toUpperCase();
-
-        // Sprachen: die Liste kommt aus shared/constants.json ueber den Katalog,
-        // nicht aus einer zweiten Liste hier.
-        if (path === "/api/locales") {
-            const constants = await import("/shared/constants.json", { with: { type: "json" } })
-                .then((module) => module.default);
-            const locales = [];
-            for (const code of constants.SUPPORTED_LOCALES) {
-                const catalogue = await nativeFetch(`/i18n/${code}.json`).then((r) => r.json());
-                const label = (catalogue.ui && catalogue.ui.language
-                    && catalogue.ui.language[code]) || code.toUpperCase();
-                locales.push({ code, label });
-            }
-            return jsonResponse({ default: constants.DEFAULT_LOCALE, locales });
-        }
-
-        if (path === "/api/upload" && method === "POST") {
-            // Der Rumpf wird nicht angefasst: Android hat die Datei schon, seit
-            // die WebView ihren Dateidialog geoeffnet hat (onShowFileChooser).
-            const photo = await window.__aruco.loadPickedPhoto();
-            return jsonResponse({
-                session_id: "android",
-                filename: photo.filename,
-                width: photo.width,
-                height: photo.height,
-                exif: { focal35_mm: photo.focal35_mm, camera_model: photo.camera_model },
-                defaults: await uploadDefaults(),
-            });
-        }
-
-        if (path === "/api/solve") return notInNativeCore("solve");
-        if (path === "/api/adjust") return notInNativeCore("adjust");
-        if (path === "/api/export") return notInNativeCore("export");
-
-        // /api/preview/... und /api/markersheet bedient die native Seite bzw. der
-        // abgefangene Klick weiter unten - hier durchreichen.
-        return nativeFetch(url.toString(), init);
-    }
-
-    /** Die Vorgaben, die /api/upload sonst aus app/config.py mitschickt. */
-    async function uploadDefaults() {
-        const constants = await import("/shared/constants.json", { with: { type: "json" } })
-            .then((module) => module.default);
-        return {
-            marker_mm: constants.MARKER_MM_NOMINAL,
-            spacing_x_mm: constants.SHEET_SPACING_MM[0],
-            spacing_y_mm: constants.SHEET_SPACING_MM[1],
-            dpi: constants.DPI_DEFAULT,
-            dpi_choices: constants.DPI_CHOICES,
-            overlap_mm: constants.TILE_OVERLAP_MM_DEFAULT,
-            printer_margin_mm: constants.PRINTER_MARGIN_MM_DEFAULT,
-            page_margin_mm: constants.PAGE_MARGIN_MM_DEFAULT,
-        };
-    }
-
-    window.fetch = function androidFetch(input, init) {
-        const raw = typeof input === "string" ? input
-            : input instanceof Request ? input.url : String(input);
-        const url = new URL(raw, window.location.origin);
-        if (url.origin === window.location.origin && url.pathname.startsWith("/api/")) {
-            const options = init || (input instanceof Request
-                ? { method: input.method } : undefined);
-            // `reason` muss in den Parametern stehen und nicht nur in `message`:
-            // app/static/js/api.js uebersetzt bevorzugt aus errors.<code> mit den
-            // Parametern, und der Katalogtext traegt {reason}. Ohne den Parameter
-            // staende die geschweifte Klammer woertlich auf dem Bildschirm.
-            return handleApi(url, options).catch((error) => {
-                const reason = String((error && error.message) || error);
-                return jsonResponse({ code: "android_bridge_failed", params: { reason },
-                    field: null, message: reason }, 422);
-            });
-        }
-        return nativeFetch(input, init);
-    };
-
-    // --- Das Markerblatt ------------------------------------------------------
-    // Die Oberflaeche verlinkt es als <a href="/api/markersheet?...">. Ein Server,
-    // der es baut, gibt es hier nicht - gebaut wird es in dieser Seite, aus
-    // web/pdf/markersheet.js und den Modulbits des nativen Kerns. Abgefangen wird
-    // in der Erfassungsphase, damit kein anderer Zuhoerer vorher navigiert.
     document.addEventListener("click", (event) => {
         const link = event.target && event.target.closest
-            ? event.target.closest('a[href*="/api/markersheet"]') : null;
+            ? event.target.closest("a[href^='blob:']") : null;
         if (!link) return;
         event.preventDefault();
         event.stopPropagation();
-        buildAndSaveMarkersheet(new URL(link.href, window.location.origin)).catch((error) => {
-            console.error("Markerblatt fehlgeschlagen", error);
-        });
+        deliver(link.href, link.getAttribute("download") || "dokument.pdf");
     }, true);
 
-    async function buildAndSaveMarkersheet(url) {
-        const [{ buildMarkersheet, MODULES }, constants] = await Promise.all([
-            import("/web/pdf/markersheet.js"),
-            import("/shared/constants.json", { with: { type: "json" } })
-                .then((module) => module.default),
-        ]);
+    const nativeClick = HTMLElement.prototype.click;
+    HTMLElement.prototype.click = function arucoClick() {
+        if (this instanceof HTMLAnchorElement && typeof this.href === "string"
+            && this.href.startsWith("blob:")) {
+            deliver(this.href, this.getAttribute("download") || "dokument.pdf");
+            return;
+        }
+        return nativeClick.call(this);
+    };
 
-        const number = (name, fallback) => {
-            const value = Number(url.searchParams.get(name));
-            return Number.isFinite(value) && value > 0 ? value : fallback;
-        };
-        const bytes = await buildMarkersheet({
-            markerBits: (id) => Uint8Array.from(window.__aruco.markerBits(id, MODULES)),
-            markerMm: number("marker_mm", constants.MARKER_MM_NOMINAL),
-            spacingMm: [
-                number("spacing_x_mm", constants.SHEET_SPACING_MM[0]),
-                number("spacing_y_mm", constants.SHEET_SPACING_MM[1]),
-            ],
-            locale: url.searchParams.get("locale") || document.documentElement.lang
-                || constants.DEFAULT_LOCALE,
-        });
-        await window.__aruco.savePdf(bytes, "markerblatt_A4.pdf");
+    /** Den Inhalt einer blob:-Adresse holen und dem System uebergeben. */
+    function deliver(url, filename) {
+        fetch(url)
+            .then((response) => response.arrayBuffer())
+            .then((buffer) => window.__aruco.savePdf(new Uint8Array(buffer), filename))
+            .catch((error) => console.error("PDF konnte nicht uebergeben werden", error));
     }
 })();

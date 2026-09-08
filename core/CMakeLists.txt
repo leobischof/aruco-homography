@@ -312,10 +312,20 @@ endif()
 # ueber target_sources dazu und stehen nicht oben in der Quellenliste - CMake ist
 # das gleichgueltig, dem naechsten Zusammenfuehren nicht.
 #
-# src/capi.cpp ist NICHT android-spezifisch: es ist die stabile C-Grenze, an der
+# src/capi*.cpp ist NICHT android-spezifisch: es ist die stabile C-Grenze, an der
 # jede fremde Sprache andockt, und der Pruefstand misst mit `--capi` durch sie
 # hindurch. Sie gehoert deshalb auf jedem Ziel in die Bibliothek.
-target_sources(aruco_core_lib PRIVATE src/dictionary.cpp src/capi.cpp)
+#
+# Vier Dateien, weil die Schnittstelle inzwischen die ganze Messkette traegt und
+# die Trennlinie eine fachliche ist: `support` das gemeinsame Auspacken,
+# `capi` die Erkennung und die Konstanten, `geometry` was Zahlen liefert,
+# `image` was Bilder liefert - und nur dort stellt sich die Speicherfrage.
+target_sources(aruco_core_lib PRIVATE
+  src/dictionary.cpp
+  src/capi.cpp
+  src/capi_support.cpp
+  src/capi_geometry.cpp
+  src/capi_image.cpp)
 
 if(ANDROID)
   # Jede Funktion in ihren eigenen Abschnitt, damit --gc-sections beim Binden der
@@ -347,7 +357,11 @@ if(ARUCO_BUILD_JNI)
   # OpenCV wird statisch hineingebunden - daneben muss nichts liegen. Eine App,
   # die zwei Bibliotheken in der richtigen Reihenfolge laden muss, hat eine
   # Fehlerquelle mehr als eine, die eine laedt.
-  add_library(aruco_jni SHARED bindings/jni.cpp)
+  # Zwei Quellen, dieselbe Trennlinie wie bei capi: `jni.cpp` traegt die
+  # Erkennung, die Konstanten und die gemeinsamen Umpackhilfen, `jni_chain.cpp`
+  # den Rest der Messkette. Der Bibliotheksname aendert sich dadurch nicht -
+  # System.loadLibrary("aruco_core") findet weiterhin genau eine Datei.
+  add_library(aruco_jni SHARED bindings/jni.cpp bindings/jni_chain.cpp)
   set_target_properties(aruco_jni PROPERTIES OUTPUT_NAME aruco_core)
   target_link_libraries(aruco_jni PRIVATE aruco_core_lib)
 

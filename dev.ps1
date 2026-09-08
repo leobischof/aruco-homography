@@ -180,7 +180,10 @@ function Invoke-RunTestsPdfJs {
 function Invoke-RunTestsJs {
     Confirm-NodeModules
     Write-Step 'Running the JavaScript unit tests'
-    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/pdf/**/*.test.mjs' @Rest }
+    # web/**, nicht nur web/pdf/**: seit dem Android-Ziel steht unter
+    # web/vision/ eine zweite Fassung von core.js, und die einzige Stelle, an
+    # der ihr Umpacken gegen denselben Kern gehalten wird, ist ein Test dort.
+    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/**/*.test.mjs' @Rest }
 }
 
 # Selbstheilend wie Confirm-Deps, nur fuer npm. Geprueft werden BEIDE Pakete:
@@ -711,11 +714,18 @@ function Write-Cmd { param([string]$Name, [string]$Subtitle)
 $AndroidDir    = Join-Path $RepoRoot 'android'
 $AndroidOutDir = Join-Path $AndroidDir 'out'
 $JniLibsDir    = Join-Path $AndroidDir 'app\src\main\jniLibs'
+# Die eine Java-Datei, die auch ohne Android uebersetzt und ausgefuehrt wird -
+# check-jni baut sie mit, check-android-so zaehlt ihre native-Zeilen.
+$NativeCoreJava = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards\aruco\NativeCore.java'
 
 # Alle vier ABIs, die das OpenCV-Android-SDK traegt. Gebaut wird per Vorgabe nur
 # das erste: jedes weitere kostet rund 6 MB im APK, und arm64 ist auf praktisch
 # jedem verkauften Telefon das laufende ABI.
 $AndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
+
+# Der Port der Oberflaechen-Probe. Nicht der des Servers (8000) und nicht der
+# des Browser-Baus (8020): alle drei duerfen nebeneinander laufen.
+$UiProbePort = 8030
 
 # Das ABI-Argument der Kommandozeile: "arm64-v8a,x86_64" oder nichts.
 function Get-AbiArgument {
@@ -776,13 +786,25 @@ function Invoke-CheckJni {
     if (Test-Path $classes) { Remove-Item $classes -Recurse -Force }
     New-Item -ItemType Directory -Path $classes -Force | Out-Null
 
+    # Die Sollwerte der ganzen Kette: derselbe C++-Kern durch pybind11, daneben
+    # die Python-Referenz. Ohne diese Datei koennte der Pruefstand nur die
+    # Erkennung messen - und genau die war schon vorher gemessen.
+    Write-Step 'Generating the chain reference (same core through pybind11, plus Python)'
+    $fixtures = Join-Path $CoreBuildDir 'fixtures\fixtures.txt'
+    $chain    = Join-Path $CoreBuildDir 'fixtures\chain.txt'
+    Invoke-Native -What 'make_chain_reference' -Action {
+        & $VenvPython (Join-Path $CoreDir 'tools\make_chain_reference.py') $fixtures $chain
+    }
+
     Write-Step 'Compiling JniCheck against the app''s own NativeCore'
     # NativeCore.java kommt aus dem Android-Baum und wird NICHT kopiert: die
     # Klasse, die hier geprueft wird, muss dieselbe sein, die im APK steckt.
-    $nativeCore = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards\aruco\NativeCore.java'
+    $nativeCore = $NativeCoreJava
     $check      = Join-Path $CoreDir 'tools\JniCheck.java'
+    $chainCheck = Join-Path $CoreDir 'tools\ChainCheck.java'
     Invoke-Native -What 'javac' -Action {
-        & (Join-Path $jdk 'bin\javac.exe') -d $classes -encoding UTF-8 $nativeCore $check
+        & (Join-Path $jdk 'bin\javac.exe') -d $classes -encoding UTF-8 -Xlint:all `
+            $nativeCore $check $chainCheck
     }
 
     Write-Step 'Running the JNI layer on a real JVM'
@@ -798,7 +820,7 @@ function Invoke-CheckJni {
         # ein dort gesetztes -Variable kommt hier nicht an. Der Rueckgabewert
         # wird stattdessen von Hand geprueft - dasselbe, was Invoke-Native tut.
         $jniOutput = & (Join-Path $jdk 'bin\java.exe') "-Djava.library.path=$CoreBuildDir" `
-            -cp $classes JniCheck (Join-Path $CoreBuildDir 'fixtures\fixtures.txt') --bits @Rest
+            -cp $classes JniCheck $fixtures --bits --kette $chain @Rest
         $exitCode = $LASTEXITCODE
         $jniOutput | ForEach-Object { Write-Host $_ }
         if ($exitCode -ne 0) { throw "JniCheck failed (exit $exitCode)." }
@@ -866,13 +888,21 @@ function Invoke-CheckAndroidSo {
 
         # Und die Einsprungpunkte. Fehlt einer, faellt das sonst erst auf dem
         # Geraet auf - als UnsatisfiedLinkError mitten im Betrieb.
+        #
+        # Wie viele es sein muessen, wird NICHT abgetippt, sondern in
+        # NativeCore.java gezaehlt: jede `native`-Zeile dort braucht genau ein
+        # Symbol hier. Eine feste Zahl waere beim naechsten Zuwachs falsch, und
+        # zwar in die harmlose Richtung - der Test bliebe gruen.
+        $declared = @(Select-String -Path $NativeCoreJava -Pattern '^\s*public static native\b').Count
+        if ($declared -lt 1) { throw "In $NativeCoreJava steht keine native-Methode." }
         $exported = & (Join-Path $bin 'llvm-nm.exe') -D --defined-only $so |
             Select-String 'Java_com_bischofsnowboards_aruco_NativeCore_'
-        Write-Host ("     Exportiert: {0} JNI-Symbole" -f $exported.Count) -ForegroundColor DarkGray
-        if ($exported.Count -lt 6) {
-            throw "$abi : nur $($exported.Count) JNI-Symbole exportiert, erwartet werden 6."
+        Write-Host ("     Exportiert: {0} JNI-Symbole (NativeCore.java erklaert {1})" -f `
+            $exported.Count, $declared) -ForegroundColor DarkGray
+        if ($exported.Count -lt $declared) {
+            throw "$abi : nur $($exported.Count) JNI-Symbole exportiert, erwartet werden $declared."
         }
-        Write-Ok "$abi : alle sechs JNI-Einsprungpunkte exportiert"
+        Write-Ok "$abi : alle $declared JNI-Einsprungpunkte exportiert"
     }
 }
 
@@ -935,6 +965,105 @@ function Invoke-BuildApk {
     Invoke-CheckApk
 }
 
+# Die Android-Rechenkette in einem echten Chromium - so weit sie sich ohne
+# Geraet ausfuehren laesst.
+#
+# WARUM ES DAS GIBT. `check-apk` misst das Erzeugnis (ABIs, Rechte, Signatur),
+# `check-jni` misst die native Schicht auf einer JVM. Dazwischen liegt alles,
+# was in der WebView passiert: die Importkarte, die beiden Android-Fassungen
+# unter web/vision/, und darueber die unveraenderte Kette bis zum PDF. Ohne
+# diesen Schritt waere genau das der Teil, den niemand je laufen sieht.
+#
+# WAS DABEI ERSATZ IST - und das gehoert in jeden Bericht darueber:
+#   * Die Java-Seite ist ein Nachbau (android/tools/bridge-stub.mjs).
+#   * Gerechnet wird im WASM-Bau desselben core/, nicht in libaruco_core.so.
+#   * Chromium auf Windows ist nicht die System-WebView eines Telefons.
+# Geladen wird dagegen GENAU DER BAUM AUS DEM APK: er wird ausgepackt, nicht
+# nachgebaut. Was hier laeuft, sind die Bytes, die ausgeliefert werden.
+function Invoke-CheckAndroidUi {
+    $apk = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Kein APK: $apk  (./dev.ps1 build-apk)" }
+
+    $wasm = Join-Path $RepoRoot 'web\vendor\core\aruco_core.mjs'
+    if (-not (Test-Path $wasm)) { throw "Der WASM-Kern fehlt: $wasm" }
+
+    $chrome = Find-Chrome
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("aruco-ui-probe-{0}" -f [guid]::NewGuid())
+    $server = $null
+    try {
+        Write-Step 'Unpacking the interface out of the APK'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($apk)
+        try {
+            foreach ($entry in $zip.Entries) {
+                if ($entry.FullName -notlike 'assets/www/*' -or -not $entry.Name) { continue }
+                $target = Join-Path $root ($entry.FullName -replace '^assets/www/', '')
+                New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+            }
+        } finally { $zip.Dispose() }
+        Write-Host ("     {0} Dateien" -f (Get-ChildItem $root -Recurse -File).Count) -ForegroundColor DarkGray
+
+        # Was der Ersatz braucht, liegt unter /probe/ und damit sichtbar NEBEN
+        # dem ausgelieferten Baum. Nichts davon steckt im APK, und das ist der
+        # Punkt: das wasm gehoert dort nicht hinein.
+        $probe = Join-Path $root 'probe'
+        New-Item -ItemType Directory -Path (Join-Path $probe 'core') -Force | Out-Null
+        Copy-Item (Join-Path $AndroidDir 'tools\bridge-stub.mjs') $probe -Force
+        Copy-Item (Join-Path $RepoRoot 'web\vendor\core\*') (Join-Path $probe 'core') -Force
+        Copy-Item (Join-Path $RepoRoot 'shared\fixtures\scenes\flat.png') $probe -Force
+        Copy-Item (Join-Path $AndroidDir 'tools\ui-probe.html') (Join-Path $root 'probe.html') -Force
+
+        Write-Step "Serving the unpacked tree on port $UiProbePort"
+        $server = Start-Process -FilePath $VenvPython `
+            -ArgumentList '-m', 'http.server', $UiProbePort, '--bind', '127.0.0.1', '--directory', $root `
+            -WindowStyle Hidden -PassThru
+
+        Write-Step 'Driving Chromium through the whole chain'
+        Write-Host ("     {0}" -f $chrome) -ForegroundColor DarkGray
+        $pdf = Join-Path $AndroidOutDir 'ui-probe-schablone.pdf'
+        New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
+        Invoke-Native -What 'ui-probe' -Action {
+            & node (Join-Path $AndroidDir 'tools\ui-probe.mjs') $chrome `
+                "http://127.0.0.1:$UiProbePort/probe.html" $pdf
+        }
+
+        # Dass ein PDF entstand, ist noch keine Aussage - eines entsteht auch mit
+        # falschen Zahlen. Also nachzaehlen, was auf dem Blatt steht.
+        Write-Step 'Measuring the template that came out'
+        Invoke-Native -What 'measure_template' -Action {
+            & $VenvPython (Join-Path $AndroidDir 'tools\measure_template.py') $pdf
+        }
+        Write-Ok ("Die Kette laeuft und das Blatt stimmt. PDF: {0}" -f $pdf)
+        Write-Warn 'Ersatz und kein Geraet: Java nachgebaut, Kern als WASM, Chromium statt WebView.'
+    } finally {
+        if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Chrome oder ein anderes Chromium. Gesucht wird NICHT im PATH: dort steht auf
+# diesem Rechner keines, und ein gefundenes "chrome" waere sonst womoeglich ein
+# Startskript ohne Debug-Anschluss.
+function Find-Chrome {
+    if ($env:ARUCO_CHROME -and (Test-Path $env:ARUCO_CHROME)) { return $env:ARUCO_CHROME }
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    throw ([string]::Join([Environment]::NewLine, @(
+        'Kein Chromium gefunden (Chrome oder Edge).',
+        '     Einen bestimmten waehlen:  $env:ARUCO_CHROME = "<pfad\zu\chrome.exe>"'
+    )))
+}
+
 # Was am fertigen APK nachgemessen wird. Alles hier ist eine Messung am
 # Erzeugnis - keine Zeile davon glaubt dem Bau.
 function Invoke-CheckApk {
@@ -965,12 +1094,26 @@ function Invoke-CheckApk {
         'assets/www/native/index.html',          # die eigene Seite der Huelle
         'assets/www/native/bridge-shim.js',
         'assets/www/web/pdf/markersheet.js',     # web/pdf/
+        'assets/www/web/vision/local.js',        # web/vision/ - die Rechenkette
+        'assets/www/web/vision/pipeline.js',
+        'assets/www/web/vision/core-android.js', # der Kern ueber JNI ...
+        'assets/www/web/constants.js',
         'assets/www/app/static/i18n/de.json',    # der Pfad, den web/pdf/i18n.js importiert
         'assets/www/shared/constants.json',      # shared/
         'assets/www/vendor/pdf-lib.esm.min.js',
         'assets/fixtures/expected/flat.json',    # shared/fixtures/
         'assets/fixtures/scenes/flat.png',
         'lib/arm64-v8a/libaruco_core.so'
+    )
+    # ... und was NICHT drin sein darf. Der Browser-Kern (web/vision/core.js samt
+    # dem 3,6-MB-wasm daneben) hat auf diesem Ziel nichts zu suchen: hier rechnet
+    # die native Bibliothek ueber JNI. Ein mitgeliefertes wasm waere ein zweiter
+    # Rechenkern, den niemand mitmisst - und er faellt nur an der Groesse auf.
+    $forbidden = @(
+        'assets/www/web/vision/core.js',
+        'assets/www/web/vision/image.js',
+        'assets/www/web/vendor/core/aruco_core.wasm',
+        'assets/www/web/vendor/core/aruco_core.mjs'
     )
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($apk)
@@ -980,12 +1123,16 @@ function Invoke-CheckApk {
         if ($missing.Count -gt 0) {
             throw ("Im APK fehlen: {0}" -f ($missing -join ', '))
         }
-        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden" -f
-            $zip.Entries.Count, $expected.Count) -ForegroundColor DarkGray
+        $smuggled = @($forbidden | Where-Object { $inside -contains $_ })
+        if ($smuggled.Count -gt 0) {
+            throw ("Im APK liegt, was nicht hineingehoert: {0}" -f ($smuggled -join ', '))
+        }
+        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden, keine der {2} verbotenen" -f
+            $zip.Entries.Count, $expected.Count, $forbidden.Count) -ForegroundColor DarkGray
     } finally {
         $zip.Dispose()
     }
-    Write-Ok 'Die Oberflaeche, web/pdf/, shared/ und die Pruefszenen sind im APK'
+    Write-Ok 'Die Oberflaeche, web/vision/, web/pdf/, shared/ und die Pruefszenen sind im APK'
 
     # 16-KB-Ausrichtung der .so IM APK. Das ist eine andere Zusage als die im
     # ELF: hier geht es darum, ob die Datei unkomprimiert und an einer
@@ -1041,9 +1188,10 @@ function Show-Help {
     Write-Cmd 'build-core-android' 'Denselben Kern fuer Android bauen (NDK; Vorgabe arm64-v8a) - baut nur, misst nicht'
     Write-Cmd 'check-jni'         'Die JNI-Schicht auf einer echten JVM ausfuehren (Windows-DLL desselben Quelltextes)'
     Write-Cmd 'build-android-libs' 'libaruco_core.so je ABI bauen und nach android/app/src/main/jniLibs/ legen'
-    Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und die sechs JNI-Symbole'
+    Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und jedes JNI-Symbol aus NativeCore.java'
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
+    Write-Cmd 'check-android-ui'  'Die Kette aus dem APK in einem Chromium fahren (Java nachgebaut, Kern als WASM)'
     Write-Cmd 'build-web'         'Browser-Bau zusammenstellen (web/index.html + dist/web/) - laeuft ohne Server'
     Write-Cmd 'start-web'         'Den Browser-Bau ausliefern (reiner Dateiserver, Vorgabeport 8020)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
@@ -1071,6 +1219,7 @@ switch ($Command.ToLowerInvariant()) {
     'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
     'build-apk'         { Invoke-BuildApk }
     'check-apk'         { Invoke-CheckApk }
+    'check-android-ui'  { Invoke-CheckAndroidUi }
     'build-web'         { Invoke-BuildWeb }
     'start-web'         { Invoke-StartWeb }
     'build-markersheet' { Invoke-BuildMarkersheet }
