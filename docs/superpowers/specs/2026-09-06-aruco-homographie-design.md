@@ -780,9 +780,18 @@ Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
    beiden Mittelpunktabstände, Objektdicke (Vorgabe 0), bei Bedarf der Kameraabstand →
    „Entzerren".
 3. **Qualität**: der Bericht aus §3.7 und die Warnungen, in drei Tönen abgestuft.
-4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau. Der Abschnitt steht bewusst
-   **über** dem Zuschnitt — die Regler verändern genau das Bild, das im Schritt darunter
-   zugeschnitten wird, und beide sollen gleichzeitig zu sehen sein.
+4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau, **zugeklappt als Vorgabe**
+   hinter einem `<details>`. Elf Regler sind der längste Abschnitt der Seite, und die meisten
+   Fotos brauchen keinen einzigen davon; auf dem Telefon lag der Zuschnitt dadurch eine halbe
+   Bildschirmhöhe weiter unten (gemessen: 74 px zugeklappt gegen 603 px aufgeklappt). Der
+   Abschnitt steht trotzdem **über** dem Zuschnitt — die Regler verändern genau das Bild, das im
+   Schritt darunter zugeschnitten wird, und wer sie aufklappt, hat beide untereinander.
+
+   Ein natives `<details>` und kein nachgebautes Aufklappen: Tastatur, Vorlesen und das Suchen im
+   Text bringt der Browser mit. Der Winkel ist gezeichnet (zwei Rahmenkanten, gedreht) und ersetzt
+   die Systemmarkierung, die auf jeder Oberfläche anders aussieht — dafür braucht es `list-style:
+   none` **und** `::-webkit-details-marker`, keines der beiden ersetzt das andere. Der Fehlerplatz
+   bleibt außerhalb: eine Meldung hinter einem zugeklappten Winkel ist keine Meldung.
 5. **Zuschnitt**: Rechteck auf der entzerrten Vorschau ziehen; darunter live die Kantenlängen in
    mm, die zu erwartende Ausgabegröße in Pixeln und Megapixeln und der Extrapolationsanteil,
    beides gegen die Schwellen aus `limits` eingefärbt. Die vier Kanten lassen sich auch als Zahl

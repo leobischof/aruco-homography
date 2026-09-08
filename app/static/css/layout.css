@@ -157,6 +157,63 @@
     font-weight: var(--weight-bold);
 }
 
+/* --------------------------------------------------------------------------
+   Aufklappbarer Schritt
+   -------------------------------------------------------------------------- */
+
+/* Die Ueberschrift IST der Griff: die Zeile bleibt stehen, wenn der Rest
+   verschwindet, sonst waere ein zugeklappter Schritt ein leerer Kasten. */
+.step-fold-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    /* Die Systemmarkierung weg - sie sieht auf jeder Oberflaeche anders aus.
+       list-style fuer Firefox, ::-webkit-details-marker fuer die WebKit-Reihe;
+       beide werden gebraucht, keines ersetzt das andere. */
+    list-style: none;
+}
+
+.step-fold-summary::-webkit-details-marker {
+    display: none;
+}
+
+.step-fold-summary > h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Der Winkel ist aus zwei Rahmenkanten gebaut und nicht aus einem Zeichen:
+   ein "v" aus der Schrift ist in jeder Schriftart anders gross und sitzt
+   anders auf der Grundlinie. */
+.step-fold-summary::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin: 0 0.25rem 0.2rem 0;
+    border-right: 2px solid var(--muted-foreground);
+    border-bottom: 2px solid var(--muted-foreground);
+    transform: rotate(45deg);
+    transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.step-fold[open] > .step-fold-summary::after {
+    transform: rotate(-135deg);
+    margin: 0.2rem 0.25rem 0 0;
+}
+
+/* Der Inhalt bekommt den Rhythmus der Karte zurueck: .step verteilt seine
+   Abstaende ueber `gap`, und was in <details> wandert, faellt aus dieser
+   Verteilung heraus. */
+.step-fold-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
 .step-actions {
     display: flex;
     align-items: center;
