@@ -23,9 +23,10 @@ import { translate } from "../pdf/i18n.js";
 import { loadCore } from "./core.js";
 import { readExif } from "./exif.js";
 import { decodeFile } from "./image.js";
-import { AppError } from "./notices.js";
+import { AppError, NoticeList } from "./notices.js";
 import { drawDetection, PreviewUrls } from "./preview.js";
 import {
+    detectMarkers,
     runAdjust,
     runExport,
     runExportImage,
@@ -33,6 +34,7 @@ import {
     solveResponse,
 } from "./pipeline.js";
 import { exportRequest, imageRequest, solveRequest } from "./request.js";
+import { solve as solvePlane } from "./solve.js";
 
 // Genau eine Sitzung. Am Server gibt es acht, weil dort mehrere Handys auf
 // denselben Rechner zeigen koennen; in einer Seite gibt es genau ein Foto, und
@@ -96,6 +98,71 @@ export async function uploadPhoto(file) {
             page_margin_mm: constants.PAGE_MARGIN_MM_DEFAULT,
         },
     };
+}
+
+/**
+ * Marker in EINEM Bild finden - ohne Sitzung, ohne Zustand. Fuer das Live-Bild.
+ *
+ * Die Sitzung bleibt ausdruecklich unberuehrt: der Sucher laeuft, bevor ein Foto
+ * gewaehlt ist, und er soll ein bereits geladenes auch nicht wegwerfen. Zurueck
+ * kommt Feld fuer Feld dieselbe Antwort wie von /api/detect.
+ */
+export async function detectFrame(blob) {
+    const module = await core();
+    // decodeFile nimmt alles, was createImageBitmap nimmt - ein Blob gehoert
+    // dazu. Der Name stammt aus dem Upload, der Weg ist derselbe.
+    const image = await decodeFile(blob);
+    const markers = detectMarkers(module, { image });
+    return {
+        width: image.width,
+        height: image.height,
+        markers: markers.map((marker) => ({ id: marker.id, corners: pairs(marker.corners) })),
+    };
+}
+
+/**
+ * Dasselbe Einzelbild bis zur Ebene rechnen - fuer das messende Live-Bild.
+ *
+ * Wieder ohne Sitzung und wieder Feld fuer Feld die Antwort von /api/measure.
+ * Ohne Marker oder ohne loesbare Lage kommt `plane: null` zurueck: im Sucher ist
+ * beides der Normalzustand und kein Fehler.
+ */
+export async function measureFrame(blob, params) {
+    const module = await core();
+    const image = await decodeFile(blob);
+    const markers = detectMarkers(module, { image });
+    const answer = {
+        width: image.width,
+        height: image.height,
+        grid_mm: constants.GRID_STEP_MM,
+        markers: markers.map((marker) => ({ id: marker.id, corners: pairs(marker.corners) })),
+        plane: null,
+    };
+    if (markers.length === 0) return answer;
+
+    let solution;
+    try {
+        solution = solvePlane(
+            module,
+            markers,
+            params.marker_mm,
+            params.mode,
+            new NoticeList(),
+            [params.spacing_x_mm, params.spacing_y_mm],
+        );
+    } catch (error) {
+        if (error instanceof AppError) return answer;
+        throw error;
+    }
+
+    answer.plane = {
+        homography: [...solution.homography],
+        hull_mm: pairs(solution.hullMm),
+        mm_per_px: solution.mmPerPx,
+        rms_px: solution.rmsPx,
+        mode_used: solution.mode,
+    };
+    return answer;
 }
 
 /** Homographie bestimmen, Qualitaet bewerten, entzerrte Vorschau erzeugen. */
@@ -260,6 +327,21 @@ function plain(value, locale) {
 /** Der Uebersetzer, den notices.asDicts braucht. */
 function describe(locale) {
     return (key, params) => translate(key, locale, params);
+}
+
+/**
+ * Aus acht Zahlen vier Paare machen.
+ *
+ * Der Kern reicht Punktlisten flach heraus (x0,y0,x1,y1,...), der Server
+ * schickt Paare. Umgeformt wird HIER, weil hier die Zusage dieser Datei steht:
+ * die Antwort ist Feld fuer Feld die des Servers. Ohne diese Umformung fand der
+ * Sucher die Marker und zeichnete nichts - gefunden hat das der Prueflauf mit
+ * eingespielter Kamera, nicht das Lesen.
+ */
+function pairs(flat) {
+    const out = [];
+    for (let index = 0; index + 1 < flat.length; index += 2) out.push([flat[index], flat[index + 1]]);
+    return out;
 }
 
 function requireSession(sessionId) {

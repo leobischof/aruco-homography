@@ -1,0 +1,117 @@
+/* --------------------------------------------------------------------------
+   live.css - der Sucher: Video, Overlay und die zwei Knoepfe darunter.
+
+   Ein <dialog> und keine Karte im Seitenfluss. Der Sucher will die ganze
+   Flaeche, die zu haben ist: auf einem Telefon entscheidet sich am Bildausschnitt,
+   ob die Marker gefunden werden, und ein Video zwischen zwei Abschnitten ist
+   dafuer zu klein. Der Browser gibt zu showModal() ausserdem den Fokusfang, die
+   Esc-Taste und das Verdunkeln des Hintergrunds - alles drei muesste man sonst
+   nachbauen, und alle drei baut man falsch nach.
+   -------------------------------------------------------------------------- */
+
+.live-dialog {
+    /* Der Vorgabe-<dialog> ist so gross wie sein Inhalt und sitzt in der Mitte.
+       Hier soll er der Bildschirm sein. */
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: var(--bfsb-night);
+    color: var(--bfsb-snow);
+    overflow: hidden;
+}
+
+.live-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.85);
+}
+
+.live-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    /* Der sichere Bereich: auf einem Telefon mit runden Ecken und Gestenbalken
+       liegt der untere Rand sonst unter dem Balken, und der Ausloeser ist der
+       Knopf, den man am wenigsten verfehlen darf. */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-sizing: border-box;
+}
+
+/* Die Buehne nimmt, was die Knopfzeile uebriglaesst. min-height: 0, sonst
+   weigert sich ein Flex-Kind zu schrumpfen und die Knoepfe wandern hinaus. */
+.live-stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Video und Overlay liegen deckungsgleich. `contain` und nicht `cover`: ein
+   beschnittenes Bild zeigt einen anderen Ausschnitt als den, den die Aufnahme
+   spaeter enthaelt - man wuerde nach etwas ausrichten, das nicht mitkommt. */
+.live-video,
+.live-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.live-video {
+    object-fit: contain;
+    background: #000;
+}
+
+/* Das Overlay faengt keine Zeiger: unter ihm liegt nichts zu Bedienendes, und
+   ein durchsichtiges Feld ueber dem ganzen Bild schluckt sonst jede Geste. */
+.live-overlay {
+    pointer-events: none;
+}
+
+.live-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    background: var(--bfsb-night-a85);
+}
+
+/* Der Umschalter steht auf schwarzem Grund; die Feldfarben der Seite gelten
+   hier nicht. Breite nach Inhalt, sonst nimmt `select { width: 100% }` aus
+   forms.css die halbe Zeile. */
+.live-mode {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--bfsb-snow);
+    border-color: var(--bfsb-ash);
+}
+
+.live-status {
+    flex: 1 1 8rem;
+    min-width: 0;
+    color: var(--bfsb-snow);
+    font-size: var(--text-sm);
+}
+
+/* Die Knoepfe im Sucher stehen auf schwarzem Grund und nicht auf einer Karte -
+   die Grundfarben der Seite gelten hier nicht. Der Ausloeser ist die Handlung,
+   also Bernstein; das Schliessen bleibt eine Umrisstaste. */
+.live-bar .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.live-close {
+    background: transparent;
+    color: var(--bfsb-snow);
+    border-color: var(--bfsb-ash);
+}
+
+.live-close:hover {
+    background: rgba(255, 255, 255, 0.12);
+}

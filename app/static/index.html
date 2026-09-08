@@ -37,6 +37,7 @@
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/forms.css">
   <link rel="stylesheet" href="/css/crop.css">
+  <link rel="stylesheet" href="/css/live.css">
 
   <!--
     Der Themen-Vorspann. Er muss SYNCHRON und VOR dem ersten Zeichnen laufen, sonst
@@ -165,6 +166,16 @@
              capture="environment">
       <label class="btn btn-secondary file-camera" id="file-camera" for="camera"
              data-i18n="ui.steps.upload.camera"></label>
+
+      <!--
+        Der dritte Weg, und der einzige, der etwas ZEIGT, bevor ein Foto
+        entsteht. Er startet versteckt: ohne sicheren Ursprung gibt es
+        navigator.mediaDevices gar nicht, und ein Knopf, der nur eine
+        Fehlermeldung erzeugen kann, ist schlimmer als kein Knopf. js/main.js
+        blendet ihn ein, wenn es die Kamera-Schnittstelle gibt.
+      -->
+      <button type="button" class="btn btn-secondary" id="live-open" hidden
+              data-i18n="ui.live.open"></button>
     </div>
 
     <p class="hint" data-i18n="ui.steps.upload.hint"></p>
@@ -239,15 +250,34 @@
        das im Schritt darunter zugeschnitten wird, und beide sollen gleichzeitig
        zu sehen sein. -->
   <section class="step" id="step-adjust" hidden>
-    <h2><span class="step-num" aria-hidden="true">4</span>
-      <span data-i18n="ui.adjust.title"></span></h2>
-    <div class="adjust-grid" id="adjust-controls"></div>
-    <div class="step-actions">
-      <button type="button" class="btn btn-secondary" id="adjust-reset"
-              data-i18n="ui.adjust.reset_label"
-              data-i18n-attr="title:ui.adjust.reset_hint"></button>
-      <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
-    </div>
+    <!--
+      ZUGEKLAPPT als Vorgabe. Elf Regler sind der laengste Abschnitt der Seite,
+      und die meisten Fotos brauchen keinen einzigen davon - wer sie nicht will,
+      soll nicht an ihnen vorbeiscrollen muessen.
+
+      <details> und kein selbstgebautes Aufklappen: Tastatur, Vorlesen
+      ("eingeklappt"/"ausgeklappt") und das Suchen im Text bringt der Browser
+      mit. Nachgebaut waere das eine Menge aria-expanded, die irgendwann nicht
+      mehr stimmt.
+
+      Der Fehlerplatz steht ABSICHTLICH ausserhalb: eine Meldung hinter einem
+      zugeklappten Winkel ist keine Meldung.
+    -->
+    <details class="step-fold" id="adjust-fold">
+      <summary class="step-fold-summary">
+        <h2><span class="step-num" aria-hidden="true">4</span>
+          <span data-i18n="ui.adjust.title"></span></h2>
+      </summary>
+      <div class="step-fold-body">
+        <div class="adjust-grid" id="adjust-controls"></div>
+        <div class="step-actions">
+          <button type="button" class="btn btn-secondary" id="adjust-reset"
+                  data-i18n="ui.adjust.reset_label"
+                  data-i18n-attr="title:ui.adjust.reset_hint"></button>
+          <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
+        </div>
+      </div>
+    </details>
     <div class="notice-slot" id="adjust-error" role="alert"></div>
   </section>
 
@@ -280,6 +310,17 @@
         <span class="field-label" data-i18n="ui.steps.crop.y1_label"></span>
         <input type="number" id="y1" step="1" inputmode="decimal">
       </label>
+    </div>
+
+    <!--
+      Der einzige Weg zu einem frischen Rechteck. Seit die freie Flaeche nichts
+      mehr tut (crop-rect.js sagt warum), gaebe es sonst keinen - und ein
+      Rechteck, das man in eine Ecke geschoben hat, waere eine Sackgasse.
+    -->
+    <div class="step-actions">
+      <button type="button" class="btn btn-secondary" id="crop-reset"
+              data-i18n="ui.steps.crop.reset_label"
+              data-i18n-attr="title:ui.steps.crop.reset_hint"></button>
     </div>
 
     <div class="info" id="crop-info" role="status"></div>
@@ -364,6 +405,15 @@
         "Aufteilung": er erzeugt etwas anderes, nicht dasselbe anders verteilt.
       -->
       <span class="action-group">
+        <!--
+          Eine EIGENE Aufloesung, nicht die des PDF. Beim Druck ist eine hohe
+          Aufloesung der Zweck: die Aufdrucke sind Vektor und bleiben scharf, und
+          das Bild darunter darf weich sein. Ein Bild fuer ein anderes Programm
+          hat diesen Grund nicht - dort ist alles ueber der Aufloesung des Fotos
+          erfundene Groesse. Vorgabe ist deshalb "wie das Foto".
+        -->
+        <select id="image-dpi" data-i18n-attr="aria-label:ui.steps.export.image_dpi_label">
+        </select>
         <select id="image-format" data-i18n-attr="aria-label:ui.steps.export.image_format_label">
           <option value="jpeg" selected>JPEG</option>
           <option value="png">PNG</option>
@@ -395,5 +445,40 @@
 </div>
 
 <script type="module" src="/js/main.js"></script>
+  <!--
+    Der Sucher. Als <dialog> und nicht als Abschnitt: er will den ganzen
+    Bildschirm, und showModal() bringt Fokusfang, Esc-Taste und Verdunklung mit.
+    Ausserhalb der Schritte, weil er zu keinem gehoert - er fuettert Schritt 1.
+  -->
+  <dialog class="live-dialog" id="live-dialog"
+          data-i18n-attr="aria-label:ui.live.title">
+    <div class="live-body">
+      <div class="live-stage">
+        <!-- playsinline: ohne das schiebt iOS das Video in den Vollbildspieler
+             des Systems, und das Overlay bliebe dahinter zurueck. -->
+        <video class="live-video" id="live-video" playsinline muted></video>
+        <canvas class="live-overlay" id="live-overlay"></canvas>
+      </div>
+      <div class="live-bar">
+        <!--
+          Die Betriebsart. "markers" zeigt, was gefunden wird; "plane" rechnet
+          daraus die Ebene und legt ihr 50-mm-Raster ueber das Werkstueck - damit
+          laesst sich messen, ohne ein Foto zu machen. Die Werte stehen so auch
+          in js/live.js.
+        -->
+        <select class="live-mode" id="live-mode"
+                data-i18n-attr="aria-label:ui.live.mode_label">
+          <option value="markers" selected data-i18n="ui.live.mode_markers"></option>
+          <option value="plane" data-i18n="ui.live.mode_plane"></option>
+        </select>
+        <span class="live-status" id="live-status" role="status"></span>
+        <button type="button" class="btn btn-action" id="live-shutter"
+                data-i18n="ui.live.shutter"></button>
+        <button type="button" class="btn btn-secondary live-close" id="live-close"
+                data-i18n="ui.live.close"></button>
+      </div>
+    </div>
+  </dialog>
+
 </body>
 </html>

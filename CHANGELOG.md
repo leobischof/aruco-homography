@@ -4,6 +4,111 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.5-alpha] – 2026-09-08
+
+**Die App bekommt einen Sucher, und der Bildexport hört auf, Pixel zu erfinden.** Vier
+Wünsche vom Telefon, dazu die Berechtigung, ohne die der erste nicht geht.
+
+### Hinzugefügt
+
+- **Live-Bild mit zwei Betriebsarten.** Bisher sagte die App erst *nach* dem Entzerren, ob
+  die Marker lesbar sind — bei schlechtem Licht oder zu flachem Winkel ein Weg von zwanzig
+  Sekunden, um zu erfahren, dass man näher hingehen muss.
+
+  | | |
+  |---|---|
+  | **Marker** | Je gefundenem Marker Umriss, Nummer und **sein eigenes Koordinatensystem**. Die Achsenrichtungen fallen ohne Rechnung aus der Eckenreihenfolge des Erkenners (TL, TR, BR, BL): x von Ecke 0 nach Ecke 1, y von Ecke 0 nach Ecke 3. Ein verdrehter Marker ist damit hier zu sehen und nicht erst am Ausdruck. |
+  | **Ebene messen** | Dieselben Marker, aber daraus gerechnet: das **50-mm-Raster der Ebene** liegt im Bild auf dem Werkstück, dazu Maßstab und Restfehler. Wer nur wissen will, wie groß etwas ist, liest es hier ab und macht **gar kein Foto**. |
+
+  Der Rasterschritt ist derselbe, den der Ausdruck aufdruckt, und er kommt mit der Antwort —
+  im Sucher steht keine zweite 50. Fehlt er, wird **kein** Raster gezeichnet: ein erfundener
+  Schritt wäre ein zweiter Maßstab, und ein falsches Raster ist schlimmer als keines.
+  Gezeichnet wird nur einen Schritt über die Markerhülle hinaus; weiter draußen wird die
+  Homographie fortgeschrieben statt gemessen.
+
+  Der Restfehler steht **neben** dem Maßstab, weil ein Maßstab ohne ihn eine Behauptung ist:
+  dieselben 1,3 mm/px können aus einer sauberen Lage kommen oder aus einer verkanteten
+  Fläche, und nur die zweite Zahl unterscheidet das.
+
+  **Der Auslöser** übergibt das laufende Bild an den gewohnten Weg. Das ist ausdrücklich
+  **nicht** die volle Sensorauflösung — die gibt nur die Kamera-App des Systems her, und die
+  zeigt kein Overlay. Ein so entstandenes Bild hat außerdem **kein EXIF**: die Brennweite
+  fehlt, eine Dickenkorrektur braucht dann den eingetippten Kameraabstand.
+
+  Festgehalten wird nichts: `/api/detect` und `/api/measure` legen keine Sitzung an und
+  behalten kein Foto. Ein Test zählt die Sitzungen vor und nach einem Schwung Einzelbilder.
+
+- **Das APK trägt `android.permission.CAMERA`.** Bis hierher kam es ohne aus, und das stimmte:
+  `ACTION_IMAGE_CAPTURE` lässt die Kamera-App des Systems fotografieren und gibt eine Datei
+  zurück. Ein Sucher kann das nicht — `getUserMedia` läuft im eigenen Prozess. **`INTERNET`
+  fehlt weiterhin**; die Zusage, dass nichts das Gerät verlässt, ist unberührt.
+
+  Zwei Fallen dabei, beide behandelt: eine WebView beantwortet `getUserMedia` mit
+  `NotAllowedError`, bis die App `WebChromeClient.onPermissionRequest` bedient (sie fragt
+  nicht selbst, sie fragt die App — gewährt wird ausschließlich die Kamera, nie das Mikrofon).
+  Und eine **deklarierte, aber nicht erteilte** CAMERA-Berechtigung lässt
+  `ACTION_IMAGE_CAPTURE` mit einer `SecurityException` scheitern: seither fragt auch der alte
+  Weg über die Kamera-App, obwohl er die Berechtigung gar nicht benutzt.
+
+- **Eine eigene Auflösung für den Bildexport**, mit „so fein wie das Foto" als Vorgabe.
+  `Zuschnitt zurücksetzen` bringt das Rechteck auf den Vorschlag vom Anfang zurück.
+
+### Geändert
+
+- **Der Bildexport erfindet keine Größe mehr.** Das gemeldete „JPEG zu groß zum Speichern"
+  lag nie am Foto: die Größe eines Bildexports ist *Zuschnitt × dpi*, die Pixelzahl des Fotos
+  kommt darin nicht vor. An der Prüfszene gemessen löst ein 4,3-MP-Foto auf der Objektebene
+  **0,5184 mm/px** auf — also **49 dpi echtes Detail**. Ein 810 × 1153 mm großer Zuschnitt
+  daraus bei 300 dpi verlangt **130 Megapixel, das 38-fache** dessen, was im Foto steckt; das
+  Telefon lehnt die Anforderung zu Recht ab.
+
+  Der Bildexport bekommt deshalb eine **eigene** Auflösung, Vorgabe „so fein wie das Foto".
+  Nicht dieselbe wie das PDF: beim Druck ist eine hohe Zahl der Zweck, weil Maßstab, Raster
+  und Fußzeile Vektor sind und scharf bleiben, während das Foto darunter weich sein darf. Ein
+  Bild für ein anderes Programm hat diese zweite Schicht nicht — dort ist alles oberhalb der
+  Auflösung des Fotos aufgeblasene Größe. Die festen Stufen bleiben wählbar.
+
+- **Das Zuschnitt-Rechteck reagiert nur noch auf seine Griffe.** Ein Tippen irgendwo auf das
+  Foto zog bisher ein neues Rechteck von null Millimetern auf und warf den Zuschnitt weg. Am
+  Finger ist das die falsche Vorgabe: das Canvas füllt den halben Bildschirm, und es
+  anzufassen, um das Bild anzusehen, kostete die ganze Einstellung. Außerhalb des Rechtecks
+  passiert jetzt **nichts** — kein neues Rechteck, kein Pointer-Capture, kein Neuzeichnen und
+  kein Fokus (ein `<canvas tabindex="0">` würde sonst fokussiert, und die Seite springt zur
+  Bühne). Der Weg zu einem frischen Rechteck ist der Knopf **Zuschnitt zurücksetzen**.
+
+- **Die Bildaufbereitung liegt hinter einem Winkel**, zugeklappt als Vorgabe. Elf Regler sind
+  der längste Abschnitt der Seite, und die meisten Fotos brauchen keinen einzigen davon; auf
+  dem Telefon lag der Zuschnitt dadurch eine halbe Bildschirmhöhe weiter unten. Gemessen bei
+  1280 px: **74 px zugeklappt gegen 603 px aufgeklappt**. Es ist ein natives `<details>` —
+  Tastatur, Vorlesen und das Suchen im Text bringt der Browser mit. Der Fehlerplatz bleibt
+  außerhalb: eine Meldung hinter einem zugeklappten Winkel ist keine Meldung.
+
+### Was der Prüfstand dieser Fassung neu kann
+
+Chrome kann eine Datei als Kamera einspielen (`--use-file-for-fake-video-capture`). Damit
+läuft der **ganze** Weg unter Prüfung: `getUserMedia`, `<video>`, Einzelbild, Erkennung,
+Overlay, Auslöser — gegen den Server **und** gegen den Browser-Bau mit dem WebAssembly-Kern,
+mit denselben Zahlen (4 Marker, 1,2999 mm/px, 0,14 px Restfehler; 6573 Overlay-Pixel im
+Marker-Modus, 14650 mit Raster).
+
+Zwei echte Fehler hat erst dieser Prüfstand gefunden: der Kern liefert **acht Zahlen**, wo der
+Server **vier Paare** schickt — die Marker wurden gefunden und nichts gezeichnet — und eine
+Variable stand außerhalb ihres Gültigkeitsbereichs, sodass die Anzeige stimmte und das Raster
+fehlte. Beides wäre am Auge vorbeigegangen.
+
+### Was NICHT belegt ist
+
+- **Auf einem Telefon ist von dieser Fassung nichts gelaufen** — wie bei allen Fassungen
+  davor. Der Berechtigungsdialog von Android ist damit ebenfalls ungeprüft; geprüft ist, dass
+  das APK die Berechtigung trägt (`aapt` zurückgelesen) und dass der Java-Weg übersetzt.
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig belegt.**
+  Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt, ist ein
+  Gegenstand *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem Ausdruck
+  nachgemessen. Das Live-Bild ändert daran nichts — es zeigt dieselbe Rechnung schneller,
+  nicht eine zweite.
+
+**Deshalb bleibt `alpha` im Namen.**
+
 ## [0.1.4-alpha] – 2026-09-08
 
 **Zwei Fehler, die erst auf dem Telefon sichtbar wurden.** Beide stammen aus `0.1.3-alpha`
