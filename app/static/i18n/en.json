@@ -15,6 +15,7 @@
       "upload": {
         "title": "Photo",
         "choose": "Choose photo",
+        "camera": "Take photo",
         "no_file": "No file selected",
         "drop_hint": "or drop one here",
         "hint": "For the best result: use the tele lens (1× or 2×), stand well back, keep the object centred. Wide angle bends the edges, and that distortion is not corrected.",

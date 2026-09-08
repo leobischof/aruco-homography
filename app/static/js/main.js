@@ -355,6 +355,7 @@ async function start() {
     // uebersetzen (siehe file-picker.js).
     createFilePicker({
         input: el("file"),
+        cameraInput: el("camera"),
         dropZone: el("file-drop"),
         nameOutput: el("file-name"),
         onFile: handleUpload,

@@ -15,6 +15,7 @@
       "upload": {
         "title": "Foto",
         "choose": "Foto auswählen",
+        "camera": "Foto aufnehmen",
         "no_file": "Keine Datei ausgewählt",
         "drop_hint": "oder hierher ziehen",
         "hint": "Tipp fürs Ergebnis: Tele (1× oder 2×), großer Abstand, Objekt mittig. Weitwinkel biegt die Ränder, und diese Verzeichnung wird nicht korrigiert.",
