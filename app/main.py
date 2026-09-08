@@ -10,6 +10,7 @@ import io
 import socket
 import sys
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, File, Request, UploadFile
@@ -19,10 +20,16 @@ from fastapi.staticfiles import StaticFiles
 from app import config, i18n, window
 from app.notices import AppError
 from app.pdf.markersheet import build_markersheet
-from app.pipeline import run_adjust, run_export, run_solve, solve_response
-from app.schemas import AdjustRequest, ExportRequest, SolveRequest
+from app.pipeline import (
+    run_adjust,
+    run_export,
+    run_export_image,
+    run_solve,
+    solve_response,
+)
+from app.schemas import AdjustRequest, ExportImageRequest, ExportRequest, SolveRequest
 from app.session import store
-from app.vision import backend
+from app.vision import backend, encode
 from app.vision.detect import load_photo
 
 if TYPE_CHECKING:  # nur fuer die Typangabe - uvicorn wird erst beim Start geladen
@@ -143,6 +150,27 @@ async def export_endpoint(request: ExportRequest) -> Response:
             "X-Page-Size-Mm": f"{result.page_size_mm[0]:.3f}x{result.page_size_mm[1]:.3f}",
             "X-Image-Rect-Mm": ",".join(f"{value:.3f}" for value in result.image_rect_mm),
             "X-Pages": str(result.page_count),
+        },
+    )
+
+
+@app.post("/api/export-image")
+async def export_image_endpoint(request: ExportImageRequest) -> Response:
+    """Denselben Zuschnitt als JPEG oder PNG."""
+    session = store.get(request.session_id)
+    result = run_export_image(session, request)
+
+    # Der Name kommt vom Aufrufer, die Endung vom Format. Beides zu uebernehmen
+    # hiesse, ein PNG "schablone.jpg" nennen zu koennen.
+    stem = Path(request.filename).stem or "schablone"
+    filename = f"{stem}{encode.extension(request.image_format)}"
+    return Response(
+        content=result.data,
+        media_type=encode.media_type(request.image_format),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Image-Pixels": f"{result.width}×{result.height}",
+            "X-Mm-Per-Px": f"{config.MM_PER_INCH / request.dpi:.6f}",
         },
     )
 

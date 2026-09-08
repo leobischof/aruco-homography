@@ -13,7 +13,7 @@
  */
 
 import { createAdjustPanel } from "./adjust.js";
-import { describeError, exportPdf, postJson, uploadPhoto } from "./api.js";
+import { describeError, exportImage, exportPdf, postJson, uploadPhoto } from "./api.js";
 import { renderCropInfo } from "./crop-info.js";
 import { createCropRect } from "./crop-rect.js";
 import { createFilePicker } from "./file-picker.js";
@@ -25,6 +25,7 @@ import { initTheme } from "./theme.js";
 const el = (id) => document.getElementById(id);
 const CROP_KEYS = ["x0", "y0", "x1", "y1"];
 const PDF_NAME = "schablone.pdf";
+const IMAGE_STEM = "schablone";
 
 const state = {
     sessionId: null,
@@ -32,6 +33,7 @@ const state = {
     solve: null,
     crop: null,
     exportResult: null,
+    imageResult: null,
 };
 
 let cropRect = null;
@@ -252,7 +254,43 @@ async function handleExport() {
 
         download(result.blob, PDF_NAME);
         state.exportResult = result;
+        state.imageResult = null;
         renderExportInfo();
+    } catch (error) {
+        showError("export-error", error);
+    } finally {
+        idle();
+    }
+}
+
+/**
+ * Denselben Zuschnitt als Bilddatei.
+ *
+ * Ein eigener Weg neben handleExport und nicht ein Zweig darin: was hier
+ * entsteht, ist kein Ausdruck. Es gibt keine Seiten, keine Aufdrucke und keine
+ * Sprache - und deshalb auch keine der Angaben, die handleExport mitschickt.
+ */
+async function handleExportImage() {
+    clearError("export-error");
+    busy("ui.busy.export");
+    try {
+        const format = el("image-format").value;
+        const dpi = parseInt(el("dpi").value, 10);
+        const result = await exportImage({
+            session_id: state.sessionId,
+            crop_mm: state.crop,
+            dpi,
+            image_format: format,
+            // Dieselben Regler, die die Vorschau erzeugt haben - wie beim PDF.
+            adjust: adjustPanel.read(),
+            filename: IMAGE_STEM,
+        });
+
+        const filename = `${IMAGE_STEM}.${format === "png" ? "png" : "jpg"}`;
+        download(result.blob, filename);
+        state.imageResult = { ...result, filename, dpi };
+        state.exportResult = null;
+        renderImageInfo();
     } catch (error) {
         showError("export-error", error);
     } finally {
@@ -296,6 +334,34 @@ function renderExportInfo() {
     el("export-info").replaceChildren(summary, hint);
 }
 
+/**
+ * Was aus dem Bildexport wurde - und was es in Millimetern heisst.
+ *
+ * Die Auflösung wird ausdruecklich genannt, weil sie das Einzige ist, was ein
+ * Bild ueber sein Mass mitteilen kann: sie steht in der Datei, und ein Pixel ist
+ * damit eine bekannte Laenge. Wer nur die Pixelzahl sieht, hat ein Bild; wer die
+ * Auflösung dazu sieht, hat eine Schablone.
+ */
+function renderImageInfo() {
+    const result = state.imageResult;
+    if (!result) return;
+
+    const summary = document.createElement("div");
+    summary.append(
+        richText(
+            "ui.steps.export.image_result",
+            {
+                filename: result.filename,
+                pixels: result.pixels,
+                dpi: result.dpi,
+                mm_per_px: formatNumber(result.mmPerPx, 4),
+            },
+            ["filename", "dpi"]
+        )
+    );
+    el("export-info").replaceChildren(summary);
+}
+
 // --- Sprachwechsel -----------------------------------------------------------
 
 /**
@@ -317,6 +383,7 @@ function rerender() {
         updateCropInfo();
     }
     if (state.exportResult) renderExportInfo();
+    if (state.imageResult) renderImageInfo();
 }
 
 // --- Aufbau ------------------------------------------------------------------
@@ -363,6 +430,7 @@ async function start() {
 
     el("solve").addEventListener("click", handleSolve);
     el("export").addEventListener("click", handleExport);
+    el("export-image").addEventListener("click", handleExportImage);
     el("adjust-reset").addEventListener("click", () => adjustPanel.reset());
 
     el("mode").addEventListener("change", updateModeFields);

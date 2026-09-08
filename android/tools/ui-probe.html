@@ -61,16 +61,16 @@
         (error) => window.__arucoResolve(callId, { ok: false, error: String(error) }),
       );
     },
-    appendPdf(base64) {
+    appendBytes(base64) {
       window.__probe.chunks.push(base64);
       return answer({});
     },
-    savePdf(callId, filename) {
+    saveFile(callId, filename) {
       window.__probe.pdf = { filename, base64: window.__probe.chunks.join("") };
       window.__probe.chunks = [];
       window.__arucoResolve(callId, { ok: true, saved: true });
     },
-    sharePdf(callId, filename) { this.savePdf(callId, filename); },
+    sharePdf(callId, filename) { this.saveFile(callId, filename); },
     navigate() {},
   };
   window.__probe.chunks = [];
@@ -124,11 +124,14 @@ try {
     };
 
     // Die Rasterbilder holt image-android.js als GET. Auf dem Geraet bedient
-    // das der WebViewAssetLoader aus Rasters.java; hier die Leinwand.
+    // das der WebViewAssetLoader aus Rasters.java; hier die Leinwand. Zwei
+    // Endungen, weil der Bildexport PNG holen kann - die Endung im PFAD ist die
+    // eine Stelle, an der sich beide Seiten ueber das Format einigen, und ein
+    // Tippfehler darin waere auf dem Geraet ein Export, der stumm nichts tut.
     const nativeFetch = window.fetch.bind(window);
     window.fetch = async (input, init) => {
         const url = new URL(typeof input === "string" ? input : input.url, location.origin);
-        const match = url.pathname.match(/^\/api\/raster\/(\d+)\/(\d+)\.jpg$/);
+        const match = url.pathname.match(/^\/api\/raster\/(\d+)\/(\d+)\.(jpg|png)$/);
         if (!match) return nativeFetch(input, init);
         const image = window.__probe.bridge.image(Number(match[1]));
         const pixels = new Uint8Array(wasm.HEAPU8.buffer, image.pointer,
@@ -142,11 +145,12 @@ try {
         }
         const canvas = new OffscreenCanvas(image.width, image.height);
         canvas.getContext("2d").putImageData(new ImageData(rgba, image.width, image.height), 0, 0);
+        const type = match[3] === "png" ? "image/png" : "image/jpeg";
         const blob = await canvas.convertToBlob({
-            type: "image/jpeg",
+            type,
             quality: Number(match[2]) / 100,
         });
-        return new Response(blob, { status: 200, headers: { "Content-Type": "image/jpeg" } });
+        return new Response(blob, { status: 200, headers: { "Content-Type": type } });
     };
 
     // --- Die Kette ----------------------------------------------------------
@@ -239,6 +243,43 @@ try {
     let binary = "";
     for (const byte of raw) binary += String.fromCharCode(byte);
     window.__probeSheetsBase64 = btoa(binary);
+
+    // --- Und der Zuschnitt als Bild -------------------------------------
+    //
+    // Der dritte Weg aus derselben Sitzung, und der einzige, der nicht durch
+    // web/pdf/ geht: image-android.js holt das Raster als PNG statt als JPEG,
+    // density.js schreibt die Auflösung hinein. Auf dem Geraet bedient
+    // Rasters.toPng die Anfrage; hier die Leinwand oben.
+    for (const format of ["jpeg", "png"]) {
+        const picture = await local.exportImage({
+            session_id: upload.session_id,
+            crop_mm: crop,
+            dpi: 150,
+            image_format: format,
+            adjust: {},
+        });
+        const view = new Uint8Array(await picture.blob.arrayBuffer());
+
+        // Die Auflösung wieder herauslesen - eine Datei, die sie nicht traegt,
+        // ist ein Bild und keine Schablone.
+        let dpi = null;
+        if (format === "png") {
+            let at = 8;
+            while (at + 12 <= view.length) {
+                const length = new DataView(view.buffer, view.byteOffset + at).getUint32(0);
+                if (String.fromCharCode(...view.subarray(at + 4, at + 8)) === "pHYs") {
+                    dpi = new DataView(view.buffer, view.byteOffset + at + 8).getUint32(0)
+                        * 0.0254;
+                    break;
+                }
+                at += 12 + length;
+            }
+        } else if (view[13] === 1) {
+            dpi = (view[14] << 8) | view[15];
+        }
+        say(`bild ${format}: ${picture.pixels} px, ${view.length} Bytes, `
+            + `${dpi === null ? "OHNE Auflösung" : dpi.toFixed(1) + " dpi in der Datei"}`);
+    }
 
     done();
 } catch (error) {

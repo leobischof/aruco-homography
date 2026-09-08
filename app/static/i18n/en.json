@@ -96,6 +96,9 @@
         "overlay_overview": "Assembly plan as the first sheet",
         "overlay_contour": "Outline as a cutting line",
         "submit": "Create PDF",
+        "submit_image": "Save as image",
+        "image_format_label": "Image format",
+        "image_result": "{filename} – {pixels} px at {dpi} dpi. The resolution is written into the file; one pixel is {mm_per_px} mm.",
         "result": "PDF created: {pages} page(s), page size {page_size} mm.",
         "result_hint": "When printing, be sure to choose {emphasis}, then measure the printed 100 mm scale to check.",
         "result_emphasis": "100 % / no scaling"
@@ -228,6 +231,7 @@
     "output_too_large_hint_crop": "Not even {dpi} dpi is enough – make the crop smaller.",
     "no_markers": "No ArUco marker was found. Check sharpness, lighting, and whether the whole marker sheet is in the frame.",
     "bad_mode": "Unknown mode: {mode}",
+    "bad_image_format": "Unknown image format: {format}",
     "no_sheet_ids": "Only the marker IDs {found} were detected. The supplied sheet uses {expected}. Switch to free mode, or print the app's marker sheet.",
     "homography_failed": "No homography could be computed from the detected markers. Do they lie almost on a straight line?",
     "homography_degenerate": "The homography is degenerate (H[2,2] = 0).",

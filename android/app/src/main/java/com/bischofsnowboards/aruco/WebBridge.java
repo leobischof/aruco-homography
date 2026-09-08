@@ -179,7 +179,8 @@ public final class WebBridge {
     }
 
     /**
-     * Eine Scheibe des PDFs herueberreichen. Danach {@link #savePdf} oder {@link #sharePdf}.
+     * Eine Scheibe der Datei herueberreichen. Danach {@link #saveFile} oder
+     * {@link #sharePdf}.
      *
      * <p><b>In Scheiben und nicht am Stueck.</b> Ein A4-Markerblatt sind wenige Dutzend
      * Kilobyte - das ginge auch in einem Zug. Ein gekacheltes Schablonen-PDF mit
@@ -190,9 +191,9 @@ public final class WebBridge {
      * viel, also gehen beide durch diesen.
      */
     @JavascriptInterface
-    public String appendPdf(String base64) {
+    public String appendBytes(String base64) {
         try {
-            activity.appendPdf(Base64.decode(base64, Base64.DEFAULT));
+            activity.appendBytes(Base64.decode(base64, Base64.DEFAULT));
             return ok(new JSONObject());
         } catch (Throwable failure) {
             return error(failure);
@@ -200,11 +201,15 @@ public final class WebBridge {
     }
 
     /**
-     * Das herübergereichte PDF speichern. Der Benutzer waehlt den Ort im Systemdialog.
+     * Die herübergereichte Datei speichern. Der Benutzer waehlt den Ort im Systemdialog.
+     *
+     * <p>Der Typ folgt der Endung im Dateinamen - ein PDF hier, ein JPEG oder PNG dort.
+     * Fest verdrahtet war er, solange es nur PDFs gab; ein PNG unter
+     * {@code application/pdf} anzubieten waere eine Datei, die kein Betrachter oeffnet.
      */
     @JavascriptInterface
-    public void savePdf(long callId, String filename) {
-        activity.savePdf(callId, filename);
+    public void saveFile(long callId, String filename) {
+        activity.saveFile(callId, filename);
     }
 
     /** Dasselbe, aber zum Teilen (Drucken, Mail, Cloud) statt zum Ablegen. */

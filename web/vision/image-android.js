@@ -62,16 +62,30 @@ export async function decodeFile(file) {
 
 /** Ein Raster als JPEG-Bytes - das, was web/pdf/ zum Einbetten braucht. */
 export async function toJpegBytes(raster, quality = JPEG_QUALITY / 100.0) {
-    const response = await fetch(rasterUrl(raster, quality));
+    const response = await fetch(rasterUrl(raster, quality, "jpg"));
     if (!response.ok) throw new AppError("preview_missing");
     return new Uint8Array(await response.arrayBuffer());
 }
 
 /** Dasselbe als Blob - fuer die Vorschaubilder der Oberflaeche. */
 export async function toJpegBlob(raster, quality = JPEG_QUALITY / 100.0) {
-    const response = await fetch(rasterUrl(raster, quality));
+    const response = await fetch(rasterUrl(raster, quality, "jpg"));
     if (!response.ok) throw new AppError("preview_missing");
     return response.blob();
+}
+
+/**
+ * Ein Raster als PNG-Bytes - verlustfrei, fuer den Bildexport.
+ *
+ * Die Guete steht auch hier im Pfad, obwohl PNG keine hat: der Pfad hat ein
+ * festes Muster, und ein zweites einzufuehren waere eine zweite Stelle, an der
+ * sich Java und JavaScript ueber die Form einigen muessten. Die Java-Seite
+ * ignoriert die Zahl fuer PNG.
+ */
+export async function toPngBytes(raster) {
+    const response = await fetch(rasterUrl(raster, 1.0, "png"));
+    if (!response.ok) throw new AppError("preview_missing");
+    return new Uint8Array(await response.arrayBuffer());
 }
 
 /**
@@ -81,10 +95,10 @@ export async function toJpegBlob(raster, quality = JPEG_QUALITY / 100.0) {
  * bekommt nur den Pfad, die Parameter wirft die WebView vorher weg. Wer das
  * uebersieht, kodiert stillschweigend immer mit derselben Guete.
  */
-function rasterUrl(raster, quality) {
+function rasterUrl(raster, quality, extension) {
     if (!Number.isInteger(raster && raster.handle)) {
         throw new AppError("preview_missing");
     }
     const percent = Math.min(100, Math.max(1, Math.round(quality * 100)));
-    return `/api/raster/${raster.handle}/${percent}.jpg`;
+    return `/api/raster/${raster.handle}/${percent}.${extension}`;
 }

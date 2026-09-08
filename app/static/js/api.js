@@ -133,6 +133,38 @@ export async function uploadPhoto(file) {
 }
 
 /**
+ * Derselbe Zuschnitt als Bilddatei. Auch das ist kein JSON, sondern Bytes.
+ *
+ * Zurueck kommt dieselbe Form wie bei exportPdf - ein Blob plus das, was die
+ * Oberflaeche darueber schreiben will.
+ */
+export async function exportImage(body) {
+    if (transport() === LOCAL) {
+        const module = await local();
+        try {
+            return await module.exportImage(body);
+        } catch (error) {
+            return localError(error);
+        }
+    }
+
+    const response = await fetch("/api/export-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept-Language": getLocale() },
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) throw await unwrap(response);
+
+    const blob = await response.blob();
+    return {
+        blob,
+        format: body.image_format === "png" ? "png" : "jpeg",
+        pixels: response.headers.get("X-Image-Pixels") || "",
+        mmPerPx: Number(response.headers.get("X-Mm-Per-Px")),
+    };
+}
+
+/**
  * Der Export liefert kein JSON, sondern das PDF - samt Seitenzahl und
  * Seitenformat in den Kopfzeilen. Deshalb kann er nicht durch postJson.
  */

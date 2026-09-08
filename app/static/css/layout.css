@@ -150,6 +150,20 @@
     flex-wrap: wrap;
 }
 
+/* Ein Knopf, dessen Beschriftung umbricht, ist kein Knopf mehr, sondern ein
+   Absatz. In einem Flexkasten schrumpft er bis zur schmalsten Wortbreite, wenn
+   man ihn laesst - dann bricht lieber die ZEILE um. */
+.step-actions .btn { white-space: nowrap; }
+
+/* Was zusammengehoert, bricht auch zusammen um: Format und Knopf sind EINE
+   Handlung, und ein Auswahlfeld, das allein in der naechsten Zeile steht, sieht
+   aus wie eine Einstellung, die fuer alles gilt. */
+.action-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 /* --------------------------------------------------------------------------
    Felderraster
    -------------------------------------------------------------------------- */
