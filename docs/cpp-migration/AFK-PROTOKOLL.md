@@ -267,5 +267,39 @@ als drinsteht:
 - **Und auch dieser Beleg deckt nur die halbe Kette:** `PDF → Drucker → Papier`. Der Weg
   `Foto → Marker → Millimeter` ist nach wie vor nur gegen synthetische Szenen belegt.
 - **Kein echtes Foto.** Alles bisher Gemessene ist gerechnet.
-- **Android: nichts ausgeführt.** Siehe oben.
+- **Android: nichts ausgeführt.** Siehe oben. — **Eingelöst am 08.09.2026**, siehe den
+  Eintrag darunter: ein echtes Telefon hat den Prüfstand selbst gefahren.
+
+---
+
+#### 2026-09-08 · Ein Gerät hat geantwortet — und zwei Fehler mitgebracht
+
+Der Satz, der oben viermal steht — *auf einem Android-Gerät ist nichts gelaufen* — ist
+seit diesem Tag falsch. Der Bediener hat `v0.1.0-alpha` auf einem **Xiaomi 2312DRA50G,
+Android 15 (API 35)** installiert und den Knopf „Prüfstand laufen lassen" gedrückt:
+
+> **BESTANDEN.** `flat` 0,2337 px in 83 ms, `thick` 0,2337 px in 84 ms, je 4/4 Marker,
+> Toleranz 0,7500 px. Beide SHA-256 der Prüfszenen **genau die vorhergesagten**.
+
+**Was daran zählt, ist nicht das Wort BESTANDEN, sondern die Prüfsummen.** Sie sagen,
+dass Androids PNG-Dekoder dieselben Pixel geliefert hat wie `cv2` — und erst dadurch ist
+der gleiche Eckfehler eine Aussage über den *Detektor* statt über das *Laden*. Ein
+Prüfstand, der nur ein Urteil ausgibt, hätte diesen Unterschied verschluckt. Das ist der
+Ertrag der Entscheidung, ihn Zahlen ausgeben zu lassen.
+
+**Und derselbe Lauf hat zwei Fehler gefunden, die hier keine Prüfung finden konnte:**
+
+1. Die Oberfläche lag unter Statusleiste und Navigationsleiste (Android 15 erzwingt
+   Edge-to-Edge ab `targetSdk 35`). Kein Prüfstand auf diesem Rechner hat je ein Fenster
+   mit Systemleisten gesehen.
+2. Der Export brach mit `Error invoking core: Java exception was raised during method
+   invocation` ab — einem `OutOfMemoryError`, den `catch (Exception)` nicht fing, bei
+   einem Ausgaberaster von 169 Megapixeln. Auf einem Rechner mit 32 GB fällt eine
+   Speichergrenze, die es nur auf einem Telefon gibt, nicht auf.
+
+**Die Lehre, und sie ist unbequem:** die Belegkette dieses Projekts war so dicht, wie sie
+ohne Gerät sein kann — JNI auf einer echten JVM, die Kette aus dem APK in einem echten
+Chromium, jedes Erzeugnis nachgemessen. Sie hat den Detektor richtig vorhergesagt, auf die
+vierte Stelle. Beide Fehler, die trotzdem übrig blieben, lagen dort, wo das Ersatzstück
+saß: im Fenster und im Speicher. **Was ein Ersatzstück ersetzt, misst es nicht.**
 
