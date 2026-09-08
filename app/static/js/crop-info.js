@@ -13,8 +13,8 @@
  */
 
 import { formatNumber, t } from "./i18n.js";
+import { MM_PER_INCH } from "./units.js";
 
-const MM_PER_INCH = 25.4;
 const SAMPLES_PER_AXIS = 40;
 
 function pointInPolygon(x, y, polygon) {

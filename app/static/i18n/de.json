@@ -98,7 +98,10 @@
         "submit": "PDF erzeugen",
         "submit_image": "Als Bild speichern",
         "image_format_label": "Bildformat",
+        "image_dpi_label": "Auflösung des Bildes",
+        "image_dpi_source": "so fein wie das Foto",
         "image_result": "{filename} – {pixels} px bei {dpi} dpi. Die Auflösung steht in der Datei, ein Pixel ist {mm_per_px} mm.",
+        "image_result_source": "{filename} – {pixels} px bei {dpi} dpi, so fein wie das Foto. Die Auflösung steht in der Datei, ein Pixel ist {mm_per_px} mm.",
         "result": "PDF erzeugt: {pages} Seite(n), Seitenformat {page_size} mm.",
         "result_hint": "Beim Drucken unbedingt {emphasis} wählen und danach den aufgedruckten 100-mm-Maßstab nachmessen.",
         "result_emphasis": "100 % / keine Skalierung"

@@ -21,6 +21,7 @@ import { createHeader } from "./header.js";
 import { formatNumber, initI18n, onLocaleChange, richText, t, getLocale } from "./i18n.js";
 import { renderReport } from "./report.js";
 import { initTheme } from "./theme.js";
+import { MM_PER_INCH } from "./units.js";
 
 const el = (id) => document.getElementById(id);
 const CROP_KEYS = ["x0", "y0", "x1", "y1"];
@@ -120,6 +121,7 @@ function applyDefaults(defaults) {
     el("spacing-y").value = defaults.spacing_y_mm;
     el("overlap").value = defaults.overlap_mm;
     renderDpiOptions(defaults.dpi_choices, defaults.dpi);
+    renderImageDpiOptions(defaults.dpi_choices);
     header.syncSheetLink();
 }
 
@@ -137,6 +139,54 @@ function renderDpiOptions(choices, fallback) {
         })
     );
     select.value = choices.map(String).includes(previous) ? previous : String(fallback);
+}
+
+/** Der Wert, bei dem der Bildexport die Aufloesung aus dem Foto nimmt. */
+const IMAGE_DPI_SOURCE = "source";
+
+/**
+ * Die Auflösungsliste des BILDexports - mit "wie das Foto" an erster Stelle.
+ *
+ * Sie ist nicht die des PDF, und der Unterschied hat einen Grund. Beim Druck
+ * ist eine hohe Auflösung der Zweck. Bei einem Bild fuer ein anderes Programm
+ * ist alles oberhalb dessen, was das Foto hergibt, aufgeblasene Groesse: ein
+ * Handyfoto loest auf einem meterbreiten Gegenstand um die 50 dpi auf, und ein
+ * 300-dpi-Export davon hat rund achtunddreissigmal so viele Pixel wie das Foto
+ * Bildinformation. Genau daran scheitert der Export auf dem Telefon - nicht am
+ * Foto, sondern am Zuschnitt mal der Auflösung.
+ */
+function renderImageDpiOptions(choices) {
+    const select = el("image-dpi");
+    const previous = select.value || IMAGE_DPI_SOURCE;
+    const source = document.createElement("option");
+    source.value = IMAGE_DPI_SOURCE;
+    source.textContent = t("ui.steps.export.image_dpi_source");
+    select.replaceChildren(
+        source,
+        ...choices.map((dpi) => {
+            const option = document.createElement("option");
+            option.value = String(dpi);
+            option.textContent = t("ui.steps.export.dpi_option", { dpi });
+            return option;
+        })
+    );
+    select.value = [IMAGE_DPI_SOURCE, ...choices.map(String)].includes(previous)
+        ? previous
+        : IMAGE_DPI_SOURCE;
+}
+
+/**
+ * Die Auflösung, die das Foto auf der Ebene wirklich hat.
+ *
+ * `mm_per_px` ist der gemessene Massstab der Loesung - wieviel Millimeter ein
+ * Pixel des FOTOS auf der Objektebene abdeckt. Ein Export in genau dieser
+ * Auflösung tastet das Foto Pixel fuer Pixel ab: nichts wird weggeworfen und
+ * nichts erfunden.
+ */
+function sourceDpi() {
+    const mmPerPx = state.solve && state.solve.mm_per_px;
+    if (!mmPerPx || !Number.isFinite(mmPerPx)) return null;
+    return Math.max(1, Math.round(MM_PER_INCH / mmPerPx));
 }
 
 // --- Schritt 2: Entzerren ----------------------------------------------------
@@ -275,7 +325,12 @@ async function handleExportImage() {
     busy("ui.busy.export");
     try {
         const format = el("image-format").value;
-        const dpi = parseInt(el("dpi").value, 10);
+        const chosen = el("image-dpi").value;
+        // Faellt die Messung aus (dann gibt es auch keinen Zuschnitt), tritt die
+        // Vorgabe des PDF ein - besser eine Zahl als ein Abbruch.
+        const dpi = chosen === IMAGE_DPI_SOURCE
+            ? (sourceDpi() ?? parseInt(el("dpi").value, 10))
+            : parseInt(chosen, 10);
         const result = await exportImage({
             session_id: state.sessionId,
             crop_mm: state.crop,
@@ -288,7 +343,7 @@ async function handleExportImage() {
 
         const filename = `${IMAGE_STEM}.${format === "png" ? "png" : "jpg"}`;
         download(result.blob, filename);
-        state.imageResult = { ...result, filename, dpi };
+        state.imageResult = { ...result, filename, dpi, fromSource: chosen === IMAGE_DPI_SOURCE };
         state.exportResult = null;
         renderImageInfo();
     } catch (error) {
@@ -349,7 +404,12 @@ function renderImageInfo() {
     const summary = document.createElement("div");
     summary.append(
         richText(
-            "ui.steps.export.image_result",
+            // Steht dort die Zahl aus dem Foto, sagt die Meldung das auch.
+            // "49 dpi" allein liest sich wie ein Fehler; "so fein wie das
+            // Foto" erklaert, dass genau das die Absicht war.
+            result.fromSource
+                ? "ui.steps.export.image_result_source"
+                : "ui.steps.export.image_result",
             {
                 filename: result.filename,
                 pixels: result.pixels,
@@ -377,6 +437,7 @@ function rerender() {
     if (state.upload) {
         renderUploadInfo();
         renderDpiOptions(state.upload.defaults.dpi_choices, state.upload.defaults.dpi);
+        renderImageDpiOptions(state.upload.defaults.dpi_choices);
     }
     if (state.solve) {
         renderReport(el("report"), el("warnings"), state.solve);

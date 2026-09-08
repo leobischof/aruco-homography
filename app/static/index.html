@@ -364,6 +364,15 @@
         "Aufteilung": er erzeugt etwas anderes, nicht dasselbe anders verteilt.
       -->
       <span class="action-group">
+        <!--
+          Eine EIGENE Aufloesung, nicht die des PDF. Beim Druck ist eine hohe
+          Aufloesung der Zweck: die Aufdrucke sind Vektor und bleiben scharf, und
+          das Bild darunter darf weich sein. Ein Bild fuer ein anderes Programm
+          hat diesen Grund nicht - dort ist alles ueber der Aufloesung des Fotos
+          erfundene Groesse. Vorgabe ist deshalb "wie das Foto".
+        -->
+        <select id="image-dpi" data-i18n-attr="aria-label:ui.steps.export.image_dpi_label">
+        </select>
         <select id="image-format" data-i18n-attr="aria-label:ui.steps.export.image_format_label">
           <option value="jpeg" selected>JPEG</option>
           <option value="png">PNG</option>
