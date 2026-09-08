@@ -21,6 +21,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.core.content.FileProvider;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -35,6 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -99,6 +103,16 @@ public final class MainActivity extends Activity {
      */
     private ByteArrayOutputStream incomingPdf = new ByteArrayOutputStream();
 
+    /**
+     * Was Aussparung und Systemleisten dem Fenster wegnehmen - oben, rechts, unten, links,
+     * in dichteunabhaengigen Punkten (dip).
+     *
+     * <p>Gemerkt, weil die beiden Ereignisse nicht in fester Reihenfolge kommen: die
+     * Fensterraender misst das System beim ersten Layout, die Seite laedt asynchron. Wer
+     * zuletzt kommt, findet den anderen Wert hier vor.
+     */
+    private float[] safeAreaDip = { 0f, 0f, 0f, 0f };
+
     /** Der Aufruf, der gerade auf einen Systemdialog wartet. */
     private long pendingCallId = -1L;
     private byte[] pendingPdf;
@@ -146,7 +160,64 @@ public final class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(true);
 
         installBridgeShim();
+        watchWindowInsets();
         webView.loadUrl(ORIGIN + "/native/index.html");
+    }
+
+    /**
+     * Die Fensterraender messen und der Seite geben.
+     *
+     * <p><b>Warum ueberhaupt.</b> Android 15 erzwingt fuer jede App mit
+     * {@code targetSdk = 35}, dass sie unter den Systemleisten zeichnet; die Abmeldung
+     * ({@code setDecorFitsSystemWindows(true)}) ist abgekuendigt. Wer seinen Inhalt dann
+     * nicht selbst einrueckt, legt die Kopfzeile unter die Uhr und den Fuss hinter die
+     * Navigationsleiste - genau so ist es von einem Xiaomi mit Android 15 gemeldet worden.
+     *
+     * <p><b>Warum nicht {@code env(safe-area-inset-*)} allein.</b> Die WebView fuellt
+     * daraus nur die Display-Aussparung (AwDisplayCutoutController). Die Systemleisten
+     * stehen dort nicht drin, und der untere Wert - also genau der gemeldete Fehler -
+     * bliebe 0. Deshalb {@code systemBars() | displayCutout()}: die Vereinigung deckt
+     * Status- und Navigationsleiste UND die Aussparung ab.
+     *
+     * <p><b>Aeltere Geraete aendern sich nicht.</b> Auf Android 14 und darunter fuegt sich
+     * das Fenster weiterhin in die Systemleisten ein; die Raender kommen hier dann als 0
+     * an, das CSS addiert 0, und die App sieht aus wie bisher. Das ist Absicht: hier wird
+     * ein erzwungenes Verhalten beantwortet, nicht auf jedem Geraet ein neues eingefuehrt.
+     *
+     * <p>Die Raender kommen in physischen Pixeln. Ein CSS-Pixel in dieser WebView ist ein
+     * dip, also wird durch die Dichte geteilt - ungeteilt waeren die Abstaende auf einem
+     * heutigen Telefon rund dreimal zu gross.
+     */
+    private void watchWindowInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, windowInsets) -> {
+            Insets edges = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            float density = getResources().getDisplayMetrics().density;
+            safeAreaDip = new float[] {
+                    edges.top / density, edges.right / density,
+                    edges.bottom / density, edges.left / density };
+            pushSafeArea();
+            // Unveraendert weiterreichen und nicht verbrauchen: die WebView ist zwar heute
+            // das einzige Kind, aber ein verbrauchter Rand ist ein Fehler, den erst das
+            // naechste Kind zeigt.
+            return windowInsets;
+        });
+    }
+
+    /**
+     * Die gemerkten Raender in die laufende Seite schreiben.
+     *
+     * <p>{@code Locale.US} ist nicht Zierat: mit deutscher Voreinstellung schriebe
+     * {@code String.format} "24,00", und das waere in JavaScript ein zweites Argument
+     * statt einer Nachkommastelle. Der Aufruf ist gegen eine Seite ohne die Bruecke
+     * abgesichert ({@code &&}) - beim allerersten Aufruf steht womoeglich noch
+     * {@code about:blank} im Fenster.
+     */
+    private void pushSafeArea() {
+        if (webView == null) return;
+        webView.evaluateJavascript(String.format(Locale.US,
+                "window.__arucoInsets && window.__arucoInsets(%.2f,%.2f,%.2f,%.2f);",
+                safeAreaDip[0], safeAreaDip[1], safeAreaDip[2], safeAreaDip[3]), null);
     }
 
     /**
@@ -262,6 +333,21 @@ public final class MainActivity extends Activity {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
             return assetLoader.shouldInterceptRequest(request.getUrl());
+        }
+
+        /**
+         * Die Fensterraender gelten pro Dokument, nicht pro App.
+         *
+         * <p>Das System misst sie einmal beim ersten Layout - danach ruft es den Zuhoerer
+         * nur noch, wenn sich wirklich etwas aendert (Drehung, ein- und ausgeblendete
+         * Leiste). Jede Seite, die DANACH geladen wird - die Werkbank, die Oberflaeche,
+         * jeder Weg zurueck - faengt aber wieder ohne die Variablen an. Ohne diese Zeile
+         * bekaeme genau eine Seite der App ihre Raender, und das waere die, die beim
+         * Start zufaellig gerade dran war.
+         */
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            pushSafeArea();
         }
 
         @Override

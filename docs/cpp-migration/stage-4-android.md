@@ -15,12 +15,15 @@ updated: 2026-09-08
 > Rechenschritt auch durch die C-Grenze. `web/vision/` hat dafür **drei neue Dateien
 > bekommen und keine einzige geänderte**.
 >
-> **Auf einem Telefon ist weiterhin nichts gelaufen.** Auf diesem Rechner gibt es kein
-> Android — kein Gerät, kein Emulator, kein System-Abbild. Belegt ist die Kette an zwei
-> Stellen, an denen sie sich hier ausführen lässt: die **JNI-Schicht auf einer echten JVM**
-> (bitgenau gegen denselben Kern durch pybind11) und die **JavaScript-Hälfte in einem
-> echten Chromium**, geladen aus dem gebauten APK. Beides sind Belege, keines ist ein
-> Telefon. Was das nicht misst, steht in [§7](#7--was-nicht-belegt-ist).
+> **Auf diesem Rechner ist weiterhin nichts von Android gelaufen** — kein Gerät, kein
+> Emulator, kein System-Abbild. Belegt ist die Kette an zwei Stellen, an denen sie sich hier
+> ausführen lässt: die **JNI-Schicht auf einer echten JVM** (bitgenau gegen denselben Kern
+> durch pybind11) und die **JavaScript-Hälfte in einem echten Chromium**, geladen aus dem
+> gebauten APK. Beides sind Belege, keines ist ein Telefon.
+>
+> **Von einem Telefon liegt seit dem 08.09.2026 ein Bericht vor** — die App startet dort,
+> und `libaruco_core.so` antwortet. Gemessen hat auf ihm niemand etwas; was er zeigt und was
+> er nicht zeigt, steht in [§7](#7--was-nicht-belegt-ist).
 
 > **Stand:** 2026-09-08 · Zweig `feat/android-full-chain` · Belege in `core/`, `android/`,
 > `web/vision/`, `dev.ps1`
@@ -44,7 +47,7 @@ Die Trennlinie ist die einzige Aussage dieses Dokuments, die zählt.
 | APK: Inhalt, ABIs, Rechte, `zipalign -P 16`, Signatur | **gemessen** am Erzeugnis |
 | **Die Kette aus dem APK** in einem echten Chromium bis zum PDF | **gemessen** — mit **drei Ersatzstücken**, siehe [§5](#5--die-kette-im-chromium--was-der-beleg-wert-ist) |
 | Das dabei entstandene Schablonen-PDF, an den Vektoren nachgemessen | **gemessen**: 3 Seiten je 210,000 × 297,000 mm, 13 Rasterabstände alle 50 mm |
-| **Irgendetwas auf einem Android-Gerät** | **nicht gelaufen.** Kein Gerät, kein Emulator. |
+| **Irgendetwas auf einem Android-Gerät** | **hier nicht gelaufen** — kein Gerät, kein Emulator. Vom Bediener berichtet: die App startet, `nativeInfo()` antwortet ([§7](#7--was-nicht-belegt-ist)). |
 | Die Kette **Foto → Marker → Millimeter** an einem Gegenstand bekannter Länge | **weiterhin offen** — auf jedem Ziel, nicht nur hier |
 
 ---
@@ -79,6 +82,7 @@ WebView (https://appassets.androidplatform.net/  ->  assets/www/)
    |     - Importkarte: core.js -> core-android.js, image.js -> image-android.js
    |     - window.__aruco: die Bruecke nach Java
    |     - blob:-Anker abfangen, PDF in Scheiben hinausreichen
+   |     - window.__arucoInsets: der sichere Bereich als CSS-Variablen
    v
 Java  (WebBridge -> MainActivity -> CoreBridge -> NativeImages)
    |
@@ -129,6 +133,34 @@ geholt — es liegt gar nicht erst im APK, und mit ihm nicht das 3,6 MB große `
 
 **Greift die Karte nicht, scheitert die Seite laut** (Modul nicht gefunden). Das ist
 Absicht. Die stille Alternative wäre ein zweiter Rechenkern im Gepäck.
+
+### Der sichere Bereich — vier Zahlen von Java in die Stilvorlage
+
+Android 15 zwingt jede App mit `targetSdk = 35` **unter die Systemleisten**; die Abmeldung
+davon ist abgekündigt. Wer seinen Inhalt dann nicht selbst einrückt, legt die Kopfzeile
+unter die Uhr und den Fuß hinter die Navigationsleiste. Genau so ist es von einem Xiaomi
+2312DRA50G mit Android 15 gemeldet worden.
+
+`env(safe-area-inset-*)` allein trägt das **nicht**: die WebView füllt daraus nur die
+Display-Aussparung, nie die Systemleisten — der untere Wert, also genau der gemeldete
+Fehler, bliebe 0. Deshalb misst `MainActivity` die Ränder selbst
+(`systemBars() | displayCutout()`), rechnet sie in dip um und ruft `window.__arucoInsets`;
+der Shim schreibt sie als Inline-Stil auf `:root`.
+
+Für die Oberfläche ist das **kein zweiter Weg**. `app/static/css/tokens.css` erklärt
+dieselben vier Namen aus `env()`, und ein Inline-Stil schlägt eine Regel:
+
+| Ziel | woher `--safe-*` kommt | Wert |
+|---|---|---|
+| Desktop, Browser | `env(safe-area-inset-*)` in `tokens.css` | 0 (Fenster ohne Aussparung) |
+| Android | `window.__arucoInsets` aus `MainActivity` | gemessen, in dip |
+
+Benutzt werden sie an **drei** Stellen und nirgends sonst: `.app-header` addiert oben (damit
+die Kartenfläche bis unter die Statusleiste reicht), `body` addiert unten, links und rechts.
+Der Fuß bekommt nichts Eigenes — sonst zählte eine Seite mit Kopf *und* Fuß doppelt.
+
+**Auf Android 14 und darunter ändert sich nichts:** dort fügt sich das Fenster weiter in die
+Systemleisten ein, die Ränder kommen als 0 an, das CSS addiert 0.
 
 ---
 
@@ -423,14 +455,36 @@ des bekannten Gegenstands.
 
 ## 7 · Was **nicht** belegt ist
 
-**Auf einem Android-Gerät ist nichts gelaufen.** `adb devices` leer, kein Emulator, kein
-System-Abbild, kein WSL, kein Docker, kein `qemu-aarch64`. Was hier steht, ist am Erzeugnis
-gemessen (ELF, Zip, Signatur), auf einer JVM auf Windows gelaufen, oder in einem Chromium
-auf Windows. **Es gibt keine Zahl aus einem Telefon.**
+**Auf dem Bau-Rechner ist nichts von Android gelaufen.** `adb devices` leer, kein Emulator,
+kein System-Abbild, kein WSL, kein Docker, kein `qemu-aarch64`. Was hier steht, ist am
+Erzeugnis gemessen (ELF, Zip, Signatur), auf einer JVM auf Windows gelaufen, oder in einem
+Chromium auf Windows. **Aus der Rechenkette gibt es keine Zahl von einem Telefon.**
 
-Im Einzelnen ungeprüft:
+### Was ein Gerät inzwischen gezeigt hat
 
-- **Ob die App startet.** Der Java-Teil ist übersetzt und dexed, nicht ausgeführt.
+Am 08.09.2026 liegt der **erste Bericht von einem echten Gerät** vor — nicht von hier
+gemessen, sondern vom Bediener berichtet, mit zwei Bildschirmfotos: Xiaomi 2312DRA50G,
+Android 15 (API 35), WebView 152.0.7977.64, `arm64-v8a`, Seitengröße 4096 B.
+
+Genau diese Angaben stehen in der Tabelle, die `native/index.html` aus `nativeInfo()` malt —
+und die bleibt leer, wenn `libaruco_core.so` nicht lädt: ihre erste Zeile ist `OpenCV`, und
+ein Fehlschlag dort ersetzt die ganze Tabelle durch eine rote Zeile. Stammen sie von dort,
+dann sind **die App, die WebView und die JNI-Einsprungpunkte auf einem echten Gerät
+gelaufen.** Das zweite Bild zeigt die vollständige Oberfläche mit übersetzten Zeichenketten;
+dort läuft also auch `app/static/js/main.js`.
+
+Was dieselben Bilder aufgedeckt haben: die App zeichnete **unter** Status- und
+Navigationsleiste (Android 15 erzwingt das ab `targetSdk = 35`). Behoben in §2, „Der sichere
+Bereich“; **auf einem Gerät nachgesehen ist die Behebung noch nicht.**
+
+Im Einzelnen weiterhin ungeprüft:
+
+- **Ob der sichere Bereich auf dem Gerät richtig ankommt.** In einem Chromium ist die
+  *Wirkung* nachgemessen — dieselbe `bridge-shim.js` aus dem APK, mit 38/0/48/0 dip
+  aufgerufen: `padding-top` des Kopfes 14 → 52 px, `padding-bottom` des `body` 0 → 48 px,
+  Unterkante des Fußes 844 → 796 px, und mit 0 wieder zurück auf den Ausgangswert.
+  **Gemessen** hat die vier Zahlen dort niemand: Chromium meldet 0, und
+  `WindowInsetsCompat` ist nicht nachgebaut.
 - **Ob die Importkarte in der WebView des Geräts greift.** In Chromium 152 greift sie
   (gemessen). Importkarten kann Chromium seit 89, URL-Schlüssel eingeschlossen; eine alte
   System-WebView könnte trotzdem scheitern, und dann lädt die Seite gar nicht.
