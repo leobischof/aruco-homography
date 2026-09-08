@@ -144,7 +144,9 @@ val gatherWebAssets by tasks.registering(Sync::class) {
     // Versehen laden: eine fehlgeschlagene Importkarte gibt dann einen
     // Ladefehler statt eines stillen zweiten Kerns.
     into("www/web/vision") {
-        from(repoRoot.resolve("web/vision")) { exclude("core.js", "image.js") }
+        from(repoRoot.resolve("web/vision")) {
+            exclude("core.js", "image.js", "**/*.test.mjs")
+        }
     }
     into("www/web") { from(repoRoot.resolve("web/constants.js")) }
     into("www/shared") { from(repoRoot.resolve("shared/constants.json")) }

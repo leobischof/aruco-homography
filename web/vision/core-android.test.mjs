@@ -32,126 +32,22 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { makeBridgeStub } from "../../android/tools/bridge-stub.mjs";
 import createArucoCore from "../vendor/core/aruco_core.mjs";
 
 const wasm = await createArucoCore();
 
 // --- Der Nachbau von CoreBridge.java ---------------------------------------
-// Griffe statt Zeiger, JSON statt Typenfelder. Genau das, was die Java-Seite
-// tut - und was core-android.js von ihr erwartet.
+// Er steht in android/tools/bridge-stub.mjs und nicht hier: dieselbe Datei
+// bedient auch ./dev.ps1 check-android-ui, das die ganze Kette im Chromium
+// fahren laesst. Zwei Nachbauten derselben Java-Klasse waeren zwei Stellen, an
+// denen sie von ihr wegdriften kann.
 
-const images = new Map();
-let nextHandle = 1;
+const stub = makeBridgeStub(wasm);
+const { put, image } = stub;
 
-/** Ein Bild in den Haufen legen und einen Griff darauf vergeben. */
-function put(data, width, height, channels) {
-    const pointer = wasm._malloc(data.length);
-    wasm.HEAPU8.set(data, pointer);
-    const handle = nextHandle++;
-    images.set(handle, { pointer, width, height, channels });
-    return handle;
-}
-
-/** Ein Ergebnisraster uebernehmen - dasselbe, was NativeImages.allocate tut. */
-function keep(raster) {
-    try {
-        return put(new Uint8Array(raster.data()), raster.width(), raster.height(),
-                   raster.channels());
-    } finally {
-        raster.delete();
-    }
-}
-
-function image(handle) {
-    const found = images.get(handle);
-    assert.ok(found, `Bild ${handle} gibt es nicht`);
-    return found;
-}
-
-function raster(handle) {
-    const found = image(handle);
-    return { handle, width: found.width, height: found.height, channels: found.channels };
-}
-
-/** Die Zuordnung Name -> Kernfunktion. Spiegelt CoreBridge.call. */
-function dispatch(method, a) {
-    switch (method) {
-        case "detectMarkers": {
-            const source = image(a[0]);
-            return wasm.detectMarkers(source.pointer, source.width, source.height,
-                source.width * source.channels, source.channels, a[5])
-                .map((marker) => ({ id: marker.id, corners: Array.from(marker.corners) }));
-        }
-        case "homographyFromQuad":
-            return Array.from(wasm.homographyFromQuad(a[0], a[1]));
-        case "homographyLmeds":
-            return Array.from(wasm.homographyLmeds(a[0], a[1]));
-        case "refineHomography":
-            return Array.from(wasm.refineHomography(a[0], a[1], a[2]));
-        case "fitFree": {
-            const fit = wasm.fitFree(a[0], a[1]);
-            return {
-                homography: Array.from(fit.homography),
-                offsets: Array.from(fit.offsets),
-            };
-        }
-        case "poseFromHomography": {
-            const pose = wasm.poseFromHomography(a[0], a[1], a[2], a[3]);
-            return {
-                heightMm: pose.heightMm,
-                nadirMm: Array.from(pose.nadirMm),
-                tiltDeg: pose.tiltDeg,
-            };
-        }
-        case "planeExtent":
-            return Array.from(wasm.planeExtent(a[0], a[1], a[2], a[3]));
-        case "convexHull":
-            return Array.from(wasm.convexHull(a[0]));
-        case "convexIntersectionArea":
-            return wasm.convexIntersectionArea(a[0], a[1]);
-        case "localPxPerMm":
-            return wasm.localPxPerMm(a[0], a[1], a[2]);
-        case "quadArea":
-            return wasm.quadArea(a[0]);
-        case "outputSize": {
-            const size = wasm.outputSize(a[0], a[1], a[2], a[3], a[4]);
-            return { width: size.width, height: size.height };
-        }
-        case "rectify": {
-            const source = image(a[0]);
-            return raster(keep(wasm.rectify(source.pointer, source.width, source.height,
-                source.width * source.channels, source.channels, a[5], a[6], a[7], a[8], a[9],
-                a[10], a[11])));
-        }
-        case "adjust": {
-            const source = image(a[0]);
-            return raster(keep(wasm.adjust(source.pointer, source.width, source.height,
-                source.width * source.channels, source.channels, a[5])));
-        }
-        case "isIdentity":
-            return wasm.isIdentity(a[0]);
-        case "findContourMm": {
-            const source = image(a[0]);
-            const polygon = wasm.findContourMm(source.pointer, source.width, source.height,
-                source.width * source.channels, source.channels, a[5]);
-            return polygon === null || polygon === undefined ? null : Array.from(polygon);
-        }
-        case "markerBits":
-            return Array.from(wasm.markerBits(a[0], a[1]));
-        default:
-            throw new Error(`Der Kern kennt "${method}" nicht.`);
-    }
-}
-
-// Die Bruecke, wie bridge-shim.js sie hinstellt. `core` bekommt die Argumente
-// als Feld und schickt sie durch JSON - genau die Strecke, die auf dem Geraet
-// zwischen der Seite und Java liegt.
-globalThis.__aruco = {
-    core(method, args) {
-        const crossed = JSON.parse(JSON.stringify(args));
-        return JSON.parse(JSON.stringify(dispatch(method, crossed)));
-    },
-};
+// Die Bruecke, wie bridge-shim.js sie hinstellt.
+globalThis.__aruco = { core: stub.core };
 
 const { loadCore, takeRaster, withImage } = await import("./core-android.js");
 const android = await loadCore();

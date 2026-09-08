@@ -723,6 +723,10 @@ $NativeCoreJava = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards
 # jedem verkauften Telefon das laufende ABI.
 $AndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
 
+# Der Port der Oberflaechen-Probe. Nicht der des Servers (8000) und nicht der
+# des Browser-Baus (8020): alle drei duerfen nebeneinander laufen.
+$UiProbePort = 8030
+
 # Das ABI-Argument der Kommandozeile: "arm64-v8a,x86_64" oder nichts.
 function Get-AbiArgument {
     if ($Rest.Count -gt 0) { return $Rest[0].Split(',') | ForEach-Object { $_.Trim() } }
@@ -961,6 +965,105 @@ function Invoke-BuildApk {
     Invoke-CheckApk
 }
 
+# Die Android-Rechenkette in einem echten Chromium - so weit sie sich ohne
+# Geraet ausfuehren laesst.
+#
+# WARUM ES DAS GIBT. `check-apk` misst das Erzeugnis (ABIs, Rechte, Signatur),
+# `check-jni` misst die native Schicht auf einer JVM. Dazwischen liegt alles,
+# was in der WebView passiert: die Importkarte, die beiden Android-Fassungen
+# unter web/vision/, und darueber die unveraenderte Kette bis zum PDF. Ohne
+# diesen Schritt waere genau das der Teil, den niemand je laufen sieht.
+#
+# WAS DABEI ERSATZ IST - und das gehoert in jeden Bericht darueber:
+#   * Die Java-Seite ist ein Nachbau (android/tools/bridge-stub.mjs).
+#   * Gerechnet wird im WASM-Bau desselben core/, nicht in libaruco_core.so.
+#   * Chromium auf Windows ist nicht die System-WebView eines Telefons.
+# Geladen wird dagegen GENAU DER BAUM AUS DEM APK: er wird ausgepackt, nicht
+# nachgebaut. Was hier laeuft, sind die Bytes, die ausgeliefert werden.
+function Invoke-CheckAndroidUi {
+    $apk = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Kein APK: $apk  (./dev.ps1 build-apk)" }
+
+    $wasm = Join-Path $RepoRoot 'web\vendor\core\aruco_core.mjs'
+    if (-not (Test-Path $wasm)) { throw "Der WASM-Kern fehlt: $wasm" }
+
+    $chrome = Find-Chrome
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("aruco-ui-probe-{0}" -f [guid]::NewGuid())
+    $server = $null
+    try {
+        Write-Step 'Unpacking the interface out of the APK'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($apk)
+        try {
+            foreach ($entry in $zip.Entries) {
+                if ($entry.FullName -notlike 'assets/www/*' -or -not $entry.Name) { continue }
+                $target = Join-Path $root ($entry.FullName -replace '^assets/www/', '')
+                New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+            }
+        } finally { $zip.Dispose() }
+        Write-Host ("     {0} Dateien" -f (Get-ChildItem $root -Recurse -File).Count) -ForegroundColor DarkGray
+
+        # Was der Ersatz braucht, liegt unter /probe/ und damit sichtbar NEBEN
+        # dem ausgelieferten Baum. Nichts davon steckt im APK, und das ist der
+        # Punkt: das wasm gehoert dort nicht hinein.
+        $probe = Join-Path $root 'probe'
+        New-Item -ItemType Directory -Path (Join-Path $probe 'core') -Force | Out-Null
+        Copy-Item (Join-Path $AndroidDir 'tools\bridge-stub.mjs') $probe -Force
+        Copy-Item (Join-Path $RepoRoot 'web\vendor\core\*') (Join-Path $probe 'core') -Force
+        Copy-Item (Join-Path $RepoRoot 'shared\fixtures\scenes\flat.png') $probe -Force
+        Copy-Item (Join-Path $AndroidDir 'tools\ui-probe.html') (Join-Path $root 'probe.html') -Force
+
+        Write-Step "Serving the unpacked tree on port $UiProbePort"
+        $server = Start-Process -FilePath $VenvPython `
+            -ArgumentList '-m', 'http.server', $UiProbePort, '--bind', '127.0.0.1', '--directory', $root `
+            -WindowStyle Hidden -PassThru
+
+        Write-Step 'Driving Chromium through the whole chain'
+        Write-Host ("     {0}" -f $chrome) -ForegroundColor DarkGray
+        $pdf = Join-Path $AndroidOutDir 'ui-probe-schablone.pdf'
+        New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
+        Invoke-Native -What 'ui-probe' -Action {
+            & node (Join-Path $AndroidDir 'tools\ui-probe.mjs') $chrome `
+                "http://127.0.0.1:$UiProbePort/probe.html" $pdf
+        }
+
+        # Dass ein PDF entstand, ist noch keine Aussage - eines entsteht auch mit
+        # falschen Zahlen. Also nachzaehlen, was auf dem Blatt steht.
+        Write-Step 'Measuring the template that came out'
+        Invoke-Native -What 'measure_template' -Action {
+            & $VenvPython (Join-Path $AndroidDir 'tools\measure_template.py') $pdf
+        }
+        Write-Ok ("Die Kette laeuft und das Blatt stimmt. PDF: {0}" -f $pdf)
+        Write-Warn 'Ersatz und kein Geraet: Java nachgebaut, Kern als WASM, Chromium statt WebView.'
+    } finally {
+        if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Chrome oder ein anderes Chromium. Gesucht wird NICHT im PATH: dort steht auf
+# diesem Rechner keines, und ein gefundenes "chrome" waere sonst womoeglich ein
+# Startskript ohne Debug-Anschluss.
+function Find-Chrome {
+    if ($env:ARUCO_CHROME -and (Test-Path $env:ARUCO_CHROME)) { return $env:ARUCO_CHROME }
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    throw ([string]::Join([Environment]::NewLine, @(
+        'Kein Chromium gefunden (Chrome oder Edge).',
+        '     Einen bestimmten waehlen:  $env:ARUCO_CHROME = "<pfad\zu\chrome.exe>"'
+    )))
+}
+
 # Was am fertigen APK nachgemessen wird. Alles hier ist eine Messung am
 # Erzeugnis - keine Zeile davon glaubt dem Bau.
 function Invoke-CheckApk {
@@ -1088,6 +1191,7 @@ function Show-Help {
     Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und die sechs JNI-Symbole'
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
+    Write-Cmd 'check-android-ui'  'Die Kette aus dem APK in einem Chromium fahren (Java nachgebaut, Kern als WASM)'
     Write-Cmd 'build-web'         'Browser-Bau zusammenstellen (web/index.html + dist/web/) - laeuft ohne Server'
     Write-Cmd 'start-web'         'Den Browser-Bau ausliefern (reiner Dateiserver, Vorgabeport 8020)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
@@ -1115,6 +1219,7 @@ switch ($Command.ToLowerInvariant()) {
     'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
     'build-apk'         { Invoke-BuildApk }
     'check-apk'         { Invoke-CheckApk }
+    'check-android-ui'  { Invoke-CheckAndroidUi }
     'build-web'         { Invoke-BuildWeb }
     'start-web'         { Invoke-StartWeb }
     'build-markersheet' { Invoke-BuildMarkersheet }
