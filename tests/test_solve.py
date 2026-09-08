@@ -9,7 +9,13 @@ from app.notices import AppError, NoticeList
 from app.vision.detect import DetectedMarker
 from app.vision.geometry import project
 from app.vision.solve import solve
-from tests.conftest import ideal_markers, make_scene, noisy_markers
+from tests.conftest import ideal_markers, make_scene, noisy_markers, rotated_markers
+
+# Vier Winkel ohne Muster - der Streu-Modus soll nichts voraussetzen. Keiner ist
+# ein Vielfaches von 90 Grad: ein um 90 Grad gedrehter Marker sieht wie ein
+# ungedrehter aus, wenn man die Eckenreihenfolge verwechselt, und genau dieser
+# Fehler soll auffallen.
+SCATTERED_ANGLES = {0: 37.0, 1: -62.0, 2: 128.0, 3: 15.0}
 
 
 def recovered_distance(scene, homography) -> float:
@@ -17,6 +23,12 @@ def recovered_distance(scene, homography) -> float:
     image_points = project(scene.homography, scene.measure_points_mm)
     plane_points = project(np.linalg.inv(homography), image_points)
     return float(np.linalg.norm(plane_points[1] - plane_points[0]))
+
+
+def marker_angle_deg(quad: np.ndarray) -> float:
+    """Der Winkel eines Markers in der Ebene, aus der Kante Ecke 0 -> Ecke 1."""
+    edge = quad[1] - quad[0]
+    return float(np.degrees(np.arctan2(edge[1], edge[0])))
 
 
 def test_blattmodus_rauschfrei_ist_exakt(scene):
@@ -71,6 +83,122 @@ def test_freimodus_funktioniert_mit_beliebigem_layout():
     )
     solution = solve(ideal_markers(scene), scene.marker_mm, "free", NoticeList())
     assert abs(recovered_distance(scene, solution.homography) - scene.measure_distance_mm) < 1e-6
+
+
+def test_streumodus_rauschfrei_ist_exakt(scene):
+    markers = rotated_markers(scene, SCATTERED_ANGLES)
+    solution = solve(markers, scene.marker_mm, "scattered", NoticeList())
+
+    assert solution.rms_px < 1e-6
+    assert abs(recovered_distance(scene, solution.homography) - scene.measure_distance_mm) < 1e-6
+
+
+def test_streumodus_gibt_jedem_marker_seinen_winkel_zurueck(scene):
+    """Die Winkel sind das Neue an diesem Modus - also werden sie nachgemessen."""
+    solution = solve(
+        rotated_markers(scene, SCATTERED_ANGLES), scene.marker_mm, "scattered", NoticeList()
+    )
+    found = {fit.marker_id: marker_angle_deg(fit.plane_mm) for fit in solution.markers}
+
+    # Die UNTERSCHIEDE der Winkel stecken allein in den Markerecken und muessen
+    # deshalb exakt herauskommen.
+    reference = min(found)
+    for marker_id, angle in found.items():
+        expected = SCATTERED_ANGLES[marker_id] - SCATTERED_ANGLES[reference]
+        measured = angle - found[reference]
+        assert abs(((measured - expected + 180.0) % 360.0) - 180.0) < 1e-6
+
+    # Und die Markergroesse bleibt, was sie war: sie wird nicht mitgeschaetzt.
+    for fit in solution.markers:
+        assert abs(fit.side_mm_measured - scene.marker_mm) < 1e-6
+
+
+def test_streumodus_richtet_die_ebene_nach_dem_foto_aus(scene):
+    """Oben in der Schablone ist oben im Foto - nicht oben im groessten Marker.
+
+    Der Zuschnitt ist ein achsparalleles Rechteck. Haengen die Ebenenachsen am
+    Ankermarker, steht die Schablone in dessen Zufallswinkel schief. Zwei
+    Aussagen belegen, dass sie das nicht tut.
+    """
+    solution = solve(
+        rotated_markers(scene, SCATTERED_ANGLES), scene.marker_mm, "scattered", NoticeList()
+    )
+
+    # 1 - Jeder Marker steht in dem Winkel da, in dem er zum FOTO liegt. Haette
+    #     der Anker die Achsen gesetzt, stuende er bei 0 und alle anderen relativ
+    #     zu ihm. Die verbleibende Zehntelgrad ist die Scherung der Perspektive:
+    #     die laesst sich nicht wegdrehen, und mehr will diese Zusage nicht.
+    for fit in solution.markers:
+        assert abs(marker_angle_deg(fit.plane_mm) - SCATTERED_ANGLES[fit.marker_id]) < 0.1
+
+    # 2 - Und dasselbe ohne Marker gemessen: was im Bild waagrecht liegt, liegt
+    #     auch in der Ebene waagrecht.
+    inverse = np.linalg.inv(solution.homography)
+    centre_px = project(solution.homography, solution.hull_mm.mean(axis=0).reshape(1, 2))[0]
+    across = project(inverse, np.array([centre_px - [20.0, 0.0], centre_px + [20.0, 0.0]]))
+    edge = across[1] - across[0]
+    assert abs(np.degrees(np.arctan2(edge[1], edge[0]))) < 0.1
+
+
+def test_streumodus_setzt_den_ursprung_in_die_markermitte(scene):
+    """Ohne ausgezeichneten Marker gibt es auch keinen ausgezeichneten Ursprung."""
+    solution = solve(
+        rotated_markers(scene, SCATTERED_ANGLES), scene.marker_mm, "scattered", NoticeList()
+    )
+    centres = np.array([fit.plane_mm.mean(axis=0) for fit in solution.markers])
+    assert np.allclose(centres.mean(axis=0), [0.0, 0.0], atol=1e-9)
+
+
+def test_freimodus_scheitert_an_gedrehten_markern(scene):
+    """Der Grund, warum es den Streu-Modus gibt - hier steht er als Zahl.
+
+    Der Frei-Modus schaetzt je Marker nur eine Verschiebung und setzt damit
+    voraus, dass alle gleich ausgerichtet liegen. Gilt das nicht, ist das
+    Ergebnis nicht etwa ungenau, sondern falsch.
+    """
+    markers = rotated_markers(scene, SCATTERED_ANGLES)
+    notices = NoticeList()
+    solution = solve(markers, scene.marker_mm, "free", notices)
+
+    assert solution.rms_px > 10.0
+    assert abs(recovered_distance(scene, solution.homography) - scene.measure_distance_mm) > 100.0
+    assert {"high_residual", "marker_rotation"} <= {n.code for n in notices.items}
+
+
+def test_streumodus_warnt_nicht_ueber_gedrehte_marker(scene):
+    """marker_rotation waere hier keine Warnung, sondern der Normalfall."""
+    notices = NoticeList()
+    solve(rotated_markers(scene, SCATTERED_ANGLES), scene.marker_mm, "scattered", notices)
+    assert "marker_rotation" not in {n.code for n in notices.items}
+
+
+def test_streumodus_mit_rauschen_bleibt_unter_zwei_millimetern(scene):
+    """Mehr Unbekannte je Marker heisst weniger Sicherheit gegen Rauschen."""
+    markers = rotated_markers(scene, SCATTERED_ANGLES)
+    generator = np.random.default_rng(7)
+    noisy = [
+        DetectedMarker(m.marker_id, m.corners_px + generator.normal(0.0, 0.2, m.corners_px.shape))
+        for m in markers
+    ]
+    solution = solve(noisy, scene.marker_mm, "scattered", NoticeList())
+    error = abs(recovered_distance(scene, solution.homography) - scene.measure_distance_mm)
+    assert error < 2.0, f"{error:.3f} mm ueber 500 mm"
+
+
+def test_streumodus_kommt_mit_einem_einzigen_marker_aus(scene):
+    """Ein Marker traegt sein Koordinatensystem selbst - vier Punktpaare reichen.
+
+    Was er nicht traegt, ist eine Probe: das Residuum ist null, ohne dass der
+    Fehler klein waere. Deshalb muss die Warnung kommen.
+    """
+    notices = NoticeList()
+    einer = rotated_markers(scene, SCATTERED_ANGLES)[:1]
+    solution = solve(einer, scene.marker_mm, "scattered", notices)
+
+    assert solution.rms_px < 1e-6
+    assert "single_marker" in {n.code for n in notices.items}
+    # Auch allein wird die Ebene nach dem Foto ausgerichtet und nicht nach ihm.
+    assert abs(marker_angle_deg(solution.markers[0].plane_mm) - SCATTERED_ANGLES[0]) < 0.1
 
 
 def test_blattmodus_lehnt_fremde_ids_ab(scene):

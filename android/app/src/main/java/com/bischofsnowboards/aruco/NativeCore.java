@@ -135,6 +135,20 @@ public final class NativeCore {
     public static native double[] fitFree(double[] cornersXy, double markerMm);
 
     /**
+     * Streu-Modus: Homographie und die Lage JEDES Markers gemeinsam schaetzen.
+     *
+     * <p>Wie {@link #fitFree}, aber je Marker mit einer Drehung mehr - fuer Marker, die in
+     * beliebigen Winkeln auf einer Flaeche liegen.
+     *
+     * @param cornersXy vier Ecken je Marker, also acht Zahlen je Marker
+     * @return neun Zahlen Homographie, danach je Marker DREI Zahlen: x_mm, y_mm und die
+     *     Drehung im Bogenmass. Anders als bei fitFree ist auch der erste Marker dabei:
+     *     die fertige Ebene ist nach dem Foto ausgerichtet, und darin steht auch der
+     *     Anker nicht mehr im Ursprung.
+     */
+    public static native double[] fitScattered(double[] cornersXy, double markerMm);
+
+    /**
      * Zerlegt H = K [r1 r2 t].
      *
      * @return vier Zahlen: Hoehe_mm, Lotpunkt_x_mm, Lotpunkt_y_mm, Neigung_grad. Ob das

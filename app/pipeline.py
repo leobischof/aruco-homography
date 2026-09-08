@@ -238,7 +238,8 @@ def _footer_meta(
             "pdf.footer.contour", locale, width=f"{width_mm:.1f}", height=f"{height_mm:.1f}"
         )
 
-    mode_key = "sheet" if solved.solution.mode == "sheet" else "free"
+    # Der Modus IST der Schluessel - fuer jeden gibt es pdf.footer.mode_*.
+    mode_key = solved.solution.mode
     return {
         "object_mm": object_text,
         "dpi": request.dpi,

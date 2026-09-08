@@ -210,6 +210,34 @@ val fit_free(const val& quads, double marker_mm) {
     return result;
 }
 
+val fit_scattered(const val& quads, double marker_mm) {
+    const std::vector<aruco::Point2> corners = points_of(quads, "fitScattered");
+    if (corners.empty() || corners.size() % 4 != 0) {
+        throw std::invalid_argument("fitScattered erwartet vier Ecken je Marker");
+    }
+
+    std::vector<std::array<aruco::Point2, 4>> markers;
+    markers.reserve(corners.size() / 4);
+    for (std::size_t index = 0; index < corners.size(); index += 4) {
+        markers.push_back({corners[index], corners[index + 1], corners[index + 2],
+                           corners[index + 3]});
+    }
+
+    const aruco::ScatteredFit fit = aruco::fit_scattered(markers, marker_mm);
+    std::vector<double> flat;
+    flat.reserve(fit.poses.size() * 3);
+    for (const aruco::Pose2& pose : fit.poses) {
+        flat.push_back(pose.x);
+        flat.push_back(pose.y);
+        flat.push_back(pose.theta);
+    }
+
+    val result = val::object();
+    result.set("homography", numbers(fit.homography));
+    result.set("poses", numbers(flat));
+    return result;
+}
+
 val pose_from_homography(const val& homography, double focal_px, int width, int height) {
     const aruco::Pose pose = aruco::pose_from_homography(
         matrix_of(homography, "poseFromHomography"), focal_px, width, height);
@@ -343,6 +371,7 @@ EMSCRIPTEN_BINDINGS(aruco_core) {
     emscripten::function("homographyLmeds", &homography_lmeds);
     emscripten::function("refineHomography", &refine_homography);
     emscripten::function("fitFree", &fit_free);
+    emscripten::function("fitScattered", &fit_scattered);
     emscripten::function("poseFromHomography", &pose_from_homography);
     emscripten::function("planeExtent", &plane_extent);
     emscripten::function("convexHull", &convex_hull);

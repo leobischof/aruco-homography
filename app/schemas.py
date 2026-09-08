@@ -27,7 +27,7 @@ class CropMm(BaseModel):
 class SolveRequest(BaseModel):
     session_id: str
     marker_mm: float = Field(default=config.MARKER_MM_NOMINAL, gt=0.0)
-    mode: Literal["sheet", "free"] = "sheet"
+    mode: Literal["sheet", "free", "scattered"] = "sheet"
     thickness_mm: float = 0.0
     camera_height_mm: float | None = Field(default=None, gt=0.0)
     # Mittelpunktabstaende des Markerblatts; nur im Blatt-Modus benutzt.
