@@ -476,6 +476,30 @@
        in main.css); in einer @media-Abfrage laesst sich kein Token benutzen,
        deshalb steht die Zahl hier nur im Kommentar. */
     --touch-target: 2.75rem;
+
+    /* --- Sicherer Bereich ---------------------------------------------------
+       Was der Rand des Bildschirms dem Inhalt wegnimmt: die Aussparung fuer
+       die Kamera oben, die Navigationsleiste unten, in der Querlage auch
+       seitlich. Vier Tokens, damit jede Regel, die an einen Bildschirmrand
+       stoesst, sie addieren kann, statt eine Zahl zu raten.
+
+       env() ist die Auskunft des Browsers und auf JEDEM Ziel richtig: am
+       Schreibtisch und im gewoehnlichen Browserfenster 0 - also kein
+       Unterschied zu vorher -, auf einem Telefon mit Aussparung der
+       wirkliche Wert. Eine feste Zahl waere hier auf zwei von drei Zielen
+       falsch, und dieselbe Datei gilt fuer alle drei.
+
+       Auf Android reicht env() NICHT. Die WebView fuellt daraus nur die
+       Display-Aussparung, nicht die System-Leisten - die Navigationsleiste
+       unten bliebe unberuecksichtigt, und genau hinter der stand der Fuss.
+       Dort schreibt android/.../native/bridge-shim.js die von Java
+       gemessenen Werte als Inline-Stil auf :root, und ein Inline-Stil
+       schlaegt diese Regel. Beide Wege besetzen dieselben vier Namen,
+       deshalb gibt es nur EINEN Satz Regeln, der sie benutzt. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
 }
 
 

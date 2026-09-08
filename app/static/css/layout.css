@@ -13,11 +13,21 @@
 /* --------------------------------------------------------------------------
    Kopf
    -------------------------------------------------------------------------- */
+/* Der obere Wert des sicheren Bereichs sitzt HIER und nicht am body: so reicht
+   die Kartenflaeche des Kopfes bis an die Oberkante des Bildschirms und liegt
+   unter der Statusleiste, waehrend die Ueberschrift darunter beginnt. Am body
+   waere stattdessen ein Streifen Seitengrund ueber dem Kopf entstanden.
+   Die drei anderen Seiten traegt der body (base.css) - dort gelten sie fuer
+   jede Seite und werden nirgends doppelt addiert.
+
+   var(...) mit eigenem Rueckfallwert, weil ein fehlendes --safe-top das ganze
+   calc() ungueltig machte und damit auch den Innenabstand von 1rem: die
+   Ueberschrift klebte dann am Rand. Mit dem Rueckfall bleibt es bei 1rem. */
 .app-header {
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1rem 1.5rem;
+    padding: calc(1rem + var(--safe-top, 0px)) 1.5rem 1rem;
     border-bottom: 1px solid var(--border);
     background: var(--card);
     color: var(--card-foreground);
@@ -186,10 +196,13 @@
    components.css und ist der Punkt, an dem eine mobile Oberflaeche kippt).
    -------------------------------------------------------------------------- */
 @media (max-width: 768px) {
+    /* Der sichere Bereich muss hier mit: eine Kurzschreibweise setzt padding-top
+       zurueck, und dieser Block ist genau der, der auf dem Telefon gilt - also
+       der einzige, in dem das Vergessen wirklich weh taete. */
     .app-header {
         flex-wrap: wrap;
         gap: 0.75rem;
-        padding: 0.875rem 1rem;
+        padding: calc(0.875rem + var(--safe-top, 0px)) 1rem 0.875rem;
     }
 
     .brand-mark img { width: 2.25rem; height: 2.25rem; }
