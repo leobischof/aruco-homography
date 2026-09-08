@@ -81,11 +81,16 @@ anything.
 .\dev.ps1 build-installer
 ```
 
-builds `dist\ArUco-Homographie-Setup-<version>.exe` — one file, 78 MB, because `lzma2/max` with
-solid compression squeezes the 290 MB bundle harder than the zip did. Double-click it, click
-through, done: the program lands on the machine with a Start Menu entry, an optional desktop icon
-(offered unchecked, as Windows does it), and an uninstaller in *Apps & Features*. Nothing to
-unpack, nothing to move to the right place. About 292 MB on disk once installed.
+builds `dist\ArUco-Homographie-Setup-<version>.exe` — one file, roughly a quarter the size of the
+bundle it carries, because `lzma2/max` with solid compression squeezes it harder than the zip did.
+Double-click it, click through, done: the program lands on the machine with a Start Menu entry, an
+optional desktop icon (offered unchecked, as Windows does it), and an uninstaller in *Apps &
+Features*. Nothing to unpack, nothing to move to the right place.
+
+No megabyte figure is quoted here on purpose. The bundle is whatever PyInstaller collects on the
+machine that builds it — OpenCV alone moves it by tens of megabytes between versions — so a number
+written down here is a number that will be wrong. Three of them already were. The build prints the
+real ones when it finishes.
 
 It installs **for the current user only**, into `%LOCALAPPDATA%\Programs\ArUco-Homographie`, and
 therefore needs **no administrator rights** — the person at a workshop PC often does not have
