@@ -3,7 +3,7 @@ title: Git-Regeln
 description: Verbindliche Regeln für Identität, Commits, Pushes und den Aufbau der Commit-Nachricht.
 audience: developer
 status: current
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Git-Regeln
@@ -291,15 +291,49 @@ gh pr merge --squash                      # OHNE --delete-branch!
 ```
 
 `--delete-branch` wäre hier ein Fehler: `develop` ist kein Feature-Branch, sondern bleibt
-stehen. Danach `develop` wieder auf `master` einholen, damit die beiden nicht
-auseinanderlaufen — der Squash-Commit auf `master` ist ein anderer Commit als die
-Historie in `develop`:
+stehen.
 
-```powershell
-git checkout develop
-git merge master          # holt den Squash-Commit herein
-git push
+**Danach passiert nichts mehr.** `develop` wird *nicht* auf `master` eingeholt — und das
+ist der Punkt, an dem eine frühere Fassung dieses Abschnitts falsch lag. Sie schrieb
+`git checkout develop; git merge master; git push` vor. Das geht nicht, und es ist
+überflüssig:
+
+**Es geht nicht.** `required_linear_history` gilt auch für `develop` (Tabelle oben) und
+weist einen Merge-Commit ab. Am 08.09.2026 auf einem Wegwerf-Zweig mit derselben
+Einstellung nachgestellt: ein gewöhnlicher Commit ging durch, der Merge-Commit nicht.
+
 ```
+remote:   Found 1 violation:
+ ! [remote rejected] HEAD -> tmp/linear-probe (protected branch hook declined)
+```
+
+**Es ist überflüssig.** Der Squash-Commit auf `master` trägt genau den Baum, den
+`develop` in diesem Augenblick hat. Nach dem Merge sind die beiden Zweige inhaltlich
+deckungsgleich; verschieden ist nur, wie sie dorthin gekommen sind. Genau das war der
+Zweck der zweiten Stufe.
+
+### Der Preis dafür: der Release-PR zeigt zu viel
+
+Weil der Squash-Commit auf `master` kein Vorfahr von `develop` ist, bleibt der
+gemeinsame Vorfahr der beiden Zweige stehen, wo er war. **Der zweite Release-PR listet
+deshalb wieder alles seit dem Abzweigpunkt** — auch, was längst ausgeliefert ist.
+
+Ebenfalls am 08.09.2026 durchgespielt, zwei Fassungen auf Wegwerf-Zweigen:
+
+| | Fassung 1 | Fassung 2 |
+|---|---|---|
+| tatsächlich neu | `A`, `B` | `C` |
+| was der PR listete | `A`, `B` | `A`, `B`, **`C`** |
+| Baum nach dem Merge | stimmt | stimmt |
+
+**Der Inhalt stimmt immer.** Was eine Fassung *enthält*, sagt `CHANGELOG.md` — nicht die
+Commit-Liste des Release-PRs. Wer sie für eine Inhaltsangabe hält, kündigt beim zweiten
+Mal Dinge an, die seit Wochen ausgeliefert sind.
+
+Der Ausweg wäre, `required_linear_history` für `develop` abzuschalten; dann ginge der
+Merge zurück, und der gemeinsame Vorfahr wanderte mit. Das ist **nicht** getan: eine
+Schutzeinstellung wird nicht wegen einer Anzeige gelockert, und der Ersatz kostet nichts
+als das Wissen aus diesem Abschnitt.
 
 ### Wenn der Schutz einmal im Weg steht
 
