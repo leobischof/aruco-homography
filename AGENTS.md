@@ -76,6 +76,12 @@ web/pdf/             derselbe PDF-Bau in JavaScript (pdf-lib), Modul für Modul 
                      die .exe baut weiter mit ReportLab. `ARUCO_PDF=js` lässt die
                      vorhandene Testsuite gegen diesen Bau laufen (dev.ps1
                      run-tests-pdf-js). Nichts hier darf `fs` oder `path` anfassen.
+web/vision/          dieselbe Rechenkette in JavaScript: solve · rectify · extent ·
+                     contour · camera · pipeline. Sie rechnet NICHT selbst — sie ruft
+                     den C++-Kern. **core.js ist die einzige Datei hier, die den Kern
+                     kennt**, und genau deshalb gibt es daneben core-android.js: im
+                     Browser WebAssembly, auf dem Telefon JNI. Wer einen dritten Weg
+                     braucht, schreibt ein drittes core.js und fasst nichts darüber an.
 android/             die Android-Hülle: eine WebView, die app/static/ UNVERÄNDERT
                      ausliefert, und eine JNI-Schicht auf denselben core/. Sie
                      kopiert nichts — der Gradle-Bau legt app/static/, web/pdf/

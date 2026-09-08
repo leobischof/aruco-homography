@@ -190,7 +190,7 @@
       "sheet_share": "Teilen oder drucken",
       "sheet_saved": "Gespeichert.",
       "full_heading": "Die vollständige Oberfläche",
-      "full_explain": "Dieselbe Oberfläche wie auf dem Rechner, unverändert. Foto laden und Sprache umschalten gehen; beim Entzerren endet sie, weil dieser Schritt noch nicht nativ vorliegt.",
+      "full_explain": "Dieselbe Oberfläche wie auf dem Rechner, unverändert — und die ganze Kette darin: Foto, Marker, Entzerren, Schablonen-PDF. Gerechnet wird im nativen Kern, gespeichert über den Systemdialog.",
       "full_open": "Oberfläche öffnen"
     }
   },

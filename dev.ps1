@@ -1188,7 +1188,7 @@ function Show-Help {
     Write-Cmd 'build-core-android' 'Denselben Kern fuer Android bauen (NDK; Vorgabe arm64-v8a) - baut nur, misst nicht'
     Write-Cmd 'check-jni'         'Die JNI-Schicht auf einer echten JVM ausfuehren (Windows-DLL desselben Quelltextes)'
     Write-Cmd 'build-android-libs' 'libaruco_core.so je ABI bauen und nach android/app/src/main/jniLibs/ legen'
-    Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und die sechs JNI-Symbole'
+    Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und jedes JNI-Symbol aus NativeCore.java'
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
     Write-Cmd 'check-android-ui'  'Die Kette aus dem APK in einem Chromium fahren (Java nachgebaut, Kern als WASM)'

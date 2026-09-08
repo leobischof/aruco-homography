@@ -1,24 +1,29 @@
 ---
-title: Stufe 4 · Die Android-Hülle — Ergebnis
+title: Stufe 4 · Die Android-App — Ergebnis
 description: "Stufe 4: was die Android-App heute wirklich kann, was nur gebaut ist, und wie man sie auf ein Telefon bringt"
 audience: developer
 status: current
 updated: 2026-09-08
 ---
 
-# Stufe 4 · Die Android-Hülle — Ergebnis
+# Stufe 4 · Die Android-App — Ergebnis
 
-> **Es gibt ein installierbares APK (8,48 MB, arm64-v8a), und der native Kern darin ist
-> auf einer echten JVM gemessen — aber die App baut noch KEINE Schablone.** Der
-> C++-Kern misst bis heute nur die Markerecken; Ausgleich, Kamerapose, Entzerrung und
-> Schablonen-PDF stehen weiterhin allein in Python. Was die App fertig kann, ist das
-> **Markerblatt**; was sie beweisen kann, ist der **Prüfstand auf dem Gerät**.
+> **Die App rechnet die ganze Kette: Foto → Marker → Ausgleich → Kamerapose → Entzerren →
+> Schablonen-PDF. Ohne Server, ohne Netz, im nativen Kern.** Die **C-Schnittstelle** und
+> die **JNI-Schicht** kannten bis zu dieser Stufe nur `detect_markers` — `core/src/` konnte
+> den Rest längst, aber allein der Browser-Bau kam über `embind` daran. Jetzt geht jeder
+> Rechenschritt auch durch die C-Grenze. `web/vision/` hat dafür **drei neue Dateien
+> bekommen und keine einzige geänderte**.
 >
-> **Auf einem Telefon gelaufen ist bis jetzt nichts.** Auf diesem Rechner gibt es kein
-> Android. Alles unten steht entweder unter „gemessen" oder unter „nur gebaut" — dazwischen
-> gibt es nichts.
+> **Auf einem Telefon ist weiterhin nichts gelaufen.** Auf diesem Rechner gibt es kein
+> Android — kein Gerät, kein Emulator, kein System-Abbild. Belegt ist die Kette an zwei
+> Stellen, an denen sie sich hier ausführen lässt: die **JNI-Schicht auf einer echten JVM**
+> (bitgenau gegen denselben Kern durch pybind11) und die **JavaScript-Hälfte in einem
+> echten Chromium**, geladen aus dem gebauten APK. Beides sind Belege, keines ist ein
+> Telefon. Was das nicht misst, steht in [§7](#7--was-nicht-belegt-ist).
 
-> **Stand:** 2026-09-08 · Zweig `feat/android-app` · Belege in `core/`, `android/`, `dev.ps1`
+> **Stand:** 2026-09-08 · Zweig `feat/android-full-chain` · Belege in `core/`, `android/`,
+> `web/vision/`, `dev.ps1`
 
 ---
 
@@ -28,39 +33,35 @@ Die Trennlinie ist die einzige Aussage dieses Dokuments, die zählt.
 
 | | Status |
 |---|---|
-| `detect_markers` durch die **C-Schnittstelle** (`aruco/capi.h`) | **gemessen**, Windows, 64/64 Ecken identisch |
-| `detect_markers` durch die **JNI-Schicht** auf einer echten JVM | **gemessen**, Windows, 64/64 Ecken identisch |
+| **Die ganze Rechenkette** durch die **C-Schnittstelle** und die **JNI-Schicht** auf einer echten JVM | **gemessen**: 18 Größen je Szene, alle bitgenau gleich zu demselben Kern durch pybind11 |
+| Die beiden Rasterbilder (entzerrt, aufbereitet) durch JNI | **gemessen**: 5 870 400 B und 6 067 200 B, SHA-256 identisch |
+| `detect_markers` durch C-Schnittstelle und JNI | **gemessen**, 64/64 Ecken identisch, 0 float32-ULP |
 | RGBA→BGR-Weg der JNI-Schicht (der, den Android geht) | **gemessen**, 36/36 Werte identisch zum BGR-Weg |
 | Modulbits des Markerblatts gegen `cv2` | **gemessen**, 4/4 Muster byteweise gleich |
-| Die drei Testsuiten (Python-Kern, C++-Kern, PDF aus JS) | **gemessen**, je **183 passed** |
+| Die vier Testläufe (`ARUCO_CORE` × `ARUCO_PDF`) | **gemessen**, je **183 passed** |
+| Die JavaScript-Einheitentests, inkl. der neuen Brücke | **gemessen**, **18/18** |
 | `libaruco_core.so` für vier ABIs: ELF, 16-KB-Ausrichtung, Symbole | **gemessen** am Erzeugnis |
 | APK: Inhalt, ABIs, Rechte, `zipalign -P 16`, Signatur | **gemessen** am Erzeugnis |
-| Oberfläche + Brücke im **Desktop-Chromium** (Chrome 152) | **gemessen**: Seite baut auf, Markerblatt entsteht |
+| **Die Kette aus dem APK** in einem echten Chromium bis zum PDF | **gemessen** — mit **drei Ersatzstücken**, siehe [§5](#5--die-kette-im-chromium--was-der-beleg-wert-ist) |
+| Das dabei entstandene Schablonen-PDF, an den Vektoren nachgemessen | **gemessen**: 3 Seiten je 210,000 × 297,000 mm, 13 Rasterabstände alle 50 mm |
 | **Irgendetwas auf einem Android-Gerät** | **nicht gelaufen.** Kein Gerät, kein Emulator. |
-| Die App als Messgerät (Foto → Schablone) | **existiert nicht** — der Kern kann es nicht |
+| Die Kette **Foto → Marker → Millimeter** an einem Gegenstand bekannter Länge | **weiterhin offen** — auf jedem Ziel, nicht nur hier |
 
 ---
 
 ## 2 · Was die App heute tut
 
-Sie startet auf einer eigenen Seite (`android/app/src/main/assets/www/native/`), und die
-hat vier Abschnitte:
+### Die vollständige Oberfläche, unverändert
 
-1. **Der Rechenkern** — OpenCV-Fassung, Wörterbuch, Markerkante, ABI, Seitengröße des
-   Systems, WebView-Fassung. Alle Werte kommen aus der `.so`, keiner ist abgetippt.
-2. **Prüfstand** — die eingefrorenen Szenen aus `shared/fixtures/` durch den nativen Kern,
-   gegen die Grundwahrheit. **Das ist der Knopf, der den Satz „Android ist ungemessen"
-   streicht** (`stage-4-cross-targets.md`, Abschnitt 5).
-3. **Detektor am Foto** — Foto wählen oder aufnehmen, nativ Marker suchen, gefundene IDs
-   und mittlere Kantenlänge in Pixeln anzeigen. Beantwortet die Frage, die kein Prüfstand
-   beantwortet: findet der Kern die Marker auf einem echten Bild *dieser* Kamera?
-4. **Markerblatt** — das A4-Blatt, im Gerät gebaut (`web/pdf/markersheet.js` plus die
-   Modulbits aus dem nativen Kern), zum Speichern oder Teilen. **Vollständig, kein Stück
-   fehlt.**
+Der Knopf **„Oberfläche öffnen"** führt in `app/static/` — Byte für Byte die Oberfläche vom
+Rechner. Dort geht jetzt **alles**: Foto laden, entzerren, Regler, Zuschnitt, Umriss,
+Vorschau, Export als gekacheltes Schablonen-PDF, Speichern und Teilen über die
+Systemdialoge. Kein Schritt bricht mehr mit einer Meldung ab.
 
-Dazu ein Knopf, der **die unveränderte Oberfläche** öffnet (`app/static/`, Byte für Byte
-die vom Rechner). Dort gehen Sprache, Thema, Layout und die Fotowahl; beim Entzerren
-bricht sie mit einer übersetzten Meldung ab, weil dieser Schritt nicht nativ vorliegt.
+Dazu die eigene Seite der Hülle (`android/app/src/main/assets/www/native/`) mit vier
+Abschnitten — Rechenkern, Prüfstand, Detektor am Foto, Markerblatt. Sie ist die Diagnose,
+nicht das Produkt: **der Knopf, der den Satz „Android ist ungemessen" streicht**, sobald
+ein Telefon da ist.
 
 ### Der Aufbau
 
@@ -69,53 +70,145 @@ WebView (https://appassets.androidplatform.net/  ->  assets/www/)
    |
    |-- /index.html          app/static/, unveraendert
    |-- /native/index.html   die eigene Seite der Huelle
+   |-- /web/vision/         die Rechenkette in JavaScript
    |-- /web/pdf/            der PDF-Bau in JavaScript
    |-- /shared/             constants.json
    |
    |  bridge-shim.js (addDocumentStartJavaScript, laeuft vor jedem Seitenskript)
-   |     - Importkarte fuer "pdf-lib"
-   |     - fetch("/api/...") -> Bruecke statt Server
+   |     - ARUCO_TRANSPORT = "local"   -> rechnen in der Seite, kein Server
+   |     - Importkarte: core.js -> core-android.js, image.js -> image-android.js
+   |     - window.__aruco: die Bruecke nach Java
+   |     - blob:-Anker abfangen, PDF in Scheiben hinausreichen
    v
-Java  (WebBridge -> MainActivity)
+Java  (WebBridge -> MainActivity -> CoreBridge -> NativeImages)
    |
-   v  JNI
+   v  JNI  (21 Einsprungpunkte)
 libaruco_core.so   ->   derselbe core/ wie auf Windows und im Browser
 ```
 
-**`app/static/` bleibt unangetastet.** Kein eingefügtes `<script>`, keine Android-Fassung
-von `index.html`. Das leistet `WebViewCompat.addDocumentStartJavaScript`: die Brücke läuft,
-bevor das erste Modul der Seite läuft, und ersetzt dort `fetch` für die `/api/`-Pfade. Eine
-zweite Fassung der Oberfläche wäre die teuerste Art, dieses Vorhaben zu verlieren.
+### Die eine Datei, die den Unterschied macht
+
+`web/vision/core.js` ist im Browser-Bau die **einzige** Datei, die den Rechenkern kennt.
+Alles darüber — `solve.js`, `rectify.js`, `extent.js`, `contour.js`, `camera.js`,
+`enhance.js`, `pipeline.js`, `local.js` — ruft nur sie. Der Android-Anteil ist deshalb
+genau das: **ein zweites `core.js`**, das statt zu WebAssembly zu JNI greift.
+
+```
+web/vision/core-android.js    der Kern ueber die Bruecke statt ueber WASM
+web/vision/image-android.js   Bildbytes aus Java statt aus einer Leinwand
+web/vision/core-android.test.mjs
+```
+
+Drei neue Dateien, **null geänderte**:
+
+```
+$ git diff --stat 086a725 HEAD -- web/ app/static/
+ app/static/i18n/de.json          |   3 +-
+ app/static/i18n/en.json          |   3 +-
+ web/vision/core-android.js       | 199 +++++
+ web/vision/core-android.test.mjs | 286 +++++
+ web/vision/image-android.js      |  90 +++
+```
+
+Die beiden Katalogzeilen sind die Meldung „dieser Schritt ist nicht nativ", die es nicht
+mehr gibt, und der Abschnittstext, der sie ankündigte.
+
+Getauscht werden die beiden Dateien durch eine **Importkarte mit URL-Schlüsseln**:
+
+```json
+{ "imports": {
+    "/web/vision/core.js":  "/web/vision/core-android.js",
+    "/web/vision/image.js": "/web/vision/image-android.js" } }
+```
+
+Die Karte löst beide Seiten gegen den Ursprung der Seite auf und vergleicht die
+**aufgelösten** Adressen. `import { core } from "./core.js"` in `web/vision/solve.js` zeigt
+damit auf `core-android.js`, ohne dass `solve.js` etwas davon wüsste. Das war die riskanteste
+Annahme dieser Stufe und ist an einem echten Chromium nachgemessen: `core.js` wird nie
+geholt — es liegt gar nicht erst im APK, und mit ihm nicht das 3,6 MB große `.wasm`.
+
+**Greift die Karte nicht, scheitert die Seite laut** (Modul nicht gefunden). Das ist
+Absicht. Die stille Alternative wäre ein zweiter Rechenkern im Gepäck.
 
 ---
 
-## 3 · Die Zahlen
+## 3 · Die C-Schnittstelle — wem gehört das Bild?
+
+`capi.h` wächst von 6 auf **21** Funktionen. Gerechnet wird in keiner davon: sie reichen an
+`core/src/` durch, das dieselben Schritte für den Browser-Bau längst tut. Sie zerfallen in
+zwei Gruppen, und nur die zweite hatte eine Entwurfsfrage.
+
+**Zahlen rein, Zahlen raus** (`core/src/capi_geometry.cpp`): `homography_from_quad`,
+`homography_lmeds`, `refine_homography`, `fit_free`, `pose_from_homography`, `plane_extent`,
+`convex_hull`, `convex_intersection_area`, `local_px_per_mm`, `quad_area`, `output_size`.
+Punktlisten flach als `x,y,x,y`, Homographien als neun Zahlen zeilenweise, Ergebnis über
+Ausgabezeiger, Rückgabewert ist der Status. Nichts daran ist neu — es ist die Hausform aus
+`capi.h`, elfmal angewandt.
+
+**Bilder raus** (`core/src/capi_image.cpp`): `rectify`, `adjust`, `is_identity`,
+`find_contour_mm`. Hier steht die Entscheidung:
+
+> **Der Aufrufer stellt den Puffer.**
+
+Der Browser-Bau (`core/bindings/web.cpp`) gibt ein `Raster` zurück, das JavaScript freigeben
+muss; `web/vision/core.js` existiert unter anderem dafür, dass niemand sonst `delete()`
+schreiben muss. Auf einem Telefon wäre derselbe Fehler teurer: ein entzerrtes 300-dpi-Raster
+sind zweistellige Megabyte, und `pipeline.js` legt bei **jeder Reglerbewegung** ein neues an.
+Drei vergessene, und Android beendet den Prozess. Was der Bediener meldet, ist dann „das
+dritte Foto war schlecht".
+
+Der Aufrufer *kann* den Puffer stellen, weil die Größe vorher feststeht: `aruco_output_size`
+für das Entzerren, Breite mal Höhe mal drei für die Aufbereitung. Es gibt nichts freizugeben,
+also nichts zu vergessen; ein zu kleiner Puffer ist ein Fehlercode (`ARUCO_ERR_CAPACITY`)
+und keine halb gefüllte Bildzeile. `aruco_rectify` rechnet die Größe **vor** dem Warp und
+weist einen zu kleinen Puffer ab, statt erst zu arbeiten und dann zu scheitern.
+
+**Was das kostet, ehrlich:** der Kern legt das Bild intern an und kopiert es hinüber — die
+Speicherspitze ist das Doppelte der Ausgabe. Denselben Faktor zahlt der Browser-Bau
+ohnehin. Ihn zu halbieren hieße, einen Ausgabepuffer bis nach `aruco::rectify`
+durchzureichen und alle drei Bindungen anzufassen; das gehört in einen eigenen Schritt.
+
+### Und wer räumt auf der Java-Seite auf?
+
+`pipeline.js` ist im Browser eine gewöhnliche Funktionskette und soll das bleiben —
+**dieselbe Datei** läuft dort. Sie kann also keine Griffe freigeben. Deshalb steht auf der
+Java-Seite eine **Arena mit fester Kapazität** (`NativeImages`, drei Plätze):
+
+- Das Foto ist **angeheftet** und wird nie verdrängt — es ist die Eingabe jedes Schritts.
+- Ein neues Bild verdrängt das älteste. Bei drei Plätzen heißt das: das entzerrte Bild und
+  seine Aufbereitung leben gleichzeitig, der Vorgänger nicht.
+- Ein Griff auf ein verdrängtes Bild wirft eine benannte Ausnahme. **Falsche Pixel wären
+  schlimmer als ein Abbruch:** sie sähen aus wie ein Messfehler.
+
+Über die JavaScript-Grenze gehen **niemals Pixel**, nur `{handle, width, height, channels}`.
+Die JPEG-Bytes für die Vorschau holt `image-android.js` als gewöhnliches `GET` über den
+`WebViewAssetLoader` (`/api/raster/<griff>/<güte>.jpg`); das fertige PDF geht in
+192-KB-Scheiben hinaus.
+
+---
+
+## 4 · Die Zahlen
 
 ### Die Bibliothek
 
 Alle vier gebaut und alle vier nachgemessen (`./dev.ps1 check-android-so`):
 
-| ABI | `libaruco_core.so` | LOAD-Ausrichtung | exportierte Symbole |
-|---|---:|---|---:|
-| **arm64-v8a** (im APK) | **5,93 MB** | 0x4000 (16 KiB) | 6 |
-| armeabi-v7a | 2,97 MB | 0x4000 | 6 |
-| x86 | 13,25 MB | 0x4000 | 6 |
-| x86_64 | 21,67 MB | 0x4000 | 6 |
+| ABI | `libaruco_core.so` | vorher (nur Erkennung) | LOAD-Ausrichtung | exportierte Symbole |
+|---|---:|---:|---|---:|
+| **arm64-v8a** (im APK) | **7,69 MB** | 5,93 MB | 0x4000 (16 KiB) | 21 |
+| armeabi-v7a | 4,10 MB | 2,97 MB | 0x4000 | 21 |
+| x86 | 16,24 MB | 13,25 MB | 0x4000 | 21 |
+| x86_64 | 25,92 MB | 21,67 MB | 0x4000 | 21 |
 
-Die Intel-Zahlen sind so viel größer, weil die x86-Bibliotheken des OpenCV-SDK die
-SIMD-Verzweigungen für mehrere Befehlssätze mitführen — dasselbe Bild wie beim Prüfstand
-in `stage-4-cross-targets.md`, Abschnitt 4.
+**+1,76 MB für die ganze Messkette** auf arm64-v8a. Das ist der Preis dafür, dass jetzt
+`warpPerspective`, `findHomography`, `solvePnP`, CLAHE und die Konturensuche mit
+hineingebunden werden — vorher warf der Linker sie weg, weil niemand sie rief. Die
+Intel-Zahlen sind größer, weil die x86-Bibliotheken des OpenCV-SDK SIMD-Verzweigungen für
+mehrere Befehlssätze mitführen (`stage-4-cross-targets.md`, Abschnitt 4).
 
-**Halb so groß, weil sie nichts mehr exportiert.** Der erste Bau war 12,81 MB und trug
-**4383** dynamische Symbole — die ganze Symboltabelle des statisch gebundenen OpenCV. Weil
-jedes davon als von außen erreichbar galt, durfte der Linker auch nichts wegwerfen. Mit
-`-Wl,--exclude-libs,ALL`, `-Wl,--gc-sections` und `-ffunction-sections` bleiben **6**
-Symbole (genau die JNI-Einsprungpunkte) und **6,21 MB** — gestrippt 5,93 MB im APK.
-
-| | vorher | nachher |
-|---|---:|---:|
-| `libaruco_core.so` (arm64-v8a) | 12 806 576 B | **6 213 760 B** |
-| dynamische Symbole | 4383 | **6** |
+Die **21** exportierten Symbole sind genau die JNI-Einsprungpunkte, und
+`check-android-so` liest ihre Zahl aus `NativeCore.java` statt sie abzutippen: eine neue
+native Methode, die im Bau nicht ankommt, fällt damit auf.
 
 ### Das APK
 
@@ -129,52 +222,169 @@ uses-permission: name='com.bischofsnowboards.aruco.DYNAMIC_RECEIVER_NOT_EXPORTED
 
 | | |
 |---|---|
-| Größe | **8,48 MB** (Debug, nur arm64-v8a) |
-| Einträge | 163 |
+| Größe | **10,29 MB** (Debug, nur arm64-v8a) |
+| Einträge | 179, davon 62 unter `assets/www/` |
 | Rechte | **keine.** Die eine Zeile oben ist eine App-eigene Marke, die AGP ab targetSdk 33 selbst einträgt — sie erlaubt nichts. **Kein `INTERNET`**, kein `CAMERA`, kein Speicherrecht. |
 | `zipalign -c -P 16 -v 4` | bestanden |
-| `apksigner verify` | gültig, v2-Schema, `CN=Android Debug` |
+| `apksigner verify` | gültig, `CN=Android Debug` |
+| Pflichtdateien | 16 von 16 vorhanden |
+| Verbotene Dateien | 0 von 4 — **kein `.wasm`, kein `core.js`**, keine `.test.mjs`, keine `image.js` |
 | `versionName` | aus `app/config.py` (`APP_VERSION`), nicht abgetippt |
 
-**Ohne Netzberechtigung ist „offline" eine Zusicherung des Systems** und nicht eine des
-Programmierers: die App *kann* nicht senden. Fotos werden über `ACTION_OPEN_DOCUMENT`
-gelesen und PDFs über `ACTION_CREATE_DOCUMENT` geschrieben — beide geben dem Benutzer die
-Wahl und der App nur die eine Datei, ohne jedes Speicherrecht. Die Kamera macht
-`ACTION_IMAGE_CAPTURE`, also die Kamera-App des Systems; erst ein deklariertes
-`CAMERA`-Recht würde es auch verlangen.
+Die vier verbotenen Einträge sind der Kern dieser Stufe als Prüfung: läge `core.js` im APK,
+holte die Seite bei einem Fehler in der Importkarte still den WebAssembly-Weg — und die
+Architekturentscheidung „nativ je Ziel" wäre lautlos rückgängig gemacht. `check-apk` zählt
+deshalb nicht nur, was da sein muss, sondern auch, was nicht da sein darf.
 
-### Die Messungen
+**Ohne Netzberechtigung ist „offline" eine Zusicherung des Systems** und nicht eine des
+Programmierers: die App *kann* nicht senden. Fotos kommen über `ACTION_OPEN_DOCUMENT`,
+PDFs gehen über `ACTION_CREATE_DOCUMENT` — beide geben dem Benutzer die Wahl und der App
+nur die eine Datei, ohne jedes Speicherrecht.
+
+### Die JNI-Schicht auf einer echten JVM
+
+`./dev.ps1 check-jni` übersetzt `jni.cpp` und `jni_chain.cpp` als Windows-DLL gegen die
+`jni.h` des JDK und ruft sie aus einem echten Java-Prozess auf — mit `NativeCore.java`,
+also der Klasse der App. Verglichen wird gegen **denselben Kern durch pybind11**, mit
+`Double.compare(...) != 0`: null Toleranz.
 
 ```
-C++ direkt  vs  C-Schnittstelle          64 Ecken, 0 verschieden, 0.0 px
+Kette flat (2400x1800)              Kette thick (2400x1800)
+  quad_area          4 Werte identisch        4 Werte identisch
+  h_quad             9 Werte identisch        9 Werte identisch
+  h_lmeds            9 Werte identisch        9 Werte identisch
+  h_refined          9 Werte identisch        9 Werte identisch
+  fit_free          15 Werte identisch       15 Werte identisch
+  pose               4 Werte identisch        4 Werte identisch
+  hull               8 Werte identisch        8 Werte identisch
+  extent             4 Werte identisch        4 Werte identisch
+  local_px_per_mm    1 Wert  identisch        1 Wert  identisch
+  intersection       1 Wert  identisch        1 Wert  identisch
+  preview_size       2 Werte identisch        2 Werte identisch
+  export_size        2 Werte identisch        2 Werte identisch
+  rectify_sha  5 870 400 B, SHA-256 gleich    5 870 400 B, SHA-256 gleich
+  close_size         2 Werte identisch        2 Werte identisch
+  close_sha    6 067 200 B, SHA-256 gleich    6 067 200 B, SHA-256 gleich
+  is_identity        2 Werte identisch        2 Werte identisch
+  adjust_sha   6 067 200 B, SHA-256 gleich    6 067 200 B, SHA-256 gleich
+  contour            8 Werte identisch        8 Werte identisch
+```
+
+**Die Rasterbilder sind bytegleich, nicht nur ähnlich.** Ein Bild über eine Grenze zu
+schieben, ohne eine Zeile zu verschieben oder Rot und Blau zu tauschen, ist genau die
+Sorte Fehler, die eine Toleranzprüfung durchlässt und ein Messschieber findet — deshalb
+SHA-256 und keine Norm.
+
+Daneben, in Millimetern statt in Bits, gegen die **Python-Referenz**:
+
+| | `flat` | `thick` |
+|---|---:|---:|
+| Ausdehnung der Ebene | 2,016e-06 mm | 1,693e-06 mm |
+| Zuschnitt | 2,016e-06 mm | 1,693e-06 mm |
+| Kamerahöhe | 8,012e-09 mm | 1,024e-08 mm |
+| Maßstab | 5,400e-12 px/mm | 8,229e-12 px/mm |
+| Rastergröße bei 300 dpi | 14860 × 11362 px, beide Seiten gleich | 14860 × 11362 px, beide Seiten gleich |
+
+Zwei Nanometer auf einer Ausdehnung von rund 1250 mm. **Das ist kein Messunterschied,
+und es ist auch nicht Rundung:** `refine_homography` ist in Python eine
+scipy-Ausgleichsrechnung und in C++ `cv::LevMarq`. Zwei Verfahren auf demselben Problem
+enden nicht auf demselben Bit, und die Ausdehnung ist die einzige Größe, die weit genug
+hinter der Homographie steht, um es überhaupt zu zeigen. Dieselben vier Zahlen, in
+derselben Größenordnung, misst `stage-4-windows-exe.md` an der ausgelieferten `.exe`.
+Deshalb ist die JNI-Prüfung gegen den **C++-Kern** bitgenau und die gegen **Python** in
+Millimetern angegeben: nur die erste darf null Toleranz haben.
+
+Die Ecken bleiben, was sie waren:
+
+```
+C++ direkt  vs  C-Schnittstelle          64 Ecken, 0 verschieden, 0.0 px, 0 float32-ULP
 C++ direkt  vs  JNI auf der JVM          64 Ecken, 0 verschieden, 0.0 px
 RGBA-Weg    vs  BGR-Weg (in der JVM)     36 Werte, identisch, beide Szenen
 Modulbits   vs  cv2                      4 Marker, 6x6, byteweise gleich
 ```
 
-Der größte Eckfehler bleibt **0,2337 px** bei 0,75 px Toleranz — dieselbe Zahl wie auf
-Windows und im Browser (`stage-4-cross-targets.md`, Abschnitt 1). Die neuen Schichten
-verschieben **nichts**: nicht ein einziges Bit über 64 Ecken.
+Der größte Eckfehler ist **0,2337 px** bei 0,75 px Toleranz — dieselbe Zahl wie auf Windows
+und im Browser. Die neuen Schichten verschieben **nichts**.
+
+### Die Testläufe
 
 ```
-183 passed   pytest (Python-Kern)
-183 passed   pytest mit ARUCO_CORE=cpp
-183 passed   pytest mit ARUCO_PDF=js
+183 passed   ARUCO_CORE=python  ARUCO_PDF=python
+183 passed   ARUCO_CORE=python  ARUCO_PDF=js
+183 passed   ARUCO_CORE=cpp     ARUCO_PDF=python
+183 passed   ARUCO_CORE=cpp     ARUCO_PDF=js
+ 18 passed   node --test  (web/**/*.test.mjs, davon 6 neu fuer die Android-Bruecke)
 ```
 
 ---
 
-## 4 · Auf ein Telefon bringen
+## 5 · Die Kette im Chromium — was der Beleg wert ist
+
+`check-apk` misst das Erzeugnis, `check-jni` misst die native Schicht. Dazwischen liegt
+alles, was in der WebView passiert: die Importkarte, die beiden Android-Dateien und
+darüber die unveränderte Kette bis zum PDF. Das war der Teil, den nie jemand laufen sah.
+
+`./dev.ps1 check-android-ui` **packt `assets/www/` aus dem gebauten APK aus**, liefert es
+aus und fährt ein kopfloses Chromium durch Hochladen, Ausgleich, Regler, Export und die
+Übergabe des Blobs. Geladen werden die Bytes, die ausgeliefert werden — der Baum wird
+ausgepackt, nicht nachgebaut. Gesteuert wird der Browser über sein eigenes Debug-Protokoll
+(CDP) aus Node 22; kein Playwright, keine 150 MB Nachladung.
+
+```
+upload: 2400x1800 px, Marker-Kante 67 mm
+solve: 4 Marker, rms_px=0.095, rms_mm=0.0495, mm_per_px=0.52
+adjust: Vorschau als Blob, 1.2717 px/mm
+export: 3 Seiten, 210.000x297.000 mm, 155255 Bytes
+uebergeben: schablone.pdf, 155255 Bytes, identisch zum Blob: true
+```
+
+`rms_px=0.095`, `rms_mm=0.0495` und `mm_per_px=0.52` sind **dieselben Zahlen**, die der
+Server auf dem Rechner und der Browser-Bau für diese Szene liefern
+(`stage-4-web.md`). Und die Übergabe verliert nichts: der Blob kommt auf der anderen Seite
+der Brücke mit derselben Byte-Zahl an — die Scheiben sind Vielfache von 3, sonst ergäben
+zwei aneinandergehängte Base64-Stücke Unsinn.
+
+Danach zählt `android/tools/measure_template.py` nach, was auf dem Blatt steht — an den
+**Vektoren** im PDF, nicht an einer Rasterung, die ihre eigene Ungenauigkeit mitbrächte:
+
+```
+3 Seiten, jede 210.000 x 297.000 mm
+13 Rasterabstaende, alle 50 mm, groesste Abweichung 6.0000 nm
+```
+
+### Drei Ersatzstücke, und der Prüfer sagt sie bei jedem Lauf
+
+1. **Die Java-Seite ist ein Nachbau** (`android/tools/bridge-stub.mjs`) — eine
+   JavaScript-Nachbildung von `CoreBridge.java`. Sie ist mit
+   `web/vision/core-android.test.mjs` **geteilt** und nicht zweimal geschrieben: zwei
+   Nachbauten einer Klasse sind zwei Stellen, an denen sie auseinanderlaufen können.
+2. **Der Rechenkern ist der WebAssembly-Bau desselben `core/`**, nicht
+   `libaruco_core.so`. Dieselbe C++-Funktion, anderes Ziel. Dass die JNI-Schicht bitgenau
+   dasselbe liefert, misst `check-jni` auf einer echten JVM — das ist die andere Hälfte
+   des Belegs, und nur beide zusammen decken die Kette ab.
+3. **Chromium auf Windows ist nicht die System-WebView eines Telefons.**
+
+Was das **nicht** misst: Androids Linker, die WebView, die Kamera-Wege, den Speicherbedarf
+auf einem Gerät. Was es misst: dass diese Kette, in dieser Reihenfolge, mit diesen Dateien
+ein maßhaltiges PDF ergibt.
+
+**Und was auch diese Messung nicht sehen kann**, weil es keine Messung dieser Art kann:
+Raster und Seitengröße zeichnet die PDF-Schicht aus **denselben** Millimeterzahlen, in
+denen der Zuschnitt angegeben ist. Läge die Homographie daneben, käme die Schablone falsch
+groß heraus, und dieses Raster mäße trotzdem tadellos. Diesen Fehler fängt allein die
+Bitgleichheit gegen Python und den C++-Kern.
+
+---
+
+## 6 · Auf ein Telefon bringen
 
 **Der wichtigste Abschnitt dieses Dokuments.** Alles darüber ist Vorarbeit.
 
 ### Einmalig am Telefon
 
 1. **Einstellungen → Über das Telefon → siebenmal auf „Build-Nummer" tippen.**
-   Das schaltet die Entwickleroptionen frei.
 2. **Einstellungen → System → Entwickleroptionen → USB-Debugging einschalten.**
-3. Telefon per USB anstecken. Auf dem Telefon erscheint „USB-Debugging zulassen?" —
-   bestätigen (und „Von diesem Computer immer zulassen" ankreuzen).
+3. Telefon per USB anstecken, „USB-Debugging zulassen?" bestätigen.
 
 ### Am Rechner
 
@@ -195,21 +405,65 @@ Zum Schluss **`& $adb kill-server`** — der Dienst läuft sonst im Hintergrund 
 
 | Schritt | Erwartung | Wenn nicht |
 |---|---|---|
-| App startet | Die Seite **„Auf diesem Gerät"** mit gefüllter Tabelle: `OpenCV 5.0.0`, `DICT_4X4_50 (50)`, `67,0 mm`, `arm64-v8a` | Steht dort eine rote Zeile statt der Tabelle, hat `libaruco_core.so` nicht geladen — siehe Falle 1 |
-| **Seitengröße** in der Tabelle | `4096 B` oder `16384 B` | Bei `16384` ist das Gerät ein 16-KB-Gerät. Dass die App überhaupt startet, ist dann der Beleg für die Ausrichtung. |
-| **„Prüfstand laufen lassen"** | **BESTANDEN**, und je Szene `größter Eckfehler 0,2337 px (Toleranz 0,7500 px)` | Andere Zahlen: **das ist ein Befund**, kein Rundungsfehler. Bitte melden. |
-| Die SHA-256-Zeile darunter | `flat`: `da8c60f0d419cd7035f4bd1ee3bb13190e4507cd16507ddd0202e924601156f4`<br>`thick`: `c3695fe476f79854dc64c1c138303236b735a6c26c884a66fe8c0978ef18e374` | Weicht sie ab, hat Androids PNG-Dekoder **andere Pixel** geliefert als `cv2` — dann sind die Eckenzahlen nicht direkt mit Windows vergleichbar, und der Unterschied liegt im Laden, nicht im Detektor. |
-| **„Als PDF speichern"** unter *Markerblatt* | Systemdialog, danach ein A4-PDF. Ausdrucken mit **100 %, nicht „an Seite anpassen"**, und einen Marker mit dem Messschieber nachmessen. | — |
-| **„Foto wählen"** → **„Marker suchen"** | `4 Marker in <n> ms`, vier ähnlich große Kanten | Findet er nichts, war das Blatt zu klein im Bild, zu schräg oder unscharf. |
-| **„Oberfläche öffnen"** | Die vertraute Oberfläche vom Rechner, auf dem Handy-Layout | — |
-| Dort ein Foto laden und **„Entzerren"** | Eine übersetzte Meldung: *dieser Schritt steckt noch nicht im nativen Rechenkern* | Ein Netzwerkfehler statt dieser Meldung heißt, die Brücke lief nicht — siehe Falle 2 |
+| App startet | Die Seite **„Auf diesem Gerät"** mit gefüllter Tabelle: `OpenCV 5.0.0`, `DICT_4X4_50 (50)`, `67,0 mm`, `arm64-v8a` | Rote Zeile statt Tabelle: `libaruco_core.so` hat nicht geladen — siehe Falle 1 |
+| **Seitengröße** in der Tabelle | `4096 B` oder `16384 B` | Bei `16384` ist es ein 16-KB-Gerät. Dass die App startet, ist dann der Beleg für die Ausrichtung. |
+| **„Prüfstand laufen lassen"** | **BESTANDEN**, je Szene `größter Eckfehler 0,2337 px (Toleranz 0,7500 px)` | Andere Zahlen: **das ist ein Befund**, kein Rundungsfehler. Bitte melden. |
+| Die SHA-256-Zeile darunter | `flat`: `da8c60f0d419cd7035f4bd1ee3bb13190e4507cd16507ddd0202e924601156f4`<br>`thick`: `c3695fe476f79854dc64c1c138303236b735a6c26c884a66fe8c0978ef18e374` | Weicht sie ab, hat Androids PNG-Dekoder **andere Pixel** geliefert als `cv2` — dann liegt der Unterschied im Laden, nicht im Detektor. |
+| **„Oberfläche öffnen"** → Foto laden → **„Entzerren"** | Eine entzerrte Vorschau mit Maßstab in Millimetern. **Das ist der Schritt, der bis zu dieser Stufe abbrach.** | Eine Meldung „android_bridge_failed": die Brücke lief, der Kern nicht — der Grund steht im `logcat`. Eine Meldung über ein fehlendes Modul: die Importkarte hat nicht gegriffen (Falle 13). |
+| Regler bewegen | Die Vorschau folgt. Nach ein paar Bewegungen **darf der Speicher nicht wachsen** — das ist die Arena, und sie ist auf einem Gerät ungemessen. | Stürzt die App nach mehreren Bewegungen ab, ist die Kapazität von `NativeImages` zu groß für dieses Gerät. |
+| **„Schablone erzeugen"** | Systemdialog, danach ein mehrseitiges PDF. Ausdrucken mit **100 %, nicht „an Seite anpassen"**. | Bleibt der Dialog aus, hat die `blob:`-Abfangstelle nicht gegriffen — siehe Falle 14. |
+| Am Ausdruck: das **50-mm-Raster** mit dem Messschieber | 50,0 mm | — |
+| Am Ausdruck: **ein Gegenstand bekannter Länge**, der mit auf dem Foto lag | seine wirkliche Länge | **Das ist die Messung, die dieses Projekt noch nie hatte** — auf keinem Ziel. Siehe [§7](#7--was-nicht-belegt-ist). |
 
-**Die drei Zahlen, die zurückgemeldet gehören:** das Urteil des Prüfstands, der größte
-Eckfehler je Szene, und die beiden SHA-256. Damit ist Android nicht mehr ungemessen.
+**Die Zahlen, die zurückgemeldet gehören:** das Urteil des Prüfstands, der größte Eckfehler
+je Szene, die beiden SHA-256 — und, falls ein Ausdruck entsteht, die nachgemessene Länge
+des bekannten Gegenstands.
 
 ---
 
-## 5 · Fallen — gemessen, nicht geraten
+## 7 · Was **nicht** belegt ist
+
+**Auf einem Android-Gerät ist nichts gelaufen.** `adb devices` leer, kein Emulator, kein
+System-Abbild, kein WSL, kein Docker, kein `qemu-aarch64`. Was hier steht, ist am Erzeugnis
+gemessen (ELF, Zip, Signatur), auf einer JVM auf Windows gelaufen, oder in einem Chromium
+auf Windows. **Es gibt keine Zahl aus einem Telefon.**
+
+Im Einzelnen ungeprüft:
+
+- **Ob die App startet.** Der Java-Teil ist übersetzt und dexed, nicht ausgeführt.
+- **Ob die Importkarte in der WebView des Geräts greift.** In Chromium 152 greift sie
+  (gemessen). Importkarten kann Chromium seit 89, URL-Schlüssel eingeschlossen; eine alte
+  System-WebView könnte trotzdem scheitern, und dann lädt die Seite gar nicht.
+- **Ob `CoreBridge.java` dasselbe tut wie sein Nachbau.** Beide sind aus derselben Liste
+  von Methodennamen gebaut, aber der Chromium-Lauf fährt **den Nachbau**, und `check-jni`
+  fährt die JNI-Schicht **ohne** `CoreBridge`. Genau dazwischen — JSON hinein, JSON heraus,
+  Griffe statt Pixel — liegt eine Naht, die nirgends ausgeführt wird. Der Kopf von
+  `bridge-stub.mjs` sagt das ausdrücklich: eine Abweichung ließe beide Prüfungen grün und
+  die App kaputt.
+- **Ob `NativeImages` mit drei Plätzen reicht.** Die Verdrängung ist in Java geschrieben und
+  nirgends unter Last gelaufen. Ein 12-MP-Foto sind 48 MB BGR; entzerrt bei 300 dpi kommen
+  zweistellige Megabyte je Bild dazu, und der Kern hält die Ausgabe kurzzeitig doppelt.
+  **Kein Speicher- und kein Zeitbedarf ist gemessen.**
+- **Ob ein gekacheltes PDF in 192-KB-Scheiben durch die echte JavaScript-Brücke passt.**
+  Im Chromium ja (155 kB in einem Stück Rechenzeit). `@JavascriptInterface` läuft auf dem
+  JavaBridge-Faden und ist synchron; bei einem 40-MB-PDF sind das rund 220 Aufrufe, und wie
+  sich das anfühlt, ist ungemessen.
+- **Die Kamera-Wege** (`ACTION_IMAGE_CAPTURE`, `FileProvider`, `ACTION_CREATE_DOCUMENT`,
+  `ACTION_SEND`) sind übersetzt, nicht ausgeführt.
+- **Die EXIF-Drehung an einem echten Handyfoto.** Der Code löst alle acht Fälle auf; geprüft
+  ist er gegen synthetische Bilder, nicht gegen eine Kamera.
+- **Nur arm64-v8a im APK.** Die anderen drei ABIs sind gebaut und nachgemessen, aber nicht
+  eingepackt (`./dev.ps1 build-apk arm64-v8a,armeabi-v7a`).
+- **Kein Release-Bau, keine Signatur außer dem Debug-Schlüssel.**
+- **Und die eine, die über allem steht: die Kette `Foto → Marker → Millimeter` ist nach wie
+  vor nicht unabhängig belegt** — auf keinem Ziel. Belegt ist `PDF → Drucker → Papier`
+  (Messschieber, 07.09.2026). Was fehlt, ist ein Gegenstand *bekannter* Länge mit auf dem
+  Foto und derselbe Gegenstand auf dem Ausdruck nachgemessen. Alles in diesem Dokument sagt
+  nur: **Android rechnet dasselbe wie Python.** Ob Python richtig rechnet, sagt es nicht.
+
+---
+
+## 8 · Fallen — gemessen, nicht geraten
 
 **1 · Die `.so` muss auf 16 KiB ausgerichtet sein, sonst lädt sie GAR NICHT.** Neue
 Android-Geräte legen Bibliotheken mit 16-KiB-Seiten ab; eine nur auf 4 KiB ausgerichtete
@@ -223,19 +477,18 @@ gehört die **zweite, andere** Zusage: `zipalign -P 16`, also unkomprimiert und 
 „opaque", und dagegen ist jeder `import` ein Verstoß gegen die Same-Origin-Regel.
 `app/static/` IST ein Baum aus ES-Modulen. Deshalb der `WebViewAssetLoader` mit
 `https://appassets.androidplatform.net/` — eine Adresse, die absichtlich nicht auflöst und
-deshalb nie ins Netz geht. Wer stattdessen `loadUrl("file:///android_asset/...")` schreibt,
-bekommt eine leere Seite und in der Konsole eine CORS-Meldung, die nach einem Serverproblem
-aussieht.
+deshalb nie ins Netz geht.
 
 **3 · Zwei MIME-Typen sind nicht verhandelbar.** `.js` muss `text/javascript` sein, sonst
 weist die WebView das Modul ab; `.json` muss `application/json` sein, sonst scheitert
 `import ... with { type: "json" }` — und daran hängt `shared/constants.json`, also jede
 Konstante des Produkts. Beides steht in `MainActivity.mimeType`.
 
-**4 · `shouldInterceptRequest` bekommt bei einem POST den Rumpf NICHT.** Das ist eine Lücke
-im WebView-API. Deshalb ist die Grenze so geschnitten: lesende `/api/`-Pfade
-(`/api/preview/...`) bedient der `WebViewAssetLoader`, alles Schreibende geht über die
-JavaScript-Brücke. Wer das übersieht, baut einen Upload, der die Datei nie sieht.
+**4 · `shouldInterceptRequest` bekommt bei einem POST den Rumpf NICHT**, und
+`PathHandler.handle(path)` sieht die **Abfrage nicht**. Beides sind Lücken im WebView-API,
+und beide schneiden die Grenze: lesende Rasterbilder holt ein `GET`, dessen ganze Angabe im
+**Pfad** steht (`/api/raster/<griff>/<güte>.jpg`, nicht `?q=`), alles andere geht über die
+JavaScript-Brücke.
 
 **5 · Ein `<input type="file">` tut in einer WebView von allein nichts.** Kein Dialog, keine
 Meldung — bis `WebChromeClient.onShowFileChooser` da ist. Die dort gewählte URI wird
@@ -243,132 +496,103 @@ zusätzlich gemerkt, damit die Brücke das Bild daraus selbst laden kann: ein 12
 Base64 durch die JavaScript-Grenze wären rund 48 MB Text.
 
 **6 · Die EXIF-Drehung muss VOR der Erkennung angewandt werden.** `BitmapFactory` folgt der
-EXIF-Marke nicht, Handys schreiben aber fast immer in Sensor-Ausrichtung. Ohne das sucht
-der Detektor in einem gedrehten Bild. `Photo.applyExifOrientation` löst alle acht Fälle auf,
-auch die gespiegelten: eine Spiegelung dreht die Eckenreihenfolge um (TL,TR,BR,BL wird
-TR,TL,BL,BR), und die Homographie wäre dann ebenfalls gespiegelt — ein Ergebnis, das
-plausibel aussieht und in der Breite stimmt. `inScaled = false` gehört dazu, sonst skaliert
-Android nach Bildschirmdichte.
+EXIF-Marke nicht, Handys schreiben aber fast immer in Sensor-Ausrichtung.
+`Photo.applyExifOrientation` löst alle acht Fälle auf, auch die gespiegelten: eine
+Spiegelung dreht die Eckenreihenfolge um, und die Homographie wäre dann ebenfalls
+gespiegelt — ein Ergebnis, das plausibel aussieht und in der Breite stimmt. `inScaled =
+false` gehört dazu.
 
 **7 · Ein direkter `ByteBuffer`, kein `byte[]`.** `GetByteArrayElements` darf kopieren (auf
 Android tut es das), `GetPrimitiveArrayCritical` hält stattdessen den Speicherbereiniger an
-— während einer Erkennung, die Sekunden dauert. Bei 48 MB ist beides spürbar. Die JNI-Seite
-weist einen Heap-Puffer deshalb ausdrücklich ab; dass sie das tut, ist gemessen.
+— während einer Erkennung, die Sekunden dauert. Die JNI-Seite weist einen Heap-Puffer
+deshalb ausdrücklich ab; dass sie das tut, ist gemessen.
 
 **8 · Keine C++-Ausnahme darf durch einen JNI-Rahmen.** Sie ist dort nicht definiert; in der
-Praxis stirbt der Prozess wortlos, und der Bediener sieht die App verschwinden. `capi.cpp`
-fängt deshalb ausnahmslos alles und macht daraus Code plus Klartext. Dass ein falscher
+Praxis stirbt der Prozess wortlos. Alle 21 C-Funktionen laufen deshalb durch dieselbe
+`guarded`-Hülle und machen aus jeder Ausnahme einen Code plus Klartext. Dass ein falscher
 Puffer eine `IllegalArgumentException` gibt und der Prozess weiterläuft, ist gemessen.
 
 **9 · Gradle trägt aus `assets.srcDir()` KEINE Aufgabenabhängigkeit mit.** Weder aus einem
-`TaskProvider` noch aus einem `Provider<File>`. Beides wurde probiert: der Bau lief beide
-Male grün durch, `gatherWebAssets` lief gar nicht, und im APK lag von der Oberfläche
-**nichts**. Ein leeres APK ist von einem vollen nur an seiner Größe zu unterscheiden — und
-die hätte hier niemand nachgesehen. Die Abhängigkeit steht jetzt von Hand an den
-Merge-Aufgaben, und `./dev.ps1 check-apk` zählt zwölf Pflichtdateien im fertigen APK nach.
-**Das war der einzige echte Fehler dieser Stufe, und er wäre ohne die Nachzählung
-unbemerkt ausgeliefert worden.**
+`TaskProvider` noch aus einem `Provider<File>`. Der Bau lief beide Male grün durch,
+`gatherWebAssets` lief gar nicht, und im APK lag von der Oberfläche **nichts**. Ein leeres
+APK ist von einem vollen nur an seiner Größe zu unterscheiden. Die Abhängigkeit steht jetzt
+von Hand an den Merge-Aufgaben, und `check-apk` zählt 16 Pflichtdateien nach.
 
 **10 · `apksigner` ist ein Java-Programm in einer `.bat`-Hülle.** Ohne `JAVA_HOME` bricht es
 mit Rückgabewert 1 ab und sagt kein Wort über den Grund — das sieht nach einer ungültigen
-Signatur aus und ist eine fehlende Werkzeugkette. `aapt` und `zipalign` sind native
-Programme und brauchen es nicht, deshalb fällt es genau an dieser einen Stelle auf.
+Signatur aus und ist eine fehlende Werkzeugkette.
 
-**11 · MAX_PATH.** Das Repo liegt rund 105 Zeichen tief, AGPs Zwischenpfade sind lang. Gradle
-baut deshalb neben dem Repo (`aruco.buildRoot` in `android/gradle.properties`), und
-`build-apk` holt das APK nach `android/out/` zurück.
+**11 · MAX_PATH.** Das Repo liegt rund 105 Zeichen tief, AGPs Zwischenpfade sind lang.
+Gradle baut deshalb neben dem Repo (`aruco.buildRoot`), und `build-apk` holt das APK nach
+`android/out/` zurück.
 
 **12 · Die Kataloge liegen zweimal im APK.** Einmal unter `/i18n/` für die Oberfläche, einmal
 unter `/app/static/i18n/` — dorthin zeigt der relative Import in `web/pdf/i18n.js`. Rund
 30 KB. Der Ausweg wäre ein Bundler, den dieses Projekt bewusst nicht hat.
 
----
+**13 · Eine Importkarte muss vor dem ERSTEN Modul-Import im Dokument stehen** — und zu dem
+Zeitpunkt, zu dem `addDocumentStartJavaScript` läuft, ist `<head>` noch nicht geparst.
+Deshalb hängt sie an `documentElement`, den es ab dem ersten Augenblick gibt. Eine zu spät
+gesetzte Karte wird **stillschweigend ignoriert**: die Seite lädt dann `core.js`, sucht das
+`.wasm` und bricht mit einem Ladefehler ab, der nach einem fehlenden Verzeichnis aussieht.
 
-## 6 · Was **nicht** belegt ist
+**14 · Ein `<a download>` mit `blob:`-Adresse tut in einer WebView nichts** — es gibt keinen
+Downloadordner und keinen Betrachter dahinter. Und Java kann eine `blob:`-Adresse nicht
+lesen; sie gilt nur im Fenster, das sie vergeben hat. Abgefangen werden **zwei** Wege: der
+Klick auf einen Anker *im* Dokument (der steigt auf) und `link.click()` auf einen Anker, den
+niemand eingehängt hat (der steigt **nirgendwohin** auf). Der zweite Fall ist der Export.
+Wer nur die erste Stelle baut, bekommt einen Knopf, der still nichts tut.
 
-**Auf einem Android-Gerät ist nichts gelaufen.** Weiterhin: `adb devices` leer, kein
-Emulator, kein System-Abbild, kein WSL, kein Docker, kein `qemu-aarch64`. Was hier steht,
-ist am Erzeugnis gemessen (ELF, Zip, Signatur) oder auf einer JVM auf Windows gelaufen.
-**Es gibt keine Zahl aus einem Telefon.**
+**15 · `JSON.stringify` einer `Float64Array` ergibt ein Objekt mit Ziffernschlüsseln, keine
+Liste.** `{"0":1.5,"1":2.5}` kommt auf der Java-Seite als leeres `JSONArray` an — also als
+null Punkte, nicht als ein Fehler. Jede Punktliste geht deshalb durch `Array.from()`. Das
+ist die stillste Falle dieser Stufe: die Kette rechnet weiter und liefert Unsinn.
 
-Im Einzelnen ungeprüft:
-
-- **Ob die App startet.** Der Java-Teil ist übersetzt und dexed, nicht ausgeführt.
-- **Ob die WebView `addDocumentStartJavaScript` kann.** Das Merkmal wird zur Laufzeit
-  abgefragt; kann sie es nicht, fehlt die Brücke, und das steht dann im `logcat`. Auf einer
-  aktuellen WebView ist es vorhanden — geprüft ist es nicht.
-- **Ob `import ... with { type: "json" }` in der WebView des Geräts geht.** Im
-  Desktop-Chromium 152 geht es (gemessen). Chromium kann es seit 123; eine ältere
-  System-WebView könnte scheitern.
-- **Kein Speicher- und kein Zeitbedarf gemessen.** Ein 12-MP-Foto sind 48 MB RGBA plus das,
-  was der Detektor daneben anlegt. Ob ein Telefon mit wenig RAM das verträgt, steht nicht
-  fest.
-- **Die Kamera-Wege** (`ACTION_IMAGE_CAPTURE`, `FileProvider`, `ACTION_CREATE_DOCUMENT`)
-  sind übersetzt, nicht ausgeführt.
-- **Nur arm64-v8a im APK.** Die anderen drei ABIs sind gebaut und nachgemessen, aber nicht
-  eingepackt (`./dev.ps1 build-apk arm64-v8a,armeabi-v7a`).
-- **Kein Release-Bau, keine Signatur ausser dem Debug-Schlüssel.** Für eine Auslieferung
-  fehlen ein eigener Schlüssel und `isMinifyEnabled`-Überlegungen.
-- **Der Browser-Beleg ist ein Ersatz und kein Gerät.** Chromium auf Windows ist nicht die
-  System-WebView eines Telefons, und die Java-Seite war dabei ein Stub.
-- **Das im Browser gebaute Markerblatt ist nicht nachgemessen worden.** Es entstand
-  (gültiges PDF, 5,4 KB, 663 ms) — dass es maßhaltig ist, folgt aus
-  `tests/test_markersheet.py` über `ARUCO_PDF=js` und daraus, dass die Modulbits des
-  nativen Kerns byteweise denen aus `cv2` entsprechen. Ein direkter Messschieber-Beleg an
-  einem auf dem Telefon gebauten Blatt steht aus.
-- **Und weiterhin: nur synthetische Szenen.** Der Messschieber-Beleg (100 mm = 100 mm)
-  hängt nach wie vor allein an der Python-Kette.
+**16 · Gleitkommazahlen überleben den Umweg über Text.** `Double.toString`,
+`JSON.stringify` und Pythons `repr` schreiben alle die **kürzeste Zeichenkette, die sich
+zurück in dieselbe Zahl liest**; `Double.parseDouble` liest sie zurück. Deshalb darf die
+Brücke JSON sprechen, ohne ein Bit zu verlieren — und deshalb ist der Vergleich in
+`ChainCheck.java` mit `Double.compare(...) != 0` möglich und nicht nur mit einer Toleranz.
 
 ---
 
-## 7 · Was jetzt als Nächstes kommt
-
-**Der Kern muss den Rest der Messung lernen.** Die Hülle ist fertig und wartet: sobald
-`solve`, `resolve_pose`, `effective_homography`, `plane_extent`, `rectify` und
-`find_contour_mm` in `core/` stehen, wächst die C-Schnittstelle um ein paar Funktionen, die
-JNI-Schicht um ebenso viele, und die Brücke ersetzt drei `notInNativeCore`-Zeilen durch
-Aufrufe. Nichts an der Oberfläche, nichts am Gradle-Bau, nichts an der Auslieferung ändert
-sich dabei.
-
-Was dabei über diese Stufe hinausgeht:
-
-- **Das entzerrte Bild muss als JPEG in die WebView.** `web/pdf/build.js` nimmt JPEG-Bytes,
-  und der Kern fasst `imgcodecs` nicht an. Auf Android kodiert `Bitmap.compress` — die
-  Grenze steht schon richtig, sie wird nur noch nicht benutzt.
-- **Ein gekacheltes Schablonen-PDF passt nicht durch die Base64-Brücke.** Das Markerblatt
-  mit seinen 5,4 KB schon; ein Ausdruck mit eingebettetem Raster wären Dutzende Megabyte
-  Text. Dafür gehört das Bild vorher auf die native Seite.
-
----
-
-## 8 · Nachvollziehen
+## 9 · Nachvollziehen
 
 ```powershell
-# 1 · Die JNI-Schicht auf einer echten JVM (baut den Kern mit)
+# 1 · Die ganze Kette durch die JNI-Schicht auf einer echten JVM (baut den Kern mit)
 .\dev.ps1 check-jni
-#   BESTANDEN - die JNI-Schicht liefert die Ecken der Grundwahrheit.
+#   BESTANDEN - die JNI-Schicht liefert die Ecken der Grundwahrheit und die ganze
+#   Kette bitgenau.
 #   BESTANDEN - alle 4 Muster stimmen mit cv2 ueberein.
 
-# 2 · Ecke fuer Ecke, alle drei Wege
+# 2 · Ecke fuer Ecke, beide Wege
 .\core\build\aruco_conformance.exe core\build\fixtures\fixtures.txt --ecken `
     | Select-String '^ecke ' | Set-Content cpp.txt
 .\core\build\aruco_conformance.exe core\build\fixtures\fixtures.txt --ecken --capi `
     | Select-String '^ecke ' | Set-Content capi.txt
 .\venv\Scripts\python.exe core\tools\compare_corners.py cpp.txt capi.txt "C++" "C-API"
-#   Ecken verglichen: 64 · davon verschieden: 0
+#   Ecken verglichen: 64 · davon verschieden: 0 · 0 float32-ULP · 0.000e+00 mm
 
 # 3 · Die .so und das APK
-.\dev.ps1 build-android-libs arm64-v8a,armeabi-v7a,x86,x86_64
-.\dev.ps1 check-android-so  arm64-v8a,armeabi-v7a,x86,x86_64
+.\dev.ps1 build-android-libs "arm64-v8a,armeabi-v7a,x86,x86_64"
+.\dev.ps1 check-android-so  "arm64-v8a,armeabi-v7a,x86,x86_64"
 .\dev.ps1 build-apk         # baut und misst nach; APK in android/out/
+.\dev.ps1 check-apk
 
-# 4 · Die drei Suiten
-.\venv\Scripts\python.exe -m pytest -o "addopts=" -q                    # 183 passed
-$env:ARUCO_CORE='cpp'; .\venv\Scripts\python.exe -m pytest -o "addopts=" -q  # 183 passed
+# 4 · Die Kette aus dem APK in einem Chromium, bis zum nachgemessenen PDF
+.\dev.ps1 check-android-ui
+
+# 5 · Die Testlaeufe
+.\venv\Scripts\python.exe -m pytest -o "addopts=" -q                       # 183 passed
 $env:ARUCO_PDF='js';   .\venv\Scripts\python.exe -m pytest -o "addopts=" -q  # 183 passed
+$env:ARUCO_CORE='cpp'; .\venv\Scripts\python.exe -m pytest -o "addopts=" -q  # 183 passed
+.\dev.ps1 run-tests-js                                                     # 18/18
 ```
 
 Der Gradle-Bau braucht beim ersten Lauf Netz (AGP 8.7.3, Gradle 8.9, `androidx.webkit`) und
 ein `npm install` im Wurzelverzeichnis (`pdf-lib` wandert ins APK). Danach baut er offline.
+`check-android-ui` braucht ein installiertes Chrome oder Edge und den WASM-Bau des Kerns
+(`.\dev.ps1 build-core-wasm`); es startet einen Dateiserver auf Port 8030 und beendet ihn
+selbst.
 
-Gelaufen am 2026-09-08: alle vier Blöcke, Ergebnisse wie angegeben.
+Gelaufen am 2026-09-08: alle fünf Blöcke, Ergebnisse wie angegeben.

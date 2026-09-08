@@ -190,7 +190,7 @@
       "sheet_share": "Share or print",
       "sheet_saved": "Saved.",
       "full_heading": "The full interface",
-      "full_explain": "The same interface as on the desktop, unchanged. Loading a photo and switching language work; rectifying stops, because that step is not native yet.",
+      "full_explain": "The same interface as on the desktop, unchanged — and the whole chain inside it: photo, markers, rectifying, template PDF. It computes in the native core and saves through the system dialog.",
       "full_open": "Open the interface"
     }
   },
