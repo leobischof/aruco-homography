@@ -77,9 +77,10 @@ Wünsche vom Telefon, dazu die Berechtigung, ohne die der erste nicht geht.
   Bühne). Der Weg zu einem frischen Rechteck ist der Knopf **Zuschnitt zurücksetzen**.
 
 - **Die Bildaufbereitung liegt hinter einem Winkel**, zugeklappt als Vorgabe. Elf Regler sind
-  der längste Abschnitt der Seite, und die meisten Fotos brauchen keinen einzigen davon; auf
-  dem Telefon lag der Zuschnitt dadurch eine halbe Bildschirmhöhe weiter unten. Gemessen bei
-  1280 px: **74 px zugeklappt gegen 603 px aufgeklappt**. Es ist ein natives `<details>` —
+  der längste Abschnitt der Seite, und die meisten Fotos brauchen keinen einzigen davon.
+  Gemessen im Browser bei 1280 px Breite: **74 px zugeklappt gegen 603 px aufgeklappt** — der
+  Zuschnitt rückt um 529 px nach oben. Auf einem Telefon ist das nicht nachgemessen; dort ist
+  der Abschnitt schmaler und damit höher. Es ist ein natives `<details>` —
   Tastatur, Vorlesen und das Suchen im Text bringt der Browser mit. Der Fehlerplatz bleibt
   außerhalb: eine Meldung hinter einem zugeklappten Winkel ist keine Meldung.
 
