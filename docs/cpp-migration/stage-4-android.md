@@ -53,6 +53,7 @@ Die Trennlinie ist die einzige Aussage dieses Dokuments, die zählt.
 | Die JavaScript-Einheitentests, inkl. der neuen Brücke | **gemessen**, **24/24** |
 | `libaruco_core.so` für vier ABIs: ELF, 16-KB-Ausrichtung, Symbole | **gemessen** am Erzeugnis |
 | APK: Inhalt, ABIs, Rechte, `zipalign -P 16`, Signatur | **gemessen** am Erzeugnis |
+| Das **Release-APK**: eigener Schlüssel statt Debug-Schlüssel | **gemessen** am Erzeugnis: `CN=Bischof Snowboards`, Zertifikat-SHA-256 `9e93876a…`, 9,80 MB |
 | **Die Kette aus dem APK** in einem echten Chromium bis zum PDF | **gemessen** — mit **drei Ersatzstücken**, siehe [§5](#5--die-kette-im-chromium--was-der-beleg-wert-ist) |
 | Das dabei entstandene Schablonen-PDF, an den Vektoren nachgemessen | **gemessen**: 3 Seiten je 210,000 × 297,000 mm, 13 Rasterabstände alle 50 mm |
 | **Der Prüfstand auf einem echten Telefon** | **gemessen** (08.09.2026, Xiaomi 2312DRA50G, Android 15): BESTANDEN, 0,2337 px je Szene, beide SHA-256 wie vorhergesagt |
@@ -446,6 +447,63 @@ $adb = "..\_toolchain\android-sdk\platform-tools\adb.exe"
 
 Zum Schluss **`& $adb kill-server`** — der Dienst läuft sonst im Hintergrund weiter.
 
+### Das Release-APK — das, was ausgeliefert wird
+
+```powershell
+.\dev.ps1 build-apk-release         # derselbe Inhalt, eigener Schlüssel
+```
+
+**Der Unterschied ist die Signatur, nicht der Inhalt.** Beide APKs tragen dieselbe
+Oberfläche und dieselbe `.so`; R8 bleibt auch im Release-Bau aus, und zwar mit Absicht:
+es benennt um, was es für unerreichbar hält, und in dieser App ist beides genau das
+Falsche — die WebView ruft die `@JavascriptInterface`-Methoden über ihren **Namen**, und
+der Linker findet die JNI-Einsprungpunkte über ihren **Namen**. Ohne Gerät ließe sich ein
+dadurch gebrochener Bau hier gar nicht entdecken.
+
+Was sich ändert: `debuggable` fällt weg, und statt des Schlüssels, den jedes Android-SDK
+mitliefert, steht die eigene Kennung darunter:
+
+```
+Signer #1 certificate DN: CN=Bischof Snowboards, O=Bischof Snowboards, C=DE
+Signer #1 certificate SHA-256 digest: 9e93876a88b819d9911963eb3bdb850aa7dad0bd54e15bc2fa12b349f31aadcb
+```
+
+**Diese Zahl gehört verglichen.** Sie steht unter jedem `./dev.ps1 check-apk-release` und
+unter jedem `apksigner verify --print-certs`. Weicht sie ab, ist das APK mit einem anderen
+Schlüssel signiert — dann stammt es nicht aus diesem Projekt.
+
+**Über ein installiertes Debug-APK lässt sich das Release-APK NICHT installieren.**
+Android vergleicht die Signaturen und weist die Aktualisierung ab
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Erst deinstallieren:
+
+```powershell
+& $adb uninstall com.bischofsnowboards.aruco
+& $adb install android\out\aruco-homographie-release.apk
+```
+
+#### Der Schlüssel selbst
+
+Er liegt in `..\_toolchain\aruco-signing\` — **außerhalb des Repos**, neben den anderen
+Werkzeugketten, und wird beim ersten Release-Bau angelegt. Ein eingecheckter Schlüssel
+steckte in jedem Klon, den je jemand gezogen hat, und ließe sich nachträglich nicht mehr
+einsammeln.
+
+> **Diese beiden Dateien sichern: `aruco-release.p12` und `aruco-release.pass`.** Der
+> Schlüssel ist nicht ein Geheimnis, sondern die **Identität** der App: Android verweigert
+> jede Aktualisierung, deren Signatur von der installierten abweicht. Geht er verloren,
+> lässt sich die App auf keinem Gerät mehr aktualisieren — nur deinstallieren, mitsamt
+> allem, was drin steht, und neu installieren. **Seine Sicherung ist wichtiger als seine
+> Geheimhaltung**; deshalb liegt das Kennwort auch als Datei daneben und nicht in
+> irgendeinem Kopf. Auf die Befehlszeile kommt es trotzdem nicht (`keytool -storepass:env`,
+> `providers.environmentVariable`) — die kann auf diesem Rechner jeder Vorgang mitlesen.
+
+#### `versionCode`
+
+`versionName` ist Text und interessiert Android nicht; **`versionCode` ist die Zahl, an der
+es entscheidet, ob etwas eine Aktualisierung ist.** Sie wird aus `APP_VERSION` abgeleitet
+(`0.1.0` → `100`, `0.1.1` → `101`) und nirgends getippt. Bis hierher stand dort die Vorgabe
+`1`, für jede Fassung dieselbe — zwei verschiedene Auslieferungen wären für Android
+ununterscheidbar gewesen.
 ### Was der erste Lauf auf einem Telefon ergab
 
 **08.09.2026 · Xiaomi 2312DRA50G · Android 15 (API 35) · WebView 152.0.7977.64 ·
@@ -572,7 +630,12 @@ Im Einzelnen weiterhin ungeprüft:
   ist er gegen synthetische Bilder, nicht gegen eine Kamera.
 - **Nur arm64-v8a im APK.** Die anderen drei ABIs sind gebaut und nachgemessen, aber nicht
   eingepackt (`./dev.ps1 build-apk arm64-v8a,armeabi-v7a`).
-- **Kein Release-Bau, keine Signatur außer dem Debug-Schlüssel.**
+- ~~Kein Release-Bau, keine Signatur außer dem Debug-Schlüssel.~~ **Eingelöst:**
+  `./dev.ps1 build-apk-release` baut mit eigenem Schlüssel, und `check-apk-release` weist
+  ein versehentlich debug-signiertes APK ab. Ungeprüft bleibt, **ob das Release-APK auf
+  einem Gerät startet**: gemessen ist bisher nur das Debug-APK. Der Inhalt ist derselbe
+  (183 Einträge, dieselben 16 Pflichtdateien), aber das ist ein Vergleich am Zip, kein
+  Startversuch.
 - **Und die eine, die über allem steht: die Kette `Foto → Marker → Millimeter` ist nach wie
   vor nicht unabhängig belegt** — auf keinem Ziel. Belegt ist `PDF → Drucker → Papier`
   (Messschieber, 07.09.2026). Was fehlt, ist ein Gegenstand *bekannter* Länge mit auf dem
@@ -635,6 +698,15 @@ Puffer eine `IllegalArgumentException` gibt und der Prozess weiterläuft, ist ge
 `gatherWebAssets` lief gar nicht, und im APK lag von der Oberfläche **nichts**. Ein leeres
 APK ist von einem vollen nur an seiner Größe zu unterscheiden. Die Abhängigkeit steht jetzt
 von Hand an den Merge-Aufgaben, und `check-apk` zählt 16 Pflichtdateien nach.
+
+**Und dieselbe Falle noch einmal, sichtbar erst im Release-Bau.** `lint-vital` läuft auf
+keiner Debug-Variante, liest aber denselben Ordner — und Gradle 8 hält einen ungemeldeten
+Zugriff auf die Ausgabe einer anderen Aufgabe für einen Fehler und bricht ab. Der **erste**
+`assembleRelease` dieses Projekts ist genau darüber gestolpert, nach lauter grünen
+Debug-Bauten. **Und dann gleich noch einmal:** die beiden beteiligten Aufgaben heißen
+`generateReleaseLintVitalReportModel` und `lintVitalAnalyzeRelease` — einmal groß
+geschrieben, einmal klein. Ein `contains("Lint")` fängt die zweite nicht und sieht dabei
+vollkommen richtig aus. Verglichen wird deshalb auf **kleingeschriebenen** Namen.
 
 **10 · `apksigner` ist ein Java-Programm in einer `.bat`-Hülle.** Ohne `JAVA_HOME` bricht es
 mit Rückgabewert 1 ab und sagt kein Wort über den Grund — das sieht nach einer ungültigen
