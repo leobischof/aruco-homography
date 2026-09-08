@@ -46,6 +46,9 @@ public final class Photo {
     /** Wie das Bild gedreht werden musste, in Grad - nur fuer den Bericht. */
     public final int exifRotationDeg;
 
+    /** Dieselben Pixel in BGR, angelegt beim ersten {@link #bgr()}. */
+    private ByteBuffer bgrPixels;
+
     private Photo(ByteBuffer pixels, int width, int height, double focal35Mm, String cameraModel,
             int exifRotationDeg) {
         this.pixels = pixels;
@@ -225,6 +228,51 @@ public final class Photo {
         // eine Stelle, an der sich Pixelwerte aendern koennten.
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix,
                 false);
+    }
+
+    /**
+     * Dieselben Pixel als BGR, in einem direkten Puffer - die Form, die JEDE Kernfunktion
+     * versteht.
+     *
+     * <p>Die Erkennung nimmt auch RGBA entgegen ({@code jni.cpp} wandelt dann selbst um), das
+     * Entzerren und die Aufbereitung aber nicht: die verlangen drei Kanaele
+     * ({@code core/src/rectify.cpp}). Fuer die ganze Kette muss das Foto also einmal in BGR
+     * vorliegen - einmal, nicht je Aufruf, denn {@code cvtColor} auf 12 MP kostet bei jedem
+     * Reglerzug ein Zehntel einer Sekunde und legt nebenbei jedes Mal 36 MB an.
+     *
+     * <p><b>Was das kostet:</b> RGBA und BGR liegen danach gleichzeitig im Speicher, bei
+     * 12 MP also 48 plus 36 MB. Der RGBA-Puffer bleibt, weil {@link #toJpeg} eine Bitmap
+     * daraus baut. Wer das eines Tages knapp findet, kodiert die Vorschau vor der Umwandlung
+     * und gibt RGBA dann frei; heute waere das eine Optimierung ohne gemessenen Anlass.
+     *
+     * <p>Angelegt wird erst beim ersten Bedarf: wer nur das Markerblatt druckt, zahlt nichts.
+     */
+    public synchronized ByteBuffer bgr() {
+        if (bgrPixels == null) {
+            ByteBuffer target = ByteBuffer.allocateDirect(width * height * 3)
+                    .order(ByteOrder.nativeOrder());
+            ByteBuffer source = pixels.duplicate();
+            source.rewind();
+            // Zeilenweise ueber ein byte[] und nicht Byte fuer Byte durch den
+            // ByteBuffer: ein einzelnes get() auf einem direkten Puffer ist ein
+            // JNI-Grenzuebertritt, und bei 12 MP waeren das 48 Millionen davon.
+            byte[] row = new byte[width * 4];
+            byte[] converted = new byte[width * 3];
+            for (int line = 0; line < height; line++) {
+                source.get(row);
+                for (int pixel = 0, read = 0, write = 0; pixel < width; pixel++) {
+                    converted[write] = row[read + 2];      // B
+                    converted[write + 1] = row[read + 1];  // G
+                    converted[write + 2] = row[read];      // R
+                    read += 4;
+                    write += 3;
+                }
+                target.put(converted);
+            }
+            target.rewind();
+            bgrPixels = target;
+        }
+        return bgrPixels;
     }
 
     /** Die Pixel als RGB (ohne Alpha) - fuer die Pruefsumme des Pruefstands. */

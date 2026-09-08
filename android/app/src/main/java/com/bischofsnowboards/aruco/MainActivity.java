@@ -28,6 +28,7 @@ import androidx.webkit.WebViewFeature;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -75,6 +76,28 @@ public final class MainActivity extends Activity {
     private Photo photo;
     private String photoName = "foto.jpg";
     private byte[] photoJpeg;
+
+    /**
+     * Die Bilder der Rechenkette und der Kern, wie die WebView ihn sieht.
+     *
+     * <p>Sie liegen HIER und nicht in der WebView: ein entzerrtes Raster sind bei 300 dpi
+     * zweistellige Megabyte, und die JavaScript-Grenze traegt nur Text. Die Seite bekommt
+     * eine Zahl je Bild (NativeImages).
+     */
+    private final NativeImages images = new NativeImages();
+    private final CoreBridge core = new CoreBridge(images);
+
+    /** Der Griff auf das Foto in BGR - die Eingabe jedes Rechenschritts. */
+    private int photoHandle = -1;
+
+    /**
+     * Das PDF, das die Seite gerade herueberreicht.
+     *
+     * <p>In Scheiben, weil ein gekacheltes Schablonen-PDF zweistellige Megabyte hat und eine
+     * einzelne Base64-Zeichenkette dieser Groesse zweimal im Speicher stuende - einmal als
+     * JavaScript-String, einmal als Java-String.
+     */
+    private ByteArrayOutputStream incomingPdf = new ByteArrayOutputStream();
 
     /** Der Aufruf, der gerade auf einen Systemdialog wartet. */
     private long pendingCallId = -1L;
@@ -167,23 +190,51 @@ public final class MainActivity extends Activity {
     }
 
     /**
-     * Die lesenden /api/-Pfade.
+     * Die lesenden /api/-Pfade. Heute genau einer: die Rasterbilder der Rechenkette.
      *
      * <p>Nur GET kommt hier an: {@code shouldInterceptRequest} bekommt bei einem POST
      * zwar die URL, aber NICHT den Rumpf - das ist eine Luecke im WebView-API und keine
      * Nachlaessigkeit hier. Alles Schreibende geht deshalb ueber die
      * JavaScript-Bruecke (WebBridge).
+     *
+     * <p><b>Warum die Bilder ueberhaupt hier herauskommen.</b> Ein Vorschaubild ist ein
+     * {@code <img src>}, und das Schablonen-PDF bettet dasselbe Bild als JPEG ein. Ueber
+     * die JavaScript-Bruecke waeren beide Base64 - ein Drittel mehr, als Text, bei jedem
+     * Reglerzug. Ueber diesen Weg sind es Binaerbytes.
      */
     private final class ApiHandler implements WebViewAssetLoader.PathHandler {
         @Override
         public WebResourceResponse handle(String path) {
-            if (path.startsWith("preview/")) {
-                byte[] jpeg = photoJpeg;
-                if (jpeg == null) {
+            // raster/<griff>/<guete>.jpg - ein Rasterbild der Rechenkette.
+            //
+            // Ein GET und keine Bruecken-Methode, und das ist der Punkt: so kommen die
+            // JPEG-Bytes als Binaerstrom in die Seite, nicht als Base64-Zeichenkette. Bei
+            // einem Vorschaubild je Reglerzug ist das der Unterschied zwischen fluessig
+            // und unbenutzbar. Die Guete steht im Pfad, weil PathHandler nur den Pfad
+            // bekommt und keine Abfrageparameter - eine Luecke im WebView-API.
+            if (path.startsWith("raster/")) {
+                String[] parts = path.substring("raster/".length()).split("/");
+                if (parts.length != 2 || !parts[1].endsWith(".jpg")) {
                     return null;
                 }
-                return new WebResourceResponse("image/jpeg", null,
-                        new java.io.ByteArrayInputStream(jpeg));
+                try {
+                    int handle = Integer.parseInt(parts[0]);
+                    int quality = Integer.parseInt(
+                            parts[1].substring(0, parts[1].length() - ".jpg".length()));
+                    // Das Foto selbst ist beim Laden schon kodiert worden. Ein
+                    // 12-MP-Bild noch einmal zu kodieren dauert rund eine Sekunde,
+                    // und das Erkennungs-Overlay fragt genau danach - auf einem
+                    // Faden, der solange keine andere Anfrage bedient. Die Guete im
+                    // Pfad wird dafuer ignoriert; es ist ein Bild fuer das Auge.
+                    byte[] jpeg = handle == photoHandle && photoJpeg != null
+                            ? photoJpeg
+                            : Rasters.toJpeg(images.require(handle), quality);
+                    return new WebResourceResponse("image/jpeg", null,
+                            new java.io.ByteArrayInputStream(jpeg));
+                } catch (RuntimeException failure) {
+                    Log.w(TAG, "Rasterbild " + path + " nicht lieferbar", failure);
+                    return null;
+                }
             }
             return null;
         }
@@ -322,12 +373,67 @@ public final class MainActivity extends Activity {
         });
     }
 
+    CoreBridge core() {
+        return core;
+    }
+
+    /**
+     * Der Griff auf das Foto in BGR.
+     *
+     * <p>Die Umwandlung geschieht beim ersten Zugriff und nicht beim Laden: wer nur
+     * das Markerblatt druckt, zahlt die 36 MB nicht.
+     */
+    int photoHandle() {
+        Photo current = photo;
+        if (current == null) {
+            throw new IllegalStateException("Es ist kein Foto geladen.");
+        }
+        if (photoHandle < 0) {
+            photoHandle = core.registerPhoto(current.bgr(), current.width, current.height);
+        }
+        return photoHandle;
+    }
+
+    /**
+     * Alle Bilder vergessen - beim naechsten Foto.
+     *
+     * <p>Ohne das truege die App das vorige Foto samt seinen Zwischenrastern weiter, und wer
+     * drei Fotos hintereinander misst, haette drei davon im Speicher. Der Griff wird
+     * ungueltig gesetzt und nicht neu vergeben: eine Seite, die den alten noch benutzt,
+     * bekommt eine benannte Ausnahme und kein fremdes Bild.
+     */
+    private void forgetRasters() {
+        images.clear();
+        photoHandle = -1;
+    }
+
+    /**
+     * Eine Scheibe des PDFs entgegennehmen, das die Seite gerade baut.
+     *
+     * <p>Die Seite ruft das mehrfach und danach einmal {@link #savePdf}. Warum nicht in
+     * einem Stueck: ein gekacheltes Schablonen-PDF mit eingebettetem 300-dpi-Raster sind
+     * zweistellige Megabyte, als Base64 ein Drittel mehr - und eine einzelne Zeichenkette
+     * dieser Groesse stuende zweimal im Speicher, einmal auf jeder Seite der Grenze.
+     */
+    void appendPdf(byte[] chunk) {
+        incomingPdf.write(chunk, 0, chunk.length);
+    }
+
+    /** Was bisher angekommen ist, und der Beginn eines neuen Dokuments. */
+    private byte[] takeIncomingPdf() {
+        byte[] data = incomingPdf.toByteArray();
+        incomingPdf = new ByteArrayOutputStream();
+        return data;
+    }
+
     private void loadPhotoFrom(Uri source) throws IOException {
         photo = Photo.load(getContentResolver(), source);
         photoName = displayName(source);
-        // Die Vorschau entsteht sofort und nicht auf Anfrage: /api/preview/ wird aus
+        forgetRasters();
+        // Die Vorschau entsteht sofort und nicht auf Anfrage: /api/raster/ wird aus
         // shouldInterceptRequest bedient, und das laeuft auf einem Faden, auf dem eine
-        // JPEG-Kodierung eines 12-MP-Bildes nichts zu suchen hat.
+        // JPEG-Kodierung eines 12-MP-Bildes nichts zu suchen hat. Das Erkennungs-Overlay
+        // fragt genau dieses Bild ab und bekommt dann diese Kopie.
         photoJpeg = photo.toJpeg(85);
     }
 
@@ -395,9 +501,9 @@ public final class MainActivity extends Activity {
 
     // --- PDF nach draussen -------------------------------------------------------
 
-    void savePdf(long callId, byte[] data, String filename) {
+    void savePdf(long callId, String filename) {
         pendingCallId = callId;
-        pendingPdf = data;
+        pendingPdf = takeIncomingPdf();
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/pdf");
@@ -410,7 +516,8 @@ public final class MainActivity extends Activity {
         }
     }
 
-    void sharePdf(long callId, byte[] data, String filename) {
+    void sharePdf(long callId, String filename) {
+        byte[] data = takeIncomingPdf();
         try {
             File directory = new File(getCacheDir(), "documents");
             if (!directory.exists() && !directory.mkdirs()) {
@@ -477,6 +584,7 @@ public final class MainActivity extends Activity {
                     try {
                         photo = Photo.fromBytes(readAll(captured));
                         photoName = "kamera.jpg";
+                        forgetRasters();
                         photoJpeg = photo.toJpeg(85);
                         resolve(callId, photoPayload());
                     } catch (Exception failure) {

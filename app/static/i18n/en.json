@@ -227,7 +227,6 @@
     "homography_failed": "No homography could be computed from the detected markers. Do they lie almost on a straight line?",
     "homography_degenerate": "The homography is degenerate (H[2,2] = 0).",
     "thickness_too_large": "The object thickness ({thickness_mm} mm) must be smaller than the camera distance ({camera_height_mm} mm).",
-    "android_core_incomplete": "This step ({step}) is not in the native core yet. On the device only marker detection measures so far; the fit, the camera pose, the rectification and the PDF export still need the desktop.",
     "android_bridge_failed": "The bridge to the device did not answer: {reason}"
   },
   "pdf": {

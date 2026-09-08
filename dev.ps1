@@ -180,7 +180,10 @@ function Invoke-RunTestsPdfJs {
 function Invoke-RunTestsJs {
     Confirm-NodeModules
     Write-Step 'Running the JavaScript unit tests'
-    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/pdf/**/*.test.mjs' @Rest }
+    # web/**, nicht nur web/pdf/**: seit dem Android-Ziel steht unter
+    # web/vision/ eine zweite Fassung von core.js, und die einzige Stelle, an
+    # der ihr Umpacken gegen denselben Kern gehalten wird, ist ein Test dort.
+    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/**/*.test.mjs' @Rest }
 }
 
 # Selbstheilend wie Confirm-Deps, nur fuer npm. Geprueft werden BEIDE Pakete:
@@ -988,12 +991,26 @@ function Invoke-CheckApk {
         'assets/www/native/index.html',          # die eigene Seite der Huelle
         'assets/www/native/bridge-shim.js',
         'assets/www/web/pdf/markersheet.js',     # web/pdf/
+        'assets/www/web/vision/local.js',        # web/vision/ - die Rechenkette
+        'assets/www/web/vision/pipeline.js',
+        'assets/www/web/vision/core-android.js', # der Kern ueber JNI ...
+        'assets/www/web/constants.js',
         'assets/www/app/static/i18n/de.json',    # der Pfad, den web/pdf/i18n.js importiert
         'assets/www/shared/constants.json',      # shared/
         'assets/www/vendor/pdf-lib.esm.min.js',
         'assets/fixtures/expected/flat.json',    # shared/fixtures/
         'assets/fixtures/scenes/flat.png',
         'lib/arm64-v8a/libaruco_core.so'
+    )
+    # ... und was NICHT drin sein darf. Der Browser-Kern (web/vision/core.js samt
+    # dem 3,6-MB-wasm daneben) hat auf diesem Ziel nichts zu suchen: hier rechnet
+    # die native Bibliothek ueber JNI. Ein mitgeliefertes wasm waere ein zweiter
+    # Rechenkern, den niemand mitmisst - und er faellt nur an der Groesse auf.
+    $forbidden = @(
+        'assets/www/web/vision/core.js',
+        'assets/www/web/vision/image.js',
+        'assets/www/web/vendor/core/aruco_core.wasm',
+        'assets/www/web/vendor/core/aruco_core.mjs'
     )
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($apk)
@@ -1003,12 +1020,16 @@ function Invoke-CheckApk {
         if ($missing.Count -gt 0) {
             throw ("Im APK fehlen: {0}" -f ($missing -join ', '))
         }
-        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden" -f
-            $zip.Entries.Count, $expected.Count) -ForegroundColor DarkGray
+        $smuggled = @($forbidden | Where-Object { $inside -contains $_ })
+        if ($smuggled.Count -gt 0) {
+            throw ("Im APK liegt, was nicht hineingehoert: {0}" -f ($smuggled -join ', '))
+        }
+        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden, keine der {2} verbotenen" -f
+            $zip.Entries.Count, $expected.Count, $forbidden.Count) -ForegroundColor DarkGray
     } finally {
         $zip.Dispose()
     }
-    Write-Ok 'Die Oberflaeche, web/pdf/, shared/ und die Pruefszenen sind im APK'
+    Write-Ok 'Die Oberflaeche, web/vision/, web/pdf/, shared/ und die Pruefszenen sind im APK'
 
     # 16-KB-Ausrichtung der .so IM APK. Das ist eine andere Zusage als die im
     # ELF: hier geht es darum, ob die Datei unkomprimiert und an einer

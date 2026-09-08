@@ -227,7 +227,6 @@
     "homography_failed": "Aus den erkannten Markern ließ sich keine Homographie berechnen. Liegen sie fast auf einer Linie?",
     "homography_degenerate": "Die Homographie ist entartet (H[2,2] = 0).",
     "thickness_too_large": "Die Objektdicke ({thickness_mm} mm) muss kleiner sein als der Kameraabstand ({camera_height_mm} mm).",
-    "android_core_incomplete": "Dieser Schritt ({step}) steckt noch nicht im nativen Rechenkern. Auf dem Gerät misst bisher nur die Markererkennung; Ausgleich, Kamerapose, Entzerrung und PDF-Export brauchen weiterhin den Rechner.",
     "android_bridge_failed": "Die Brücke zum Gerät hat nicht geantwortet: {reason}"
   },
   "pdf": {
