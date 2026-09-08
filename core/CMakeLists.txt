@@ -181,6 +181,41 @@ if(ARUCO_BUILD_CONFORMANCE)
       -sALLOW_MEMORY_GROWTH=1
       -sEXIT_RUNTIME=1
       -sSTACK_SIZE=8MB)
+
+    # --- Und derselbe Pruefstand noch einmal, fuer einen echten Browser -------
+    # Node und Chrome fahren beide V8, der Unterschied ist also klein - aber
+    # "klein" ist keine Messung, und der Browser ist das ZIEL. Ein Bau, der nur
+    # unter Node belegt ist, laesst offen, ob die Sandbox, die Speichergrenze
+    # oder der Dateiweg im Browser etwas verschieben.
+    #
+    # NODERAWFS gibt es dort nicht. --preload-file legt das Fixture-Paket
+    # stattdessen als .data neben den Bau; der file_packager kopiert die Bytes
+    # unveraendert, es steht also weiterhin kein Dekoder zwischen den Messungen.
+    #
+    # MODULARIZE + INVOKE_RUN=0: die Seite bestimmt selbst, wann main() laeuft,
+    # und liest den Rueckgabewert. Ohne das faengt der Lauf beim Laden des
+    # Skripts an und niemand bekaeme den Ausgang zu fassen.
+    #
+    # EXIT_RUNTIME=0, obwohl der Node-Bau es anhat: mit angeschaltetem
+    # EXIT_RUNTIME beendet callMain die Laufzeit und wirft den Rueckgabewert
+    # weg, statt ihn zurueckzugeben.
+    add_executable(aruco_conformance_web tests/conformance.cpp)
+    target_link_libraries(aruco_conformance_web PRIVATE aruco_core_lib)
+    add_dependencies(aruco_conformance_web aruco_fixtures)
+    target_link_options(aruco_conformance_web PRIVATE
+      "SHELL:--preload-file ${ARUCO_FIXTURE_DIR}@/fixtures"
+      -sMODULARIZE=1
+      -sEXPORT_NAME=createConformance
+      -sEXPORTED_RUNTIME_METHODS=callMain
+      -sINVOKE_RUN=0
+      -sEXIT_RUNTIME=0
+      -sALLOW_MEMORY_GROWTH=1
+      -sSTACK_SIZE=8MB)
+
+    # Die Seite, die ihn startet. Sie liegt im Quellbaum, weil sie Text ist und
+    # kein Erzeugnis - aber sie muss neben dem .js liegen, um es zu finden.
+    configure_file(tests/conformance_web.html
+                   "${CMAKE_BINARY_DIR}/conformance_web.html" COPYONLY)
   endif()
 endif()
 
