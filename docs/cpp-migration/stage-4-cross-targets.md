@@ -437,9 +437,9 @@ Ordnungsliebe: OpenCVs Zwischenpfade sind tief, und MAX_PATH hat hier schon einm
 Bau zerlegt.
 
 **9 · Die Bauverzeichnisse gehören nicht ins Repo.** `core/build-wasm/` und
-`core/build-android-*/` stehen in `.gitignore`; zusammen sind es rund **200 MB**, das
-OpenCV-WASM-Bauverzeichnis noch einmal 83 MB. Alles davon ist mit zwei Kommandos
-wiederherstellbar.
+`core/build-android-*/` stehen in `.gitignore`; zusammen sind es gut **230 MB** — davon
+26 MB allein die `.data` des Browser-Baus —, das OpenCV-WASM-Bauverzeichnis noch einmal
+83 MB. Alles davon ist mit zwei Kommandos wiederherstellbar.
 
 ---
 

@@ -77,7 +77,7 @@ spike/*.raw
 # Fixture-Paket (26 MB rohe Pixel) und die kopierte opencv_world500.dll.
 /core/build/
 # Die Kreuzbauten (Stufe 4). Je Ziel ein eigenes Verzeichnis, weil CMake pro
-# Werkzeugkette einen eigenen Cache braucht - zusammen rund 200 MB, alles davon
+# Werkzeugkette einen eigenen Cache braucht - zusammen gut 230 MB, alles davon
 # mit ./dev.ps1 build-core-wasm bzw. build-core-android wiederherstellbar.
 /core/build-wasm/
 /core/build-android-*/
