@@ -4,6 +4,72 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [0.1.2-alpha] – 2026-09-08
+
+**Der Export auf dem Telefon rastert jetzt blattweise — und damit läuft er.** `0.1.1-alpha`
+hatte den Speicherfehler gemeldet statt ihn zu verschlucken; gedruckt hat sie deswegen noch
+nichts. Diese Fassung baut das Riesenraster gar nicht erst.
+
+### Behoben
+
+- **`PDF erzeugen` scheiterte auf dem Telefon bei jeder Auflösung.** Der Rohtext
+  *Raster 9575x13623 braucht 373 MB und der Speicher gibt sie nicht her* blieb stehen, auch
+  bei 150 dpi. Zwei Gründe, beide nachgerechnet:
+
+  1. **Die Sicherung aus `0.1.1-alpha` griff nicht.** Ihre Obergrenze stand auf 768 MiB und
+     galt als *Summe* für beide Raster — 805 306 368 / 6 = **134 Megapixel**. Der Export
+     wollte 130,44: er kam durch die Prüfung und scheiterte danach an **einer** Belegung von
+     373 MiB. Ein Direktpuffer braucht einen zusammenhängenden Block; wieviel insgesamt frei
+     ist, sagt darüber wenig. Die Grenze bezieht sich jetzt auf eine einzelne Belegung.
+  2. **Eine greifende Grenze hätte nur besser abgewiesen.** 150 dpi sind auf demselben
+     Zuschnitt immer noch 32,6 Megapixel und 98 MB am Stück. Eine Meldung ist kein PDF.
+
+  **Also der andere Schnitt:** gedruckt wird der Zuschnitt ohnehin in A4-Blättern, und jedes
+  Blatt holt sich jetzt sein eigenes Bild, statt aus einem Riesenbild geschnitten zu werden.
+  Der Spitzenbedarf hängt damit am **Blatt** — A4 bei 300 dpi sind rund 26 MB — und wächst
+  nicht mehr, wenn die Schablone größer wird.
+
+### Was das am Ausdruck ändert: nichts
+
+`core/src/rectify.cpp` bildet Ausgabepixel `u` auf `crop.x0 + (u + 0,5) / px_per_mm` ab. Ein
+Blatt, das an einer **ganzzahligen** Pixelgrenze beginnt, tastet deshalb genau dieselben
+Stellen der Ebene ab wie der entsprechende Ausschnitt des großen Rasters — und die
+Interpolation liest dabei aus dem **Quellfoto**, das für jedes Blatt vollständig vorliegt.
+Kein abgeschnittener Filterkern, kein Randeffekt. `web/vision/tiles.test.mjs` misst das nach:
+Blatt für Blatt **Bit für Bit** gleich, und die Blätter setzen das Ganze lückenlos wieder
+zusammen.
+
+Drei Regler können das nicht — **lokaler Kontrast** (CLAHE legt sein Histogrammgitter über
+das ganze Bild), **Kantenschärfe** und **Kantenzeichnung** (beide greifen in die
+Nachbarschaft) — und der **Umriss** wird auf dem fertigen Bild gesucht. In diesen vier Fällen
+wird weiter am Stück gerastert. Alle vier stehen per Vorgabe aus.
+
+**Was es kostet:** das PDF wird gut ein Fünftel größer, weil die Überlappung zweier Blätter
+jetzt zweimal kodiert wird statt einmal geteilt. Auf die Millimeter hat das keinen Einfluss.
+
+### Hinzugefügt
+
+- **Die Speichergrenze steht auf der Geräteseite.** Sie wurde in Java ausgerechnet, durch die
+  Brücke gereicht und angewandt — und nirgends angezeigt. Als der Export scheiterte, ließ sich
+  deshalb nicht ablesen, ob die Sicherung überhaupt scharf war. Steht die Zahl nicht, sagt die
+  Zeile das jetzt.
+- **Der Prüfstand fährt beide Wege.** `ui-probe.html` setzte `local_contrast` und fuhr damit
+  immer den Weg am Stück; der Regelfall — Regler unangetastet — war end-to-end ungeprüft, und
+  genau so ist der Fehler ausgeliefert worden. `./dev.ps1 check-android-ui` misst jetzt beide
+  PDFs nach und weist mit `--eigenes-bild-je-seite` nach, dass wirklich blattweise gerastert
+  wurde.
+
+### Was NICHT belegt ist
+
+- **Auf einem Telefon ist von dieser Fassung nichts gelaufen.** Geprüft ist sie in einem
+  Chromium aus dem gebauten APK — beide Wege, jeder bis zum nachgemessenen PDF (je 3 Seiten,
+  13 Rasterabstände zu 50 mm, größte Abweichung 6 nm).
+- **Die Kette `Foto → Marker → Millimeter` ist weiterhin auf keinem Ziel unabhängig belegt.**
+  Belegt ist `PDF → Drucker → Papier` (07.09.2026, Messschieber). Was fehlt, ist ein Gegenstand
+  *bekannter* Länge mit aufs Foto und derselbe Gegenstand auf dem Ausdruck nachgemessen.
+
+Deshalb bleibt `alpha` im Namen.
+
 ## [0.1.1-alpha] – 2026-09-08
 
 **Die erste Fassung, die ein echtes Telefon hinter sich hat.** `0.1.0-alpha` lief auf
