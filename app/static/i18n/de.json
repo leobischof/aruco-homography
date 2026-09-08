@@ -118,6 +118,7 @@
       "mode_markers": "Marker",
       "mode_plane": "Ebene messen",
       "plane": "{count} Marker · {mm_per_px} mm/px · Restfehler {rms_px} px",
+      "plane_unusable": "{count} Marker · keine brauchbare Ebene · Restfehler {rms_px} px",
       "searching": "Kein Marker im Bild.",
       "found": "{count} Marker gefunden.",
       "filename": "aufnahme.jpg",

@@ -118,6 +118,7 @@
       "mode_markers": "Markers",
       "mode_plane": "Measure plane",
       "plane": "{count} markers · {mm_per_px} mm/px · residual {rms_px} px",
+      "plane_unusable": "{count} markers · no usable plane · residual {rms_px} px",
       "searching": "No marker in view.",
       "found": "{count} markers found.",
       "filename": "capture.jpg",

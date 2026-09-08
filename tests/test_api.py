@@ -194,6 +194,66 @@ def test_measure_ohne_marker_ist_kein_fehler(client, scene):
     assert payload["markers"] == []
     assert payload["plane"] is None
     assert payload["grid_mm"] == config.GRID_STEP_MM
+    # Auch ohne Marker steht das Feld da. Ein Verbraucher, der es nur manchmal
+    # bekaeme, muesste an zwei Stellen unterscheiden statt an einer.
+    assert payload["warnings"] == []
+
+
+def test_measure_meldet_eine_gute_lage_ohne_warnung(client, scene):
+    """Die saubere Szene darf den Sucher nicht blind machen.
+
+    Die Gegenprobe zum Test darunter: waere `warnings` immer gefuellt, wuerde
+    der Sucher nie ein Raster zeichnen und der Fehler faelle nicht auf.
+    """
+    ok, encoded = cv2.imencode(".jpg", scene.image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    assert ok
+    response = client.post(
+        f"/api/measure?marker_mm={scene.marker_mm}&mode=sheet",
+        content=encoded.tobytes(),
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["plane"] is not None
+    assert payload["warnings"] == []
+
+
+def test_measure_warnt_wenn_die_marker_nicht_dort_liegen_wo_der_modus_meint(client, scene):
+    """Eine geloeste Lage ist nicht dasselbe wie eine brauchbare.
+
+    Auf dem Telefon gemeldet (08.09.2026): zwei lose auf dem Tisch liegende
+    Marker, dazu die Betriebsart "Blatt" - die vermutet sie an festen Plaetzen
+    eines A4-Bogens. Die Homographie kommt trotzdem zustande, aber sie passt
+    nicht einmal auf die Punkte, aus denen sie gerechnet wurde: 64,47 px
+    Restfehler bei einer Schwelle von 2. Der Sucher zeigte sie als Messwert und
+    legte ihr Raster ueber das Bild.
+
+    Hier wird derselbe Widerspruch erzeugt, ohne ein zweites Bild zu brauchen:
+    dieselbe Szene, aber ein Blattabstand, den sie nicht hat. Was zaehlt, ist
+    NICHT die Zahl - sondern dass die Warnung in der Antwort steht, denn nur
+    daran kann der Sucher sie erkennen.
+    """
+    ok, encoded = cv2.imencode(".jpg", scene.image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    assert ok
+    response = client.post(
+        f"/api/measure?marker_mm={scene.marker_mm}&mode=sheet"
+        f"&spacing_x_mm={config.SHEET_SPACING_MM[0] * 0.5}"
+        f"&spacing_y_mm={config.SHEET_SPACING_MM[1] * 2.0}",
+        content=encoded.tobytes(),
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    # Geloest ist sie - das ist ja der Punkt.
+    assert payload["plane"] is not None
+    codes = {notice["code"] for notice in payload["warnings"]}
+    assert "high_residual" in codes, payload["warnings"]
+    # Die Form ist die von /api/solve, samt fertigem Satz. Ein Verbraucher ohne
+    # Katalog soll die Antwort lesen koennen.
+    treffer = next(n for n in payload["warnings"] if n["code"] == "high_residual")
+    assert treffer["severity"] == "warn"
+    assert treffer["message"]
+    assert payload["plane"]["rms_px"] > config.RMS_WARN_PX
 
 
 def test_export_liefert_pdf_mit_exakter_seitengroesse(client, solved):
