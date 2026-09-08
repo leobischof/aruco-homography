@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Die beiden Werte stehen auch in shared/constants.json (BRAND_PRIMARY,
+  BRAND_LIGHT). Android liest kein JSON beim Bauen von Ressourcen, also stehen
+  sie hier ein zweites Mal - die einzige Stelle im Vorhaben, an der das noetig
+  ist. Wer die Marke aendert, aendert BEIDE; ein Test kann das nicht abfangen,
+  weil aapt2 die Farben lange vor jedem Python-Lauf einbackt.
+-->
+<resources>
+    <color name="brand_primary">#379992</color>
+    <color name="brand_light">#f1f5f9</color>
+</resources>

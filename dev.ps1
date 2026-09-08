@@ -269,6 +269,11 @@ function Find-OpenCVDir {
 }
 
 function Invoke-BuildCore {
+    # Zusaetzliche CMake-Schalter fuer Aufrufer, die mehr wollen als den
+    # Vorgabebau - heute nur check-jni (-DARUCO_BUILD_JNI=ON). Vorgabe leer,
+    # damit sich fuer jeden bisherigen Aufrufer nichts aendert.
+    param([string[]]$ExtraOptions = @())
+
     Confirm-Deps
 
     $install = Find-VcInstall
@@ -298,8 +303,9 @@ function Invoke-BuildCore {
     Set-Content -Path $script -Encoding OEM -Value @(
         '@echo off',
         ('call "{0}" >nul || exit /b 1' -f $vcvars),
-        ('"{0}" -S "{1}" -B "{2}" -G Ninja -DCMAKE_MAKE_PROGRAM="{3}" -DCMAKE_BUILD_TYPE=Release -DOpenCV_DIR="{4}" -Dpybind11_DIR="{5}" -DPython_EXECUTABLE="{6}" || exit /b 1' -f
-            $cmake, $CoreDir, $CoreBuildDir, $ninja, $opencv, $pybind, $VenvPython),
+        ('"{0}" -S "{1}" -B "{2}" -G Ninja -DCMAKE_MAKE_PROGRAM="{3}" -DCMAKE_BUILD_TYPE=Release -DOpenCV_DIR="{4}" -Dpybind11_DIR="{5}" -DPython_EXECUTABLE="{6}" {7} || exit /b 1' -f
+            $cmake, $CoreDir, $CoreBuildDir, $ninja, $opencv, $pybind, $VenvPython,
+            ($ExtraOptions -join ' ')),
         ('"{0}" --build "{1}" || exit /b 1' -f $cmake, $CoreBuildDir)
     )
     try {
@@ -441,11 +447,20 @@ function Invoke-BuildCoreWasm {
 }
 
 function Invoke-BuildCoreAndroid {
+    # -Abi ist der Weg fuer Aufrufer im Skript (build-android-libs baut mehrere
+    # nacheinander); von der Kommandozeile kommt das ABI weiterhin aus $Rest.
+    # param() MUSS die erste Anweisung sein - Kommentare davor sind erlaubt,
+    # Confirm-Deps waere es nicht.
+    param([string]$Abi = '')
+
     Confirm-Deps
 
     # Vorgabe arm64-v8a: das ist die ABI jedes Handys, das noch verkauft wird.
     # Die anderen drei baut man mit  ./dev.ps1 build-core-android x86_64
-    $abi = if ($Rest.Count -gt 0) { $Rest[0] } else { 'arm64-v8a' }
+    if (-not $Abi) {
+        $Abi = if ($Rest.Count -gt 0) { $Rest[0] } else { 'arm64-v8a' }
+    }
+    $abi = $Abi
 
     $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
                           -Marker 'ndk' -What 'Das Android-SDK'
@@ -654,6 +669,327 @@ function Write-Cmd { param([string]$Name, [string]$Subtitle)
     Write-Host ("  {0}" -f $Name) -ForegroundColor White
     Write-Host ("      {0}" -f $Subtitle) -ForegroundColor DarkGray
 }
+# =============================================================================
+#  Android - die Huelle, die .so und die Belege dafuer
+#  (docs/cpp-migration/stage-4-android.md)
+# =============================================================================
+
+$AndroidDir    = Join-Path $RepoRoot 'android'
+$AndroidOutDir = Join-Path $AndroidDir 'out'
+$JniLibsDir    = Join-Path $AndroidDir 'app\src\main\jniLibs'
+
+# Alle vier ABIs, die das OpenCV-Android-SDK traegt. Gebaut wird per Vorgabe nur
+# das erste: jedes weitere kostet rund 6 MB im APK, und arm64 ist auf praktisch
+# jedem verkauften Telefon das laufende ABI.
+$AndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
+
+# Das ABI-Argument der Kommandozeile: "arm64-v8a,x86_64" oder nichts.
+function Get-AbiArgument {
+    if ($Rest.Count -gt 0) { return $Rest[0].Split(',') | ForEach-Object { $_.Trim() } }
+    return @('arm64-v8a')
+}
+
+function Find-Jdk {
+    # $env:JAVA_HOME zuerst, dann das JDK neben den anderen Werkzeugketten. Die
+    # Fassungsnummer steht NICHT im Code: hier staende sonst in einem halben Jahr
+    # eine Zahl, die es auf keinem Rechner mehr gibt.
+    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) {
+        return (Resolve-Path $env:JAVA_HOME).Path
+    }
+    $toolchain = Join-Path (Split-Path $RepoRoot -Parent) '_toolchain'
+    $jdk = Get-ChildItem $toolchain -Directory -Filter 'jdk*' -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'bin\javac.exe') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $jdk) {
+        throw "Kein JDK gefunden (weder `$env:JAVA_HOME noch $toolchain\jdk*)."
+    }
+    return $jdk.FullName
+}
+
+function Find-NdkBinDir {
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'ndk' -What 'Das Android-SDK'
+    $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
+        Sort-Object Name -Descending | Select-Object -First 1
+    $bin = Join-Path $ndk.FullName 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+    if (-not (Test-Path $bin)) { throw "NDK-Werkzeuge nicht gefunden: $bin" }
+    return $bin
+}
+
+function Find-BuildToolsDir {
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'build-tools' -What 'Das Android-SDK'
+    $tools = Get-ChildItem (Join-Path $sdk 'build-tools') -Directory |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $tools) { throw "Keine build-tools unter $sdk\build-tools gefunden." }
+    return $tools.FullName
+}
+
+# Die JNI-Schicht auf einer ECHTEN JVM ausfuehren - auf dem Bau-Rechner.
+#
+# Das ist der einzige Weg, den Marshalling-Code zwischen Java und C++ hier
+# wirklich laufen zu lassen: ein Android-Geraet gibt es nicht, einen Emulator
+# auch nicht. jni.h kommt aber aus dem JDK, also baut dieselbe jni.cpp gegen
+# dieselbe capi.cpp auch als Windows-DLL, und ein Java-Prozess ruft sie auf.
+# Was danach ungeprueft bleibt, ist Androids Linker - nicht mehr diese Schicht.
+function Invoke-CheckJni {
+    $jdk = Find-Jdk
+    Write-Step 'Building the core with the JNI binding (Windows DLL)'
+    Write-Host ("     JDK: {0}" -f $jdk) -ForegroundColor DarkGray
+    Invoke-BuildCore -ExtraOptions @('-DARUCO_BUILD_JNI=ON', ('-DARUCO_JAVA_HOME="{0}"' -f $jdk))
+
+    $classes = Join-Path ([IO.Path]::GetTempPath()) 'aruco-jnicheck-classes'
+    if (Test-Path $classes) { Remove-Item $classes -Recurse -Force }
+    New-Item -ItemType Directory -Path $classes -Force | Out-Null
+
+    Write-Step 'Compiling JniCheck against the app''s own NativeCore'
+    # NativeCore.java kommt aus dem Android-Baum und wird NICHT kopiert: die
+    # Klasse, die hier geprueft wird, muss dieselbe sein, die im APK steckt.
+    $nativeCore = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards\aruco\NativeCore.java'
+    $check      = Join-Path $CoreDir 'tools\JniCheck.java'
+    Invoke-Native -What 'javac' -Action {
+        & (Join-Path $jdk 'bin\javac.exe') -d $classes -encoding UTF-8 $nativeCore $check
+    }
+
+    Write-Step 'Running the JNI layer on a real JVM'
+    # core/build MUSS in den PATH: Windows sucht die Abhaengigkeiten einer DLL
+    # neben der ANWENDUNG (java.exe), nicht neben der ladenden DLL. Ohne das
+    # meldet die JVM "Can't find dependent libraries" und meint opencv_world500.
+    $previousPath = $env:PATH
+    $bitsFile = Join-Path ([IO.Path]::GetTempPath()) 'aruco-marker-bits.txt'
+    try {
+        $env:PATH = "$CoreBuildDir;$env:PATH"
+        # Die Ausgabe wird gebraucht (die bits-Zeilen), also NICHT durch
+        # Invoke-Native: dessen Scriptblock laeuft in einem eigenen Bereich, und
+        # ein dort gesetztes -Variable kommt hier nicht an. Der Rueckgabewert
+        # wird stattdessen von Hand geprueft - dasselbe, was Invoke-Native tut.
+        $jniOutput = & (Join-Path $jdk 'bin\java.exe') "-Djava.library.path=$CoreBuildDir" `
+            -cp $classes JniCheck (Join-Path $CoreBuildDir 'fixtures\fixtures.txt') --bits @Rest
+        $exitCode = $LASTEXITCODE
+        $jniOutput | ForEach-Object { Write-Host $_ }
+        if ($exitCode -ne 0) { throw "JniCheck failed (exit $exitCode)." }
+        $jniOutput | Select-String '^bits ' | ForEach-Object { $_.ToString() } |
+            Set-Content $bitsFile -Encoding ascii
+    } finally {
+        $env:PATH = $previousPath
+    }
+    Write-Ok 'Die JNI-Schicht liefert die Ecken der Grundwahrheit.'
+
+    # Und das Muster der Modulbits gegen cv2. Der schwarze Rand, den JniCheck
+    # prueft, ist symmetrisch - eine Transposition kaeme dort glatt durch und
+    # ergaebe ein Markerblatt, das kein Detektor je findet.
+    Write-Step 'Comparing the marker bits against cv2'
+    Invoke-Native -What 'compare_marker_bits' -Action {
+        & $VenvPython (Join-Path $CoreDir 'tools\compare_marker_bits.py') $bitsFile
+    }
+}
+
+# Die .so je ABI bauen und dorthin legen, wo Gradle sie erwartet.
+#
+# Gradle baut sie NICHT selbst (kein externalNativeBuild): der Kern hat seine
+# eigene Werkzeugkettensuche in build-core-android, und zwei Wege zu einer
+# Bibliothek sind einer zu viel. Ausserdem waere der CMake-Bau unter Gradles
+# tiefen Zwischenpfaden der naechste MAX_PATH-Fall.
+function Invoke-BuildAndroidLibs {
+    param([string[]]$Abis = @('arm64-v8a'))
+
+    foreach ($abi in $Abis) {
+        if ($AndroidAbis -notcontains $abi) {
+            throw "Unbekanntes ABI '$abi'. Bekannt: $($AndroidAbis -join ', ')"
+        }
+        Invoke-BuildCoreAndroid -Abi $abi
+
+        $source = Join-Path $CoreDir "build-android-$abi\libaruco_core.so"
+        if (-not (Test-Path $source)) { throw "Der Bau lief, aber $source fehlt." }
+        $target = Join-Path $JniLibsDir $abi
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Copy-Item $source (Join-Path $target 'libaruco_core.so') -Force
+        Write-Ok ("{0}: {1:N2} MB" -f $abi, ((Get-Item $source).Length / 1MB))
+    }
+}
+
+# Was an der .so nachgemessen wird, statt es zu glauben.
+function Invoke-CheckAndroidSo {
+    param([string[]]$Abis = @('arm64-v8a'))
+
+    $bin = Find-NdkBinDir
+    foreach ($abi in $Abis) {
+        $so = Join-Path $JniLibsDir "$abi\libaruco_core.so"
+        if (-not (Test-Path $so)) { throw "Nicht gebaut: $so  (./dev.ps1 build-android-libs)" }
+
+        Write-Step "Inspecting $abi"
+        Write-Host ("     Groesse:  {0:N2} MB" -f ((Get-Item $so).Length / 1MB)) -ForegroundColor DarkGray
+
+        # Die Ausrichtung der LOAD-Segmente. 0x4000 = 16 KiB. Auf einem Geraet mit
+        # 16-KB-Seiten laedt eine nur auf 0x1000 ausgerichtete .so GAR NICHT.
+        $loads = & (Join-Path $bin 'llvm-readelf.exe') -l $so | Select-String '^\s+LOAD'
+        $misaligned = @($loads | Where-Object { $_ -notmatch '0x4000\s*$' })
+        foreach ($load in $loads) { Write-Host ("     {0}" -f $load.ToString().Trim()) -ForegroundColor DarkGray }
+        if ($misaligned.Count -gt 0) {
+            throw "$abi : nicht auf 16 KiB ausgerichtet - auf neuen Geraeten laedt das nicht."
+        }
+        Write-Ok "$abi : alle LOAD-Segmente auf 16 KiB ausgerichtet"
+
+        # Und die Einsprungpunkte. Fehlt einer, faellt das sonst erst auf dem
+        # Geraet auf - als UnsatisfiedLinkError mitten im Betrieb.
+        $exported = & (Join-Path $bin 'llvm-nm.exe') -D --defined-only $so |
+            Select-String 'Java_com_bischofsnowboards_aruco_NativeCore_'
+        Write-Host ("     Exportiert: {0} JNI-Symbole" -f $exported.Count) -ForegroundColor DarkGray
+        if ($exported.Count -lt 6) {
+            throw "$abi : nur $($exported.Count) JNI-Symbole exportiert, erwartet werden 6."
+        }
+        Write-Ok "$abi : alle sechs JNI-Einsprungpunkte exportiert"
+    }
+}
+
+function Invoke-Gradle {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+
+    $jdk = Find-Jdk
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'platforms' -What 'Das Android-SDK'
+    $wrapper = Join-Path $AndroidDir 'gradlew.bat'
+    if (-not (Test-Path $wrapper)) { throw "Der Gradle-Wrapper fehlt: $wrapper" }
+
+    # Die Fassung kommt aus app/config.py und wird nicht abgetippt (Invariante 4).
+    $version = Get-ConfigValue 'APP_VERSION'
+
+    $previous = @{ JAVA_HOME = $env:JAVA_HOME; ANDROID_SDK_ROOT = $env:ANDROID_SDK_ROOT
+                   ANDROID_HOME = $env:ANDROID_HOME }
+    try {
+        $env:JAVA_HOME = $jdk
+        $env:ANDROID_SDK_ROOT = $sdk
+        $env:ANDROID_HOME = $sdk
+        Push-Location $AndroidDir
+        Invoke-Native -What 'gradle' -Action {
+            & $wrapper --no-daemon ("-Paruco.versionName={0}" -f $version) @Arguments
+        }
+    } finally {
+        Pop-Location
+        $env:JAVA_HOME = $previous.JAVA_HOME
+        $env:ANDROID_SDK_ROOT = $previous.ANDROID_SDK_ROOT
+        $env:ANDROID_HOME = $previous.ANDROID_HOME
+    }
+}
+
+# Das APK bauen: .so je ABI, dann Gradle, dann nachmessen.
+#
+#   ./dev.ps1 build-apk                            # arm64-v8a, debug
+#   ./dev.ps1 build-apk arm64-v8a,armeabi-v7a      # zwei ABIs
+function Invoke-BuildApk {
+    Confirm-NodeModules   # web/pdf/ braucht pdf-lib, und das APK traegt es mit
+
+    $abis = Get-AbiArgument
+    Invoke-BuildAndroidLibs -Abis $abis
+    Invoke-CheckAndroidSo   -Abis $abis
+
+    Write-Step ("Building the APK ({0})" -f ($abis -join ', '))
+    Invoke-Gradle -Arguments @(('-Paruco.abis={0}' -f ($abis -join ',')), 'assembleDebug')
+
+    # Gradle baut neben dem Repo (MAX_PATH, siehe android/gradle.properties) -
+    # also das Erzeugnis zurueckholen, damit es dort liegt, wo man es sucht.
+    $buildRoot = (Get-Content (Join-Path $AndroidDir 'gradle.properties') |
+        Select-String '^aruco\.buildRoot=(.+)$').Matches.Groups[1].Value
+    $apk = Join-Path $buildRoot 'app\outputs\apk\debug\app-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Gradle lief durch, aber $apk fehlt." }
+
+    New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
+    $target = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    Copy-Item $apk $target -Force
+    Write-Ok ("Fertig: {0}  ({1:N2} MB)" -f $target, ((Get-Item $target).Length / 1MB))
+
+    Invoke-CheckApk
+}
+
+# Was am fertigen APK nachgemessen wird. Alles hier ist eine Messung am
+# Erzeugnis - keine Zeile davon glaubt dem Bau.
+function Invoke-CheckApk {
+    $apk = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Kein APK: $apk  (./dev.ps1 build-apk)" }
+
+    $tools = Find-BuildToolsDir
+    Write-Step 'Inspecting the APK'
+    Write-Host ("     {0}  {1:N2} MB" -f $apk, ((Get-Item $apk).Length / 1MB)) -ForegroundColor DarkGray
+
+    & (Join-Path $tools 'aapt.exe') dump badging $apk |
+        Select-String 'package:|sdkVersion|targetSdkVersion|native-code|uses-permission|application-label:' |
+        ForEach-Object { Write-Host ("     {0}" -f $_.ToString().Trim()) -ForegroundColor DarkGray }
+
+    # Ist die Oberflaeche ueberhaupt drin?
+    #
+    # Diese Pruefung gibt es, weil genau das einmal fehlschlug: der Assets-Schritt
+    # war falsch verdrahtet (android/app/build.gradle.kts), Gradle meldete Erfolg,
+    # und im APK lag von app/static/ nichts. Ein leeres APK ist von einem vollen
+    # nur an seiner Groesse zu unterscheiden - und die haette hier niemand
+    # nachgesehen. Erwartet werden Dateien, die aus vier verschiedenen Quellen
+    # stammen: Oberflaeche, PDF-Bau, sprachneutrale Konstanten, Pruefszenen.
+    Write-Step 'Checking the APK really carries the interface'
+    $expected = @(
+        'assets/www/index.html',                 # app/static/
+        'assets/www/js/main.js',
+        'assets/www/i18n/de.json',
+        'assets/www/native/index.html',          # die eigene Seite der Huelle
+        'assets/www/native/bridge-shim.js',
+        'assets/www/web/pdf/markersheet.js',     # web/pdf/
+        'assets/www/app/static/i18n/de.json',    # der Pfad, den web/pdf/i18n.js importiert
+        'assets/www/shared/constants.json',      # shared/
+        'assets/www/vendor/pdf-lib.esm.min.js',
+        'assets/fixtures/expected/flat.json',    # shared/fixtures/
+        'assets/fixtures/scenes/flat.png',
+        'lib/arm64-v8a/libaruco_core.so'
+    )
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::OpenRead($apk)
+    try {
+        $inside = $zip.Entries | ForEach-Object { $_.FullName }
+        $missing = @($expected | Where-Object { $inside -notcontains $_ })
+        if ($missing.Count -gt 0) {
+            throw ("Im APK fehlen: {0}" -f ($missing -join ', '))
+        }
+        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden" -f
+            $zip.Entries.Count, $expected.Count) -ForegroundColor DarkGray
+    } finally {
+        $zip.Dispose()
+    }
+    Write-Ok 'Die Oberflaeche, web/pdf/, shared/ und die Pruefszenen sind im APK'
+
+    # 16-KB-Ausrichtung der .so IM APK. Das ist eine andere Zusage als die im
+    # ELF: hier geht es darum, ob die Datei unkomprimiert und an einer
+    # 16-KiB-Grenze im Zip liegt, damit der Linker sie direkt abbilden kann.
+    Write-Step 'Checking 16 KB alignment inside the APK'
+    Invoke-Native -What 'zipalign -c -P 16' -Action {
+        & (Join-Path $tools 'zipalign.exe') -c -P 16 -v 4 $apk | Out-Null
+    }
+    Write-Ok 'zipalign: 16-KiB-ausgerichtet (-P 16)'
+
+    # Und dass es ueberhaupt unterschrieben ist - ohne Signatur installiert
+    # Android gar nichts, und der Debug-Schluessel ist eine echte Signatur.
+    #
+    # apksigner ist ein Java-Programm in einer .bat-Huelle: ohne JAVA_HOME
+    # bricht es mit Ruecklaufwert 1 ab und sagt kein Wort ueber den Grund. Das
+    # sieht dann nach einer ungueltigen Signatur aus und ist eine fehlende
+    # Werkzeugkette. (aapt und zipalign sind native Programme und brauchen es
+    # nicht - deshalb faellt es genau hier auf und nirgends sonst.)
+    $previousJavaHome = $env:JAVA_HOME
+    try {
+        $env:JAVA_HOME = Find-Jdk
+        $signature = & (Join-Path $tools 'apksigner.bat') verify --print-certs $apk
+        if ($LASTEXITCODE -ne 0) { throw "apksigner verify failed (exit $LASTEXITCODE)." }
+    } finally {
+        $env:JAVA_HOME = $previousJavaHome
+    }
+    $signature | Select-String 'Verified using|certificate DN' |
+        ForEach-Object { Write-Host ("     {0}" -f $_.ToString().Trim()) -ForegroundColor DarkGray }
+    Write-Ok 'apksigner: Signatur gueltig'
+
+    Write-Host ''
+    Write-Host '  Auf ein Telefon bringen (USB-Debugging einschalten):' -ForegroundColor White
+    Write-Host ("    adb install -r ""{0}""" -f $apk) -ForegroundColor DarkGray
+    Write-Host '    adb shell am start -n com.bischofsnowboards.aruco/.MainActivity' -ForegroundColor DarkGray
+    Write-Host '    adb logcat -s ArUco' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
 function Show-Help {
     Write-Host ''
     Write-Host 'dev.ps1 - ArUco-Homographie command dispatcher' -ForegroundColor White
@@ -669,6 +1005,11 @@ function Show-Help {
     Write-Cmd 'run-tests-cpp'     'C++-Pruefstand und DIESELBE Testsuite gegen den C++-Kern (ARUCO_CORE=cpp)'
     Write-Cmd 'build-core-wasm'   'Denselben Kern fuer den Browser bauen (Emscripten) und unter Node messen'
     Write-Cmd 'build-core-android' 'Denselben Kern fuer Android bauen (NDK; Vorgabe arm64-v8a) - baut nur, misst nicht'
+    Write-Cmd 'check-jni'         'Die JNI-Schicht auf einer echten JVM ausfuehren (Windows-DLL desselben Quelltextes)'
+    Write-Cmd 'build-android-libs' 'libaruco_core.so je ABI bauen und nach android/app/src/main/jniLibs/ legen'
+    Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und die sechs JNI-Symbole'
+    Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
+    Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (baut den C++-Kern mit; ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
@@ -689,6 +1030,11 @@ switch ($Command.ToLowerInvariant()) {
     'run-tests-cpp'     { Invoke-RunTestsCpp }
     'build-core-wasm'   { Invoke-BuildCoreWasm }
     'build-core-android' { Invoke-BuildCoreAndroid }
+    'check-jni'         { Invoke-CheckJni }
+    'build-android-libs' { Invoke-BuildAndroidLibs -Abis (Get-AbiArgument) }
+    'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
+    'build-apk'         { Invoke-BuildApk }
+    'check-apk'         { Invoke-CheckApk }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
     'build-installer'   { Invoke-BuildInstaller }

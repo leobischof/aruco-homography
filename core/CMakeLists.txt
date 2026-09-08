@@ -254,3 +254,108 @@ if(WIN32)
       COMMAND_EXPAND_LISTS)
   endforeach()
 endif()
+
+# --- Die C-Schnittstelle und die JNI-Bindung ----------------------------------
+#
+# ABSICHTLICH EIN GESCHLOSSENER BLOCK AM ENDE. Nichts weiter oben wurde
+# angefasst: an dieser Datei arbeiten mehrere Zweige gleichzeitig, und ein
+# verflochtener Umbau der Zielbeschreibungen ist beim Zusammenfuehren nicht mehr
+# sicher aufzuloesen. Ein Anhang ist es. Deshalb kommen die beiden neuen Quellen
+# ueber target_sources dazu und stehen nicht oben in der Quellenliste - CMake ist
+# das gleichgueltig, dem naechsten Zusammenfuehren nicht.
+#
+# src/capi.cpp ist NICHT android-spezifisch: es ist die stabile C-Grenze, an der
+# jede fremde Sprache andockt, und der Pruefstand misst mit `--capi` durch sie
+# hindurch. Sie gehoert deshalb auf jedem Ziel in die Bibliothek.
+target_sources(aruco_core_lib PRIVATE src/dictionary.cpp src/capi.cpp)
+
+if(ANDROID)
+  # Jede Funktion in ihren eigenen Abschnitt, damit --gc-sections beim Binden der
+  # .so wegwerfen kann, was niemand aufruft. Nur fuer Android: MSVC baut ohnehin
+  # mit /Gy, und Emscripten bringt seine eigene Abschnittsverwaltung mit. Ein
+  # Schalter, der ueberall steht und nur an einer Stelle etwas tut, waere Zierde.
+  target_compile_options(aruco_core_lib PRIVATE -ffunction-sections -fdata-sections)
+endif()
+
+# Die JNI-Bibliothek ist auf Android das Erzeugnis - dort also vorgabegemaess an.
+# Auf dem Bau-Rechner ist sie AUCH baubar, und das ist kein Zufall: jni.h kommt
+# aus dem JDK, nicht aus dem NDK. Damit laesst sich der Marshalling-Code auf einer
+# echten JVM ausfuehren, obwohl kein Android-Geraet in Reichweite ist
+# (core/tools/JniCheck.java, ./dev.ps1 check-jni). Ein Kreuzbau, den niemand
+# ausfuehrt, belegt nur, dass er uebersetzt - und das ist die Frage nicht.
+if(ANDROID)
+  set(ARUCO_JNI_DEFAULT ON)
+else()
+  set(ARUCO_JNI_DEFAULT OFF)
+endif()
+option(ARUCO_BUILD_JNI "Die JNI-Bibliothek libaruco_core.so bauen" ${ARUCO_JNI_DEFAULT})
+
+if(ARUCO_BUILD_JNI)
+  # Der CMake-Zielname ist `aruco_jni`, die DATEI heisst `aruco_core`: zwei Ziele
+  # duerfen nicht denselben CMake-Namen tragen (das Python-Modul heisst schon
+  # aruco_core), aber `System.loadLibrary("aruco_core")` soll auf dem Geraet
+  # genau das finden, was der Bericht nennt.
+  #
+  # OpenCV wird statisch hineingebunden - daneben muss nichts liegen. Eine App,
+  # die zwei Bibliotheken in der richtigen Reihenfolge laden muss, hat eine
+  # Fehlerquelle mehr als eine, die eine laedt.
+  add_library(aruco_jni SHARED bindings/jni.cpp)
+  set_target_properties(aruco_jni PROPERTIES OUTPUT_NAME aruco_core)
+  target_link_libraries(aruco_jni PRIVATE aruco_core_lib)
+
+  if(NOT ANDROID)
+    # Auf dem Bau-Rechner liefert das NDK kein jni.h - es kommt aus dem JDK.
+    # Gesucht wird NICHT: ein gefundenes, aber falsches JDK baute eine
+    # Bibliothek, die genau die JVM nicht laedt, gegen die geprueft werden soll.
+    if(NOT ARUCO_JAVA_HOME)
+      message(FATAL_ERROR
+        "ARUCO_BUILD_JNI ohne Android braucht ein JDK: -DARUCO_JAVA_HOME=<jdk>")
+    endif()
+    if(WIN32)
+      set(ARUCO_JNI_PLATFORM_DIR win32)
+    elseif(APPLE)
+      set(ARUCO_JNI_PLATFORM_DIR darwin)
+    else()
+      set(ARUCO_JNI_PLATFORM_DIR linux)
+    endif()
+    target_include_directories(aruco_jni PRIVATE
+      "${ARUCO_JAVA_HOME}/include" "${ARUCO_JAVA_HOME}/include/${ARUCO_JNI_PLATFORM_DIR}")
+  endif()
+
+  if(WIN32)
+    # opencv_world500.dll daneben legen. Windows sucht Abhaengigkeiten NICHT im
+    # Verzeichnis der ladenden DLL, sondern neben der Anwendung - beim Pruefen
+    # ist das java.exe. Ohne die Kopie meldet die JVM "Can't find dependent
+    # libraries", was nach einer fehlenden JNI-Bibliothek aussieht und keine ist.
+    # (Auf Android und WASM wird statisch gebunden; dort gibt es nichts zu legen.)
+    add_custom_command(TARGET aruco_jni POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+              "$<TARGET_RUNTIME_DLLS:aruco_jni>" "$<TARGET_FILE_DIR:aruco_jni>"
+      COMMAND_EXPAND_LISTS)
+  endif()
+
+  if(ANDROID)
+    # 16-KB-Seiten. Neue Android-Geraete legen Bibliotheken mit 16-KiB-Seiten ab;
+    # eine nur auf 4 KiB ausgerichtete .so laedt dort GAR NICHT - die App startet
+    # und stirbt sofort, ohne dass ein Codefehler vorlaege. Das NDK r27 setzt das
+    # per Vorgabe, aber "per Vorgabe" ist die Sorte Zusage, die eine
+    # Werkzeugkette spaeter still zuruecknimmt. Nachgemessen mit llvm-readelf
+    # (./dev.ps1 check-android-so).
+    target_link_options(aruco_jni PRIVATE "-Wl,-z,max-page-size=16384")
+
+    # Nur die sechs JNI-Einsprungpunkte gehoeren nach aussen. Ohne
+    # --exclude-libs traegt die .so die Symboltabelle des statisch gebundenen
+    # OpenCV mit sich - gemessen 4383 dynamische Symbole -, und weil jedes davon
+    # als von aussen erreichbar gilt, darf der Linker auch nichts davon
+    # wegwerfen. Mit beiden Schaltern zusammen: 12,8 MB -> 6,2 MB, 4383 -> 6
+    # Symbole (docs/cpp-migration/stage-4-android.md).
+    target_link_options(aruco_jni PRIVATE "-Wl,--exclude-libs,ALL" "-Wl,--gc-sections")
+    target_compile_options(aruco_jni PRIVATE
+      -fvisibility=hidden -ffunction-sections -fdata-sections)
+
+    # Gestrippt, aber nur im Release-Bau: die Debug-Angaben eines statisch
+    # gebundenen OpenCV nuetzen in einer Auslieferung niemandem, und ein
+    # Debug-Bau soll seine Symbole behalten.
+    target_link_options(aruco_jni PRIVATE "$<$<CONFIG:Release>:-Wl,-s>")
+  endif()
+endif()

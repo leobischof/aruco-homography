@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KEINE Berechtigung fuer das Netz. Das ist die Zusage dieses Vorhabens und keine
+  Sparsamkeit: die Messung laeuft im Geraet, das PDF entsteht im Geraet, und ein
+  Foto einer Werkstatt hat auf keinem fremden Rechner etwas zu suchen. Ohne
+  android.permission.INTERNET kann die App gar nicht senden - das ist eine
+  Zusicherung des Systems und nicht eine des Programmierers.
+
+  KEINE Berechtigung fuer die Kamera. ACTION_IMAGE_CAPTURE laesst die Kamera-App
+  des Systems das Foto machen; erst eine deklarierte CAMERA-Berechtigung wuerde
+  sie auch verlangen. Und keine fuer den Speicher: gelesen wird ueber
+  ACTION_OPEN_DOCUMENT, geschrieben ueber ACTION_CREATE_DOCUMENT - beide geben
+  dem Nutzer die Wahl und der App nur die eine Datei.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Ab Android 11 sieht eine App fremde Anwendungen nur, wenn sie danach fragt.
+      Ohne diesen Block liefert queryIntentActivities fuer die Kamera eine leere
+      Liste, und der Knopf "Foto aufnehmen" waere ohne Grund abgeblendet.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Aruco">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|smallestScreenSize|density"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Fuer zwei Wege nach draussen: das Foto, das die Kamera-App in unseren
+          Cache schreibt, und das PDF, das per "Teilen" weitergereicht wird. Ohne
+          einen FileProvider muesste dafuer eine file://-URI herausgegeben werden,
+          und die verbietet Android seit Nougat mit einer FileUriExposedException.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

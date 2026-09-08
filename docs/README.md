@@ -30,6 +30,7 @@ Lesen wissen, welche Datei er aufmachen muss — und keine zweite Suchrunde brau
 | [`cpp-migration/stage-0-opencv-js.md`](cpp-migration/stage-0-opencv-js.md) | Stufe 0: der Vorabversuch, der über den ganzen Umzug entschieden hat — läuft die Markererkennung im Browser? | developer | current |
 | [`cpp-migration/stage-4-cross-targets.md`](cpp-migration/stage-4-cross-targets.md) | Stufe 4: derselbe `core/` für Windows, WASM und Android — was gemessen ist und was nur gebaut | developer | current |
 | [`cpp-migration/stage-4-windows-exe.md`](cpp-migration/stage-4-windows-exe.md) | Stufe 4: wie die ausgelieferte `.exe` an den C++-Kern kommt, womit das belegt ist, was es kostet | developer | current |
+| [`cpp-migration/stage-4-android.md`](cpp-migration/stage-4-android.md) | Stufe 4: was die Android-App heute wirklich kann, was nur gebaut ist, und wie man sie auf ein Telefon bringt | developer | current |
 | [`cpp-migration/AFK-PROTOKOLL.md`](cpp-migration/AFK-PROTOKOLL.md) | Protokoll der unbeaufsichtigten Arbeit am Umzug: Entscheidungen, Irrtümer und Prüflücken | developer | current |
 | [`superpowers/plans/2026-09-07-shared-truth-extraction.md`](superpowers/plans/2026-09-07-shared-truth-extraction.md) | Stufe 1: der Plan, mit dem Konstanten und Prüfszenen aus Python herausgelöst wurden | developer | current |
 | [`superpowers/plans/2026-09-08-cpp-core.md`](superpowers/plans/2026-09-08-cpp-core.md) | Stufe 2: der Plan für `core/` und die pybind11-Bindung, samt Nachweis gleicher Messung | developer | current |

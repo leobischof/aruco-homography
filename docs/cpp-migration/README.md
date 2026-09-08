@@ -235,6 +235,16 @@ aber ungemessen:** auf dem Entwicklungsrechner gibt es weder Gerät noch Emulato
 Vorgezogen wurde das, weil es die Frage ist, für die der ganze Umzug betrieben wird.
 Wäre sie erst hier gestellt worden, stünden die Stufen 2 und 3 auf einer Annahme.
 
+**Die Android-Hülle steht ebenfalls: [`stage-4-android.md`](stage-4-android.md).** Eine
+WebView liefert `app/static/` **unverändert** aus, eine JNI-Schicht bindet denselben
+`core/`, und `libaruco_core.so` ist für alle vier ABIs 16-KB-ausgerichtet. Die
+JNI-Schicht ist auf einer echten JVM **gemessen** — Windows-DLL desselben Quelltextes,
+64 von 64 Ecken identisch zum C++-Weg. **Auf einem Telefon ist weiterhin nichts
+gelaufen**, und die App misst noch keine Schablone: der Kern kann bis heute nur
+`detect_markers`. Fertig ist das **Markerblatt**; neu ist, dass ein Telefon den
+Prüfstand aus `shared/fixtures/` selbst fahren kann — damit lässt sich der Satz
+„Android ist ungemessen" in dreißig Sekunden streichen.
+
 ### Stufe 5 · Aufräumen — Tage
 
 `app/` → `py/`. **Zuletzt**, nicht zuerst: der Umzug bricht `dev.ps1`, die

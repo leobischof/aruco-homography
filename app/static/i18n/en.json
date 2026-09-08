@@ -156,6 +156,42 @@
       "empty": "–",
       "error_field": "(field: {field})",
       "error_unknown": "Unknown error."
+    },
+    "android": {
+      "title": "On this device",
+      "subtitle": "What the native core can do here — and what it cannot yet.",
+      "native_heading": "The core",
+      "native_page_size": "Page size",
+      "native_marker_mm": "Marker edge (nominal)",
+      "native_dictionary": "Dictionary",
+      "native_device": "Device",
+      "native_app": "App version",
+      "conformance_heading": "Conformance",
+      "conformance_explain": "The frozen scenes from shared/fixtures/ through the native core, measured against the ground truth — the same check that runs on Windows and in the browser.",
+      "conformance_run": "Run the conformance check",
+      "conformance_running": "measuring …",
+      "conformance_passed": "PASSED",
+      "conformance_failed": "FAILED",
+      "conformance_worst": "largest corner error",
+      "conformance_tolerance": "tolerance",
+      "conformance_checksum": "SHA-256 of the decoded pixels",
+      "detect_heading": "Detector on a photo",
+      "detect_explain": "Pick a photo and let the native core look for markers. This answers the one question no conformance run answers: does the core find the markers in a real picture from this camera?",
+      "detect_pick": "Choose a photo",
+      "detect_camera": "Take a photo",
+      "detect_run": "Find markers",
+      "detect_running": "searching …",
+      "detect_none": "No marker found.",
+      "detect_found": "{count} markers in {ms} ms",
+      "detect_edge": "mean edge",
+      "sheet_heading": "Marker sheet",
+      "sheet_explain": "The A4 sheet everything starts from. It is built here on the device, from the same JavaScript as on the desktop and with the module bits of the native core.",
+      "sheet_save": "Save as PDF",
+      "sheet_share": "Share or print",
+      "sheet_saved": "Saved.",
+      "full_heading": "The full interface",
+      "full_explain": "The same interface as on the desktop, unchanged. Loading a photo and switching language work; rectifying stops, because that step is not native yet.",
+      "full_open": "Open the interface"
     }
   },
   "notices": {
@@ -190,7 +226,9 @@
     "no_sheet_ids": "Only the marker IDs {found} were detected. The supplied sheet uses {expected}. Switch to free mode, or print the app's marker sheet.",
     "homography_failed": "No homography could be computed from the detected markers. Do they lie almost on a straight line?",
     "homography_degenerate": "The homography is degenerate (H[2,2] = 0).",
-    "thickness_too_large": "The object thickness ({thickness_mm} mm) must be smaller than the camera distance ({camera_height_mm} mm)."
+    "thickness_too_large": "The object thickness ({thickness_mm} mm) must be smaller than the camera distance ({camera_height_mm} mm).",
+    "android_core_incomplete": "This step ({step}) is not in the native core yet. On the device only marker detection measures so far; the fit, the camera pose, the rectification and the PDF export still need the desktop.",
+    "android_bridge_failed": "The bridge to the device did not answer: {reason}"
   },
   "pdf": {
     "document_title": "Template {width} × {height} mm",
