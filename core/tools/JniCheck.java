@@ -59,16 +59,20 @@ public final class JniCheck {
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
-            System.err.println("Aufruf: JniCheck <pfad/zu/fixtures.txt> [--ecken] [--bits]");
+            System.err.println(
+                    "Aufruf: JniCheck <pfad/zu/fixtures.txt> [--ecken] [--bits] [--kette <datei>]");
             System.exit(2);
         }
         boolean dumpCorners = false;
         boolean dumpBits = false;
+        Path chain = null;
         for (int index = 1; index < args.length; index++) {
             if ("--ecken".equals(args[index])) {
                 dumpCorners = true;
             } else if ("--bits".equals(args[index])) {
                 dumpBits = true;
+            } else if ("--kette".equals(args[index]) && index + 1 < args.length) {
+                chain = Path.of(args[++index]).toAbsolutePath();
             } else {
                 System.err.println("Unbekannter Schalter: " + args[index]);
                 System.exit(2);
@@ -116,11 +120,25 @@ public final class JniCheck {
             System.out.println();
         }
 
+        // Und die uebrigen fuenfzehn Funktionen. Ohne diesen Block waere genau
+        // das ungeprueft, wofuer die Schicht erweitert wurde: eine Bindung, die
+        // uebersetzt, misst noch nichts (core/tools/ChainCheck.java).
+        if (chain != null) {
+            System.out.println("--- Die ganze Kette gegen denselben Kern durch pybind11 ---");
+            System.out.println();
+            if (!new ChainCheck().run(chain, manifest)) {
+                failed = true;
+            }
+        }
+
         if (failed) {
             System.out.println("FEHLGESCHLAGEN - die JNI-Schicht stimmt nicht.");
             System.exit(1);
         }
-        System.out.println("BESTANDEN - die JNI-Schicht liefert die Ecken der Grundwahrheit.");
+        System.out.println(chain == null
+                ? "BESTANDEN - die JNI-Schicht liefert die Ecken der Grundwahrheit."
+                : "BESTANDEN - die JNI-Schicht liefert die Ecken der Grundwahrheit und die "
+                        + "ganze Kette bitgenau.");
     }
 
     private static void reportConstants() {

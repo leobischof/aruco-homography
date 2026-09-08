@@ -14,7 +14,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <exception>
 #include <string>
 #include <vector>
 
@@ -24,43 +23,17 @@
 #include "aruco/constants.hpp"
 #include "aruco/detect.hpp"
 #include "aruco/types.hpp"
+#include "capi_internal.hpp"
 #include "dictionary.hpp"
 
 namespace {
 
-/// Klartext in den Puffer des Aufrufers, immer nullterminiert.
-///
-/// `error` darf NULL sein - ein Aufrufer, der die Meldung nicht will, soll nicht
-/// gezwungen sein, einen Puffer zu stellen. Gekuerzt wird stumm: eine
-/// abgeschnittene Meldung ist immer noch besser als keine.
-void set_error(char* error, std::int32_t capacity, const std::string& text) {
-    if (error == nullptr || capacity <= 0) {
-        return;
-    }
-    const std::size_t room = static_cast<std::size_t>(capacity) - 1U;
-    const std::size_t length = text.size() < room ? text.size() : room;
-    std::memcpy(error, text.data(), length);
-    error[length] = '\0';
-}
-
-/// Der Rahmen um jeden Aufruf: Ausnahme -> Rueckgabecode.
-///
-/// `std::exception` und `...` getrennt, damit die Meldung von OpenCV (cv::Error
-/// leitet von std::exception ab) wirklich beim Aufrufer ankommt. Ein blosses
-/// "Fehler" waere auf einem Geraet, an das niemand einen Debugger haengen kann,
-/// wertlos - und genau das ist die Lage auf einem Handy.
-template <typename Work>
-std::int32_t guarded(char* error, std::int32_t error_capacity, Work work) {
-    try {
-        return work();
-    } catch (const std::exception& failure) {
-        set_error(error, error_capacity, failure.what());
-        return ARUCO_ERR_INTERNAL;
-    } catch (...) {
-        set_error(error, error_capacity, "Unbekannter Fehler im Rechenkern");
-        return ARUCO_ERR_INTERNAL;
-    }
-}
+// set_error und guarded stehen seit der Erweiterung der Schnittstelle in
+// src/capi_support.cpp: capi_geometry.cpp und capi_image.cpp brauchen genau
+// dieselben, und drei Fassungen desselben Rahmens waeren drei Stellen, an denen
+// eine Ausnahme kuenftig doch noch durchkaeme.
+using aruco::capi::guarded;
+using aruco::capi::set_error;
 
 }  // namespace
 
@@ -87,14 +60,12 @@ std::int32_t aruco_detect_markers(const std::uint8_t* data, std::int32_t width,
         // detect_markers wirft std::invalid_argument bei einer unbrauchbaren
         // ImageView. Das ist ein FEHLER DES AUFRUFERS und kein interner - er
         // bekommt deshalb ARUCO_ERR_ARGUMENT und nicht ARUCO_ERR_INTERNAL,
-        // damit die Huelle die beiden Faelle auseinanderhalten kann.
-        std::vector<aruco::Marker> markers;
-        try {
-            markers = aruco::detect_markers(image, enhance_contrast != 0);
-        } catch (const std::invalid_argument& bad) {
-            set_error(error, error_capacity, bad.what());
-            return ARUCO_ERR_ARGUMENT;
-        }
+        // damit die Huelle die beiden Faelle auseinanderhalten kann. Diese
+        // Unterscheidung trifft seit der Erweiterung `guarded` selbst, fuer
+        // ALLE Funktionen dieser Schnittstelle - hier stand sie frueher von
+        // Hand, und dass sie es nur hier tat, war die Ausnahme.
+        const std::vector<aruco::Marker> markers = aruco::detect_markers(image,
+                                                                        enhance_contrast != 0);
 
         if (static_cast<std::size_t>(out_capacity) < markers.size()) {
             set_error(error, error_capacity,

@@ -711,6 +711,9 @@ function Write-Cmd { param([string]$Name, [string]$Subtitle)
 $AndroidDir    = Join-Path $RepoRoot 'android'
 $AndroidOutDir = Join-Path $AndroidDir 'out'
 $JniLibsDir    = Join-Path $AndroidDir 'app\src\main\jniLibs'
+# Die eine Java-Datei, die auch ohne Android uebersetzt und ausgefuehrt wird -
+# check-jni baut sie mit, check-android-so zaehlt ihre native-Zeilen.
+$NativeCoreJava = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards\aruco\NativeCore.java'
 
 # Alle vier ABIs, die das OpenCV-Android-SDK traegt. Gebaut wird per Vorgabe nur
 # das erste: jedes weitere kostet rund 6 MB im APK, und arm64 ist auf praktisch
@@ -776,13 +779,25 @@ function Invoke-CheckJni {
     if (Test-Path $classes) { Remove-Item $classes -Recurse -Force }
     New-Item -ItemType Directory -Path $classes -Force | Out-Null
 
+    # Die Sollwerte der ganzen Kette: derselbe C++-Kern durch pybind11, daneben
+    # die Python-Referenz. Ohne diese Datei koennte der Pruefstand nur die
+    # Erkennung messen - und genau die war schon vorher gemessen.
+    Write-Step 'Generating the chain reference (same core through pybind11, plus Python)'
+    $fixtures = Join-Path $CoreBuildDir 'fixtures\fixtures.txt'
+    $chain    = Join-Path $CoreBuildDir 'fixtures\chain.txt'
+    Invoke-Native -What 'make_chain_reference' -Action {
+        & $VenvPython (Join-Path $CoreDir 'tools\make_chain_reference.py') $fixtures $chain
+    }
+
     Write-Step 'Compiling JniCheck against the app''s own NativeCore'
     # NativeCore.java kommt aus dem Android-Baum und wird NICHT kopiert: die
     # Klasse, die hier geprueft wird, muss dieselbe sein, die im APK steckt.
-    $nativeCore = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards\aruco\NativeCore.java'
+    $nativeCore = $NativeCoreJava
     $check      = Join-Path $CoreDir 'tools\JniCheck.java'
+    $chainCheck = Join-Path $CoreDir 'tools\ChainCheck.java'
     Invoke-Native -What 'javac' -Action {
-        & (Join-Path $jdk 'bin\javac.exe') -d $classes -encoding UTF-8 $nativeCore $check
+        & (Join-Path $jdk 'bin\javac.exe') -d $classes -encoding UTF-8 -Xlint:all `
+            $nativeCore $check $chainCheck
     }
 
     Write-Step 'Running the JNI layer on a real JVM'
@@ -798,7 +813,7 @@ function Invoke-CheckJni {
         # ein dort gesetztes -Variable kommt hier nicht an. Der Rueckgabewert
         # wird stattdessen von Hand geprueft - dasselbe, was Invoke-Native tut.
         $jniOutput = & (Join-Path $jdk 'bin\java.exe') "-Djava.library.path=$CoreBuildDir" `
-            -cp $classes JniCheck (Join-Path $CoreBuildDir 'fixtures\fixtures.txt') --bits @Rest
+            -cp $classes JniCheck $fixtures --bits --kette $chain @Rest
         $exitCode = $LASTEXITCODE
         $jniOutput | ForEach-Object { Write-Host $_ }
         if ($exitCode -ne 0) { throw "JniCheck failed (exit $exitCode)." }
@@ -866,13 +881,21 @@ function Invoke-CheckAndroidSo {
 
         # Und die Einsprungpunkte. Fehlt einer, faellt das sonst erst auf dem
         # Geraet auf - als UnsatisfiedLinkError mitten im Betrieb.
+        #
+        # Wie viele es sein muessen, wird NICHT abgetippt, sondern in
+        # NativeCore.java gezaehlt: jede `native`-Zeile dort braucht genau ein
+        # Symbol hier. Eine feste Zahl waere beim naechsten Zuwachs falsch, und
+        # zwar in die harmlose Richtung - der Test bliebe gruen.
+        $declared = @(Select-String -Path $NativeCoreJava -Pattern '^\s*public static native\b').Count
+        if ($declared -lt 1) { throw "In $NativeCoreJava steht keine native-Methode." }
         $exported = & (Join-Path $bin 'llvm-nm.exe') -D --defined-only $so |
             Select-String 'Java_com_bischofsnowboards_aruco_NativeCore_'
-        Write-Host ("     Exportiert: {0} JNI-Symbole" -f $exported.Count) -ForegroundColor DarkGray
-        if ($exported.Count -lt 6) {
-            throw "$abi : nur $($exported.Count) JNI-Symbole exportiert, erwartet werden 6."
+        Write-Host ("     Exportiert: {0} JNI-Symbole (NativeCore.java erklaert {1})" -f `
+            $exported.Count, $declared) -ForegroundColor DarkGray
+        if ($exported.Count -lt $declared) {
+            throw "$abi : nur $($exported.Count) JNI-Symbole exportiert, erwartet werden $declared."
         }
-        Write-Ok "$abi : alle sechs JNI-Einsprungpunkte exportiert"
+        Write-Ok "$abi : alle $declared JNI-Einsprungpunkte exportiert"
     }
 }
 

@@ -30,16 +30,15 @@
 #include <opencv2/imgproc.hpp>
 
 #include "aruco/capi.h"
+#include "jni_support.hpp"
 
-namespace {
+// Die gemeinsamen Hilfen dieser Schicht - hier definiert, in jni_support.hpp
+// erklaert, und von jni_chain.cpp mitbenutzt. Sie stehen in dieser Datei und
+// nicht in einer eigenen, weil sie ohne die Bindung keinen Zweck haben: ein
+// Umpacker fuer eine Schnittstelle, die es nicht gibt, ist nichts.
+namespace aruco {
+namespace jni {
 
-constexpr std::int32_t kErrorCapacity = 512;
-
-/// Eine Java-Ausnahme auslösen und 0 zurückgeben.
-///
-/// `ThrowNew` wirft nicht sofort - es merkt die Ausnahme nur vor. Der C++-Code
-/// MUSS danach zurückkehren; jeder weitere JNI-Aufruf mit anstehender Ausnahme
-/// ist undefiniert. Deshalb steht hinter jedem Aufruf hier ein `return`.
 void throw_java(JNIEnv* env, const char* class_name, const std::string& message) {
     jclass failure = env->FindClass(class_name);
     if (failure != nullptr) {
@@ -47,14 +46,6 @@ void throw_java(JNIEnv* env, const char* class_name, const std::string& message)
     }
 }
 
-/// Den Fehlercode der C-Schnittstelle in die passende Java-Ausnahme uebersetzen.
-///
-/// Der Unterschied ist nicht kosmetisch: ARUCO_ERR_ARGUMENT bedeutet, dass die
-/// Huelle etwas falsch uebergeben hat (ein Programmfehler, der in den Log
-/// gehoert), ARUCO_ERR_INTERNAL, dass OpenCV an diesem Bild gescheitert ist (ein
-/// Betriebsfall, den die Oberflaeche dem Bediener zeigen soll). Eine einzige
-/// RuntimeException fuer beides naehme der Huelle die Moeglichkeit, das zu
-/// trennen.
 void throw_for(JNIEnv* env, std::int32_t code, const char* error) {
     const std::string message = error[0] != '\0' ? error : "Rechenkern ohne Meldung";
     if (code == ARUCO_ERR_ARGUMENT || code == ARUCO_ERR_CAPACITY) {
@@ -63,6 +54,62 @@ void throw_for(JNIEnv* env, std::int32_t code, const char* error) {
     }
     throw_java(env, "java/lang/RuntimeException", message);
 }
+
+std::vector<double> doubles_of(JNIEnv* env, jdoubleArray array) {
+    if (array == nullptr) {
+        return {};
+    }
+    const jsize count = env->GetArrayLength(array);
+    std::vector<double> values(static_cast<std::size_t>(count));
+    if (count > 0) {
+        // GetDoubleArrayRegion und nicht GetDoubleArrayElements: es kopiert
+        // ohnehin, gibt aber nichts zurueckzugeben - und ein vergessenes
+        // Release waere ein Leck je Reglerzug. Durch diese Funktion gehen
+        // Homographien und Punktlisten, nie ein Bild.
+        env->GetDoubleArrayRegion(array, 0, count, values.data());
+    }
+    return values;
+}
+
+jdoubleArray doubles_to_java(JNIEnv* env, const double* values, std::int32_t count) {
+    jdoubleArray result = env->NewDoubleArray(count);
+    if (result == nullptr) {
+        return nullptr;  // OutOfMemoryError steht bereits an
+    }
+    if (count > 0) {
+        env->SetDoubleArrayRegion(result, 0, count, values);
+    }
+    return result;
+}
+
+std::uint8_t* direct_buffer(JNIEnv* env, jobject buffer, std::int64_t needed,
+                            const char* what) {
+    auto* data = static_cast<std::uint8_t*>(env->GetDirectBufferAddress(buffer));
+    if (data == nullptr) {
+        throw_java(env, "java/lang/IllegalArgumentException",
+                   std::string(what) + " erwartet einen DIREKTEN ByteBuffer "
+                                       "(ByteBuffer.allocateDirect)");
+        return nullptr;
+    }
+    const jlong provided = env->GetDirectBufferCapacity(buffer);
+    if (provided < needed) {
+        throw_java(env, "java/lang/IllegalArgumentException",
+                   std::string(what) + ": ByteBuffer fasst " + std::to_string(provided) +
+                       " Bytes, gebraucht werden " + std::to_string(needed));
+        return nullptr;
+    }
+    return data;
+}
+
+}  // namespace jni
+}  // namespace aruco
+
+namespace {
+
+using aruco::jni::direct_buffer;
+using aruco::jni::kErrorCapacity;
+using aruco::jni::throw_for;
+using aruco::jni::throw_java;
 
 }  // namespace
 
@@ -106,13 +153,6 @@ Java_com_bischofsnowboards_aruco_NativeCore_dictionarySize(JNIEnv*, jclass) {
 JNIEXPORT jdoubleArray JNICALL Java_com_bischofsnowboards_aruco_NativeCore_detectMarkers(
     JNIEnv* env, jclass, jobject pixels, jint width, jint height, jint stride, jint channels,
     jboolean enhance_contrast) {
-    const auto* data = static_cast<const std::uint8_t*>(env->GetDirectBufferAddress(pixels));
-    if (data == nullptr) {
-        throw_java(env, "java/lang/IllegalArgumentException",
-                   "detectMarkers erwartet einen DIREKTEN ByteBuffer "
-                   "(ByteBuffer.allocateDirect)");
-        return nullptr;
-    }
     if (width <= 0 || height <= 0) {
         throw_java(env, "java/lang/IllegalArgumentException", "Bild ohne Flaeche");
         return nullptr;
@@ -122,13 +162,12 @@ JNIEXPORT jdoubleArray JNICALL Java_com_bischofsnowboards_aruco_NativeCore_detec
                    "Schrittweite kleiner als eine Bildzeile");
         return nullptr;
     }
-    const jlong provided = env->GetDirectBufferCapacity(pixels);
-    if (provided < static_cast<jlong>(stride) * height) {
-        // Ohne diese Pruefung laese der Kern ueber das Ende des Puffers hinaus.
-        // Der Aufrufer nennt Breite, Hoehe und Schrittweite selbst; ein
-        // Tippfehler dort ist sonst ein Absturz ohne Zusammenhang.
-        throw_java(env, "java/lang/IllegalArgumentException",
-                   "ByteBuffer zu klein fuer stride*height");
+    // Ohne die Groessenpruefung in direct_buffer laese der Kern ueber das Ende
+    // des Puffers hinaus. Der Aufrufer nennt Breite, Hoehe und Schrittweite
+    // selbst; ein Tippfehler dort ist sonst ein Absturz ohne Zusammenhang.
+    const std::uint8_t* data =
+        direct_buffer(env, pixels, static_cast<std::int64_t>(stride) * height, "detectMarkers");
+    if (data == nullptr) {
         return nullptr;
     }
 
