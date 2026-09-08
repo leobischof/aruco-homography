@@ -39,7 +39,7 @@ def cpp():
     """Der C++-Kern, oder ein uebersprungener Test, wenn er nicht gebaut ist."""
     core = backend.cpp_core()
     if core is None:
-        pytest.skip(f"C++-Kern nicht gebaut ({backend.CORE_BUILD_DIR}) - ./dev.ps1 build-core")
+        pytest.skip(f"C++-Kern nicht gebaut ({backend.CORE_DIR}) - ./dev.ps1 build-core")
     return core
 
 
