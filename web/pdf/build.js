@@ -17,17 +17,34 @@
  * ergibt bei 300 dpi ein Raster von 130 Megapixeln - 373 MiB an einem Stueck, und die
  * gibt ein Telefon nicht her (am 08.09.2026 auf einem Xiaomi genau so gescheitert,
  * bei jeder Aufloesung). Gedruckt wird der Zuschnitt aber ohnehin blattweise. Wird
- * hier statt der Bytes eine Funktion `(xMm, yMm, wMm, hMm) => JPEG-Bytes` uebergeben,
- * holt sich jedes Blatt sein eigenes Bild, und der Spitzenbedarf haengt am BLATT
- * statt am Zuschnitt.
+ * hier statt der Bytes eine Funktion `(xMm, yMm, wMm, hMm, maxPx) => JPEG-Bytes`
+ * uebergeben, holt sich jedes Blatt sein eigenes Bild, und der Spitzenbedarf haengt
+ * am BLATT statt am Zuschnitt.
+ *
+ * `maxPx` deckelt dabei die laengere Pixelkante des gelieferten Bildes. Null (die
+ * Vorgabe) heisst: in der eingestellten Aufloesung, also so, wie es gedruckt wird.
+ * Genau ein Aufdruck fragt mit Deckel - der Klebeplan, der den ganzen Zuschnitt
+ * als Daumennagel zeigt und ihn niemals in Druckaufloesung braucht.
  */
 
 import * as branding from "./branding.js";
 import * as constants from "../constants.js";
-import { Document, HELVETICA, HELVETICA_BOLD } from "./draw.js";
+import { Document, HELVETICA, HELVETICA_BOLD, grayColor } from "./draw.js";
 import { translate } from "./i18n.js";
 import { Rect, singlePage, stripHeight, tileLayout } from "./layout.js";
 import * as overlays from "./overlays.js";
+
+// Die Blattnummer im Klebeplan. Groesser als die Rasterbeschriftung, weil sie aus
+// Armlaenge gefunden werden muss, und kleiner als die Ueberschrift, weil sie in die
+// kleinste Kachel passen muss.
+const OVERVIEW_LABEL_PT = 10.0;
+// Kachelrand, Aussenkante des Zuschnitts, und der weisse Saum, der auf beide
+// aufgeschlagen wird. Der Saum ist noetig, seit unter den Linien das Bild liegt:
+// eine duenne Linie ist auf einem Foto mal sichtbar und mal nicht.
+const OVERVIEW_LINE_PT = 0.4;
+const OVERVIEW_EDGE_PT = 0.8;
+const OVERVIEW_HALO_PT = 0.8;
+const WHITE = grayColor(1.0);
 
 /**
  * Alles, was der Bediener am Druck einstellen kann.
@@ -139,7 +156,15 @@ async function buildTiles(source, cropW, cropH, options, footerLines, contourMm)
     let pages = 0;
 
     if (options.tileOverview) {
-        drawOverview(document, plan, cropW, cropH, footerLines, options.locale);
+        // Blattweise gibt es kein ganzes Raster - der Klebeplan laesst sich eines
+        // machen, und zwar ein grobes: OVERVIEW_MAX_PX statt Druckaufloesung.
+        // Am Stueck ist das Bild schon eingebettet; es noch einmal zu verkleinern
+        // waere ein ZWEITES Bild in derselben Datei, wo eines genuegt.
+        const thumbnail = perSheet
+            ? await document.embedJpeg(
+                  await source(0.0, 0.0, cropW, cropH, constants.OVERVIEW_MAX_PX))
+            : image;
+        drawOverview(document, plan, cropW, cropH, footerLines, thumbnail, options.locale);
         pages += 1;
     }
 
@@ -240,8 +265,9 @@ function roundHalfToEven(value) {
     return floor % 2 === 0 ? floor : floor + 1;
 }
 
-/** Uebersichtsblatt: welches Blatt gehoert wohin. */
-function drawOverview(document, plan, cropW, cropH, footerLines, locale = constants.DEFAULT_LOCALE) {
+/** Uebersichtsblatt: welches Blatt gehoert wohin - ueber dem Zuschnitt selbst. */
+function drawOverview(document, plan, cropW, cropH, footerLines, image,
+        locale = constants.DEFAULT_LOCALE) {
     const sheet = document.addSheet(plan.sheetW, plan.sheetH);
     const ink = branding.ink(constants.BRAND_INK);
     const title = translate("pdf.assembly.title", locale);
@@ -276,25 +302,48 @@ function drawOverview(document, plan, cropW, cropH, footerLines, locale = consta
     const scale = Math.min(areaW / Math.max(cropW, 1e-6), areaH / Math.max(cropH, 1e-6));
     const originX = plan.printerMarginMm;
     const originY = plan.sheetH - 40.0 - cropH * scale;
+    const outline = new Rect(originX, originY, cropW * scale, cropH * scale);
 
-    sheet.setLineWidth(0.4);
-    for (const tile of plan.tiles) {
-        const x = originX + tile.cropX * scale;
-        const y = originY + (cropH - tile.cropY - tile.srcH) * scale;
-        sheet.setStrokeColor(branding.ink(constants.BRAND_PRIMARY));
-        sheet.rect(x, y, tile.srcW * scale, tile.srcH * scale);
-        sheet.setFont(HELVETICA_BOLD, 10);
-        sheet.setFillColor(ink);
-        sheet.drawCentredString(
-            x + (tile.srcW * scale) / 2.0,
-            y + (tile.srcH * scale) / 2.0,
-            String(tile.index),
-        );
+    // Das Bild ZUERST: alles Weitere ist ein Aufdruck darauf. Wer wissen will,
+    // welches Blatt er in der Hand hat, sucht nach dem, was darauf zu sehen ist -
+    // eine leere Kachelnummerierung sagt ihm das nicht.
+    placeImage(sheet, image, { x0: 0, y0: 0, x1: image.width, y1: image.height }, outline);
+
+    const tiles = plan.tiles.map((tile) => ({
+        rect: new Rect(
+            originX + tile.cropX * scale,
+            originY + (cropH - tile.cropY - tile.srcH) * scale,
+            tile.srcW * scale,
+            tile.srcH * scale,
+        ),
+        label: String(tile.index),
+    }));
+    const borders = tiles.map(({ rect }) => [
+        rect, OVERVIEW_LINE_PT, branding.ink(constants.BRAND_PRIMARY),
+    ]);
+    borders.push([outline, OVERVIEW_EDGE_PT, ink]);
+
+    // Zwei Durchgaenge wie beim Raster (web/pdf/overlays.drawGrid): erst alle
+    // weissen Saeume, dann alle Kernlinien. Der Saum einer Kachel darf die
+    // Kernlinie ihrer Nachbarin nicht zudecken - die Kacheln ueberlappen sich.
+    for (const halo of [true, false]) {
+        for (const [rect, widthPt, colour] of borders) {
+            sheet.setLineWidth(halo ? widthPt + OVERVIEW_HALO_PT : widthPt);
+            sheet.setStrokeColor(halo ? WHITE : colour);
+            sheet.rect(rect.x, rect.y, rect.width, rect.height);
+        }
     }
 
-    sheet.setStrokeColor(ink);
-    sheet.setLineWidth(0.8);
-    sheet.rect(originX, originY, cropW * scale, cropH * scale);
+    // Die Nummern zuletzt: kein Saum soll ueber ihnen liegen.
+    for (const { rect, label } of tiles) {
+        overlays.drawLabel(
+            sheet,
+            rect.x + rect.width / 2.0 - overlays.labelWidth(sheet, label, OVERVIEW_LABEL_PT) / 2.0,
+            rect.y + rect.height / 2.0,
+            label,
+            OVERVIEW_LABEL_PT,
+        );
+    }
 
     overlays.drawStrip(sheet, strip, true, footerLines, { tileLabel: title, locale });
 }

@@ -1,6 +1,6 @@
 """Homographie Ebene (mm) -> Bild (px) aus erkannten Markern bestimmen.
 
-Zwei Modi, beide enden in derselben nichtlinearen Ausgleichsrechnung:
+Drei Modi, alle enden in derselben nichtlinearen Ausgleichsrechnung:
 
   Blatt-Modus - die Markerpositionen auf dem A4-Blatt sind bekannt. Alle erkannten
     Ecken sind damit Referenzpunkte; das ist der genaueste Weg.
@@ -9,6 +9,22 @@ Zwei Modi, beide enden in derselben nichtlinearen Ausgleichsrechnung:
     werden gemeinsam geschaetzt: 8 + 2*(n-1) Unbekannte gegen 8*n Gleichungen.
     Vorausgesetzt wird, dass alle Marker gleich ausgerichtet gedruckt sind; genau
     das prueft _rotation_deviation und warnt sonst.
+
+  Streu-Modus - dieselbe Rechnung mit einer Unbekannten mehr je Marker: der
+    Drehung. 8 + 3*(n-1) gegen 8*n. Damit darf jeder Marker liegen, wie er faellt.
+    Zwei Dinge folgen daraus:
+
+      * Es gibt keinen ausgezeichneten Marker mehr, an dem sich die Ebene
+        ausrichten liesse - der groesste liegt ja in einem zufaelligen Winkel.
+        Also richtet sich die Ebene nach dem FOTO (siehe _oriented_to_photo).
+      * Jeder weitere Marker bringt fuenf Bestimmungsstuecke netto ein statt
+        sechs. Der Frei-Modus bleibt deshalb der genauere, wenn seine Annahme
+        stimmt - er ist kein ueberholter Vorlaeufer, sondern der engere Fall.
+
+**Ein einzelner Marker reicht in jedem Modus.** Vier Punktpaare bestimmen eine
+Homographie exakt; der Marker traegt sein Koordinatensystem selbst, in der
+festen Eckenreihenfolge. Was er nicht traegt, ist eine Probe - das Residuum ist
+dann null, ohne dass der Fehler klein waere. Dafuer gibt es single_marker.
 """
 
 from __future__ import annotations
@@ -27,6 +43,11 @@ from app.vision.geometry import convex_hull, local_px_per_mm, polygon_area, proj
 
 # Einheitsquadrat in der Reihenfolge, die cv2.aruco fuer die Ecken liefert.
 _UNIT_CORNERS = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+
+# Dieselben vier Ecken, aber relativ zum MITTELPUNKT. Der Streu-Modus dreht um
+# den Mittelpunkt und nicht um die obere linke Ecke; nur so bleibt eine Drehung
+# eine Drehung und wird nicht zugleich eine Verschiebung.
+_CENTRED_CORNERS = _UNIT_CORNERS - 0.5
 
 
 @dataclass(frozen=True)
@@ -74,6 +95,26 @@ def marker_plane_corners(center_x: float, center_y: float, side_mm: float) -> np
     )
 
 
+def marker_plane_corners_at(poses: np.ndarray, side_mm: float) -> np.ndarray:
+    """Lagen (M,3) = (x, y, Winkel) -> Ebenenecken (M,4,2), TL, TR, BR, BL.
+
+    Das Gegenstueck zu marker_plane_corners fuer gedrehte Marker. Der Winkel
+    steht im Bogenmass und dreht gegen den Uhrzeigersinn in Ebenenkoordinaten;
+    `theta == 0` liefert genau dieselben Ecken wie marker_plane_corners.
+    """
+    values = np.asarray(poses, dtype=np.float64).reshape(-1, 3)
+    cos_t = np.cos(values[:, 2])
+    sin_t = np.sin(values[:, 2])
+    local = _CENTRED_CORNERS * side_mm
+    return np.stack(
+        [
+            np.outer(cos_t, local[:, 0]) - np.outer(sin_t, local[:, 1]) + values[:, 0:1],
+            np.outer(sin_t, local[:, 0]) + np.outer(cos_t, local[:, 1]) + values[:, 1:2],
+        ],
+        axis=-1,
+    )
+
+
 def sheet_plane_corners(
     marker_mm: float, spacing_mm: tuple[float, float] | None = None
 ) -> dict[int, np.ndarray]:
@@ -107,6 +148,8 @@ def solve(
         homography, plane_by_id = _solve_sheet(markers, marker_mm, spacing_mm)
     elif mode == "free":
         homography, plane_by_id = _solve_free(markers, marker_mm)
+    elif mode == "scattered":
+        homography, plane_by_id = _solve_scattered(markers, marker_mm)
     else:
         raise AppError("bad_mode", "mode", mode=mode)
 
@@ -200,6 +243,139 @@ def _solve_free(
     plane_by_id = {anchor.marker_id: anchor_plane}
     for marker, offset in zip(others, np.asarray(final_offsets).reshape(-1, 2)):
         plane_by_id[marker.marker_id] = _UNIT_CORNERS * marker_mm + offset
+    return np.asarray(solved, dtype=np.float64), plane_by_id
+
+
+def _plane_jacobian(homography: np.ndarray, point_mm: np.ndarray) -> np.ndarray:
+    """Die 2x2-Jacobimatrix der Abbildung Ebene -> Bild an einer Stelle.
+
+    Nicht mit geometry.local_px_per_mm geteilt, obwohl dieselben vier Groessen
+    dort auch vorkommen: local_px_per_mm ist eine Funktion HINTER dem Umschalter
+    und traegt RMS-in-mm, Interpolationswahl und Fusszeile. Sie fuer diesen einen
+    Aufrufer zu zerlegen hiesse, an einer tragenden Stelle etwas zu aendern, das
+    hier nur gebraucht wird. Der C++-Kern haelt es genauso (solve.cpp).
+    """
+    matrix = np.asarray(homography, dtype=np.float64)
+    x, y = float(point_mm[0]), float(point_mm[1])
+
+    w = matrix[2, 0] * x + matrix[2, 1] * y + matrix[2, 2]
+    if abs(w) < 1e-12:
+        raise AppError("homography_degenerate")
+    u = (matrix[0, 0] * x + matrix[0, 1] * y + matrix[0, 2]) / w
+    v = (matrix[1, 0] * x + matrix[1, 1] * y + matrix[1, 2]) / w
+
+    return np.array(
+        [
+            [(matrix[0, 0] - u * matrix[2, 0]) / w, (matrix[0, 1] - u * matrix[2, 1]) / w],
+            [(matrix[1, 0] - v * matrix[2, 0]) / w, (matrix[1, 1] - v * matrix[2, 1]) / w],
+        ]
+    )
+
+
+def _oriented_to_photo(
+    homography: np.ndarray, poses: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Die Ebene so drehen und schieben, dass sie zum Foto passt.
+
+    Der Zuschnitt ist ein ACHSPARALLELES Rechteck. Haengen die Ebenenachsen am
+    Ankermarker - und der liegt im Streu-Modus in einem zufaelligen Winkel -,
+    steht die Schablone schief, und um das Objekt herum wird Rand verschenkt.
+
+    Gesucht ist deshalb die Drehung, nach der die Abbildung Ebene -> Bild
+    moeglichst wenig dreht. Fuer eine 2x2-Matrix J ist die naechstgelegene
+    Drehung atan2(J10 - J01, J00 + J11); dreht man sie heraus, bleibt eine
+    SYMMETRISCHE Streckung uebrig - die perspektivische Verkuerzung, die sich
+    nicht wegdrehen laesst. Gemessen wird in der Mitte der Markerwolke, weil dort
+    die Schablone liegt; dorthin kommt auch der Ursprung.
+    """
+    centre = poses[:, :2].mean(axis=0)
+    jacobian = _plane_jacobian(homography, centre)
+    turn = -np.arctan2(
+        jacobian[1, 0] - jacobian[0, 1], jacobian[0, 0] + jacobian[1, 1]
+    )
+    cos_t, sin_t = np.cos(turn), np.sin(turn)
+
+    # Von den NEUEN Ebenenkoordinaten in die alten: erst drehen, dann in die
+    # Mitte schieben. Verkettet mit der Homographie ergibt das die neue.
+    move = np.array(
+        [[cos_t, -sin_t, centre[0]], [sin_t, cos_t, centre[1]], [0.0, 0.0, 1.0]]
+    )
+    oriented = np.asarray(homography, dtype=np.float64) @ move
+    if abs(oriented[2, 2]) < 1e-15:
+        raise AppError("homography_degenerate")
+
+    delta = poses[:, :2] - centre
+    turned = np.column_stack(
+        [
+            cos_t * delta[:, 0] + sin_t * delta[:, 1],
+            -sin_t * delta[:, 0] + cos_t * delta[:, 1],
+            poses[:, 2] - turn,
+        ]
+    )
+    return oriented / oriented[2, 2], turned
+
+
+def _fit_scattered_python(quads: np.ndarray, marker_mm: float) -> tuple[np.ndarray, np.ndarray]:
+    """Homographie UND Markerlagen (x, y, Winkel) gemeinsam schaetzen.
+
+    Wie _fit_free_python, nur mit einer Unbekannten mehr je Marker. `quads` ist
+    (M,4,2) und ABSTEIGEND nach Bildflaeche sortiert; zurueck kommt die
+    ausgerichtete Homographie und eine Lage je Marker - AUCH fuer den ersten,
+    denn nach der Ausrichtung steht auch er nicht mehr im Ursprung.
+    """
+    quads = np.asarray(quads, dtype=np.float64).reshape(-1, 4, 2)
+    image_pts = quads.reshape(-1, 2)
+
+    # Startwert: der groesste Marker liegt achsparallel im Ursprung. Nur der
+    # Anfangspunkt der Rechnung - ausgerichtet wird ganz am Ende.
+    anchor = np.array([marker_mm / 2.0, marker_mm / 2.0, 0.0])
+    anchor_plane = marker_plane_corners_at(anchor, marker_mm)[0]
+    homography = cv2.getPerspectiveTransform(
+        anchor_plane.astype(np.float32), quads[0].astype(np.float32)
+    )
+
+    inverse = np.linalg.inv(homography)
+    poses = [anchor]
+    for quad in quads[1:]:
+        plane_quad = project(inverse, quad)
+        # Der Winkel kommt aus der Kante Ecke 0 -> Ecke 1. Sie zeigt im Marker
+        # selbst in +x-Richtung, ihr Winkel in der Ebene IST also die Drehung.
+        edge = plane_quad[1] - plane_quad[0]
+        poses.append(
+            np.array(
+                [*plane_quad.mean(axis=0), float(np.arctan2(edge[1], edge[0]))]
+            )
+        )
+    start_poses = np.array(poses).reshape(-1, 3)
+
+    def plane_points(pose_values: np.ndarray) -> np.ndarray:
+        every = np.vstack([anchor, pose_values.reshape(-1, 3)])
+        return marker_plane_corners_at(every, marker_mm).reshape(-1, 2)
+
+    def residual(params: np.ndarray) -> np.ndarray:
+        matrix = np.append(params[:8], 1.0).reshape(3, 3)
+        return (project(matrix, plane_points(params[8:])) - image_pts).ravel()
+
+    start = np.concatenate([_as_eight(homography), start_poses[1:].ravel()])
+    fitted = least_squares(residual, start, method="trf", xtol=1e-14, ftol=1e-14, gtol=1e-14)
+
+    return _oriented_to_photo(
+        np.append(fitted.x[:8], 1.0).reshape(3, 3),
+        np.vstack([anchor, fitted.x[8:].reshape(-1, 3)]),
+    )
+
+
+_fit_scattered = backend.implementation("fit_scattered", _fit_scattered_python)
+
+
+def _solve_scattered(
+    markers: list[DetectedMarker], marker_mm: float
+) -> tuple[np.ndarray, dict[int, np.ndarray]]:
+    ordered = sorted(markers, key=lambda m: m.image_area_px, reverse=True)
+    solved, poses = _fit_scattered(np.stack([m.corners_px for m in ordered]), marker_mm)
+
+    corners = marker_plane_corners_at(np.asarray(poses), marker_mm)
+    plane_by_id = {marker.marker_id: quad for marker, quad in zip(ordered, corners)}
     return np.asarray(solved, dtype=np.float64), plane_by_id
 
 

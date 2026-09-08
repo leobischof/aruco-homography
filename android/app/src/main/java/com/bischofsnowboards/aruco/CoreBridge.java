@@ -63,6 +63,8 @@ final class CoreBridge {
                         doubles(arguments, 0), doubles(arguments, 1), doubles(arguments, 2)));
             case "fitFree":
                 return fitFree(arguments);
+            case "fitScattered":
+                return fitScattered(arguments);
             case "poseFromHomography":
                 return pose(arguments);
             case "planeExtent":
@@ -132,6 +134,23 @@ final class CoreBridge {
         }
         result.put("homography", homography);
         result.put("offsets", offsets);
+        return result;
+    }
+
+    /** {homography, poses} - drei Zahlen je Marker, und zwar fuer JEDEN. */
+    private JSONObject fitScattered(JSONArray arguments) throws JSONException {
+        double[] flat = NativeCore.fitScattered(doubles(arguments, 0), arguments.getDouble(1));
+        JSONObject result = new JSONObject();
+        JSONArray homography = new JSONArray();
+        for (int index = 0; index < 9; index++) {
+            homography.put(flat[index]);
+        }
+        JSONArray poses = new JSONArray();
+        for (int index = 9; index < flat.length; index++) {
+            poses.put(flat[index]);
+        }
+        result.put("homography", homography);
+        result.put("poses", poses);
         return result;
     }
 

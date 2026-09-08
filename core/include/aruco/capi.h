@@ -206,6 +206,21 @@ int32_t aruco_fit_free(const double* corners_xy, int32_t marker_count, double ma
                        double* out9, double* out_offsets_xy, int32_t capacity_points,
                        char* error, int32_t error_capacity);
 
+/* Streu-Modus: Homographie und die Lage JEDES Markers gemeinsam schaetzen.
+ *
+ * Wie aruco_fit_free, aber je Marker mit einer Drehung mehr - fuer Marker, die
+ * in beliebigen Winkeln auf einer Flaeche liegen.
+ *
+ * `out_poses_xyt` nimmt DREI Zahlen je Marker: x_mm, y_mm und die Drehung im
+ * Bogenmass; `capacity_poses` zaehlt LAGEN. Anders als im Frei-Modus kommt auch
+ * fuer den ersten Marker eine Lage zurueck: die fertige Ebene ist nach dem Foto
+ * ausgerichtet, und darin steht auch der Anker nicht mehr im Ursprung.
+ *
+ * Rueckgabe: Anzahl geschriebener LAGEN (>= 0), sonst ein Fehlercode. */
+int32_t aruco_fit_scattered(const double* corners_xy, int32_t marker_count, double marker_mm,
+                            double* out9, double* out_poses_xyt, int32_t capacity_poses,
+                            char* error, int32_t error_capacity);
+
 /* --- Kamera und Ausdehnung ------------------------------------------------ */
 
 /* Zerlegt H = K [r1 r2 t] und schreibt VIER Zahlen nach `out4`:

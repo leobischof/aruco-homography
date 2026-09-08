@@ -16,9 +16,10 @@ import numpy as np
 from app import config, i18n
 from app.notices import AppError, NoticeList
 from app.pdf.build import BuildResult, ExportOptions, build_footer_lines, build_pdf
-from app.schemas import AdjustRequest, ExportRequest, SolveRequest
+from app.schemas import AdjustRequest, ExportImageRequest, ExportRequest, SolveRequest
 from app.session import Session
 from app.vision import contour as contour_module
+from app.vision import encode
 from app.vision import enhance
 from app.vision import rectify as rectify_module
 from app.vision.camera import CameraPose, resolve_pose
@@ -26,6 +27,15 @@ from app.vision.detect import detect_markers, draw_detection
 from app.vision.extent import Extent, default_crop, extrapolation_fraction, plane_extent
 from app.vision.solve import Solution, solve
 from app.vision.thickness import effective_homography
+
+
+@dataclass(frozen=True)
+class ImageResult:
+    """Der Zuschnitt als Bilddatei - und was die Oberflaeche darueber sagt."""
+
+    data: bytes
+    width: int
+    height: int
 
 
 @dataclass
@@ -131,16 +141,19 @@ def run_adjust(session: Session, request: AdjustRequest) -> dict[str, object]:
     return {"preview": _preview_payload(session, "adjusted", solved)}
 
 
-def run_export(session: Session, request: ExportRequest) -> BuildResult:
-    """Vom gewaehlten Zuschnitt zum druckfertigen PDF."""
+def _rectified_crop(
+    session: Session, request: ExportRequest | ExportImageRequest
+) -> tuple[SolveResult, np.ndarray, Extent, float]:
+    """Der gemeinsame Anfang beider Exporte: entzerren und aufbereiten.
+
+    `request` muss `crop_mm`, `dpi` und `adjust` tragen - mehr wird hier nicht
+    angefasst. Deshalb passen beide Anfragetypen hinein, ohne dass einer den
+    anderen erben muesste: was sie unterscheidet (Seitenformat gegen Dateiformat),
+    faengt erst NACH dieser Funktion an.
+    """
     solved = session.state.get("solve")
     if not isinstance(solved, SolveResult):
         raise AppError("not_solved", "session_id")
-
-    # Die Sprache des Ausdrucks kommt aus der Anfrage. normalise ist idempotent -
-    # das Schema hat den Wert schon abgebildet; hier steht es noch einmal, damit
-    # auch ein von Hand gebautes ExportRequest nicht mit "en-GB" durchrutscht.
-    locale = i18n.normalise(request.locale)
 
     crop = Extent(request.crop_mm.x0, request.crop_mm.y0, request.crop_mm.x1, request.crop_mm.y1)
     if crop.width <= 0.0 or crop.height <= 0.0:
@@ -163,6 +176,38 @@ def run_export(session: Session, request: ExportRequest) -> BuildResult:
     adjust_options = request.adjust.to_enhance()
     if not adjust_options.is_identity:
         rectified = enhance.adjust(rectified, adjust_options)
+
+    return solved, rectified, crop, px_per_mm
+
+
+def run_export_image(session: Session, request: ExportImageRequest) -> ImageResult:
+    """Denselben Zuschnitt als Bilddatei statt als PDF.
+
+    **Was hier fehlt und fehlen muss:** Massstab, Raster, Fusszeile, Schnittmarken,
+    Klebeplan. Alles davon ist ein AUFDRUCK auf einem Ausdruck - auf einem Bild
+    waere es Bildinhalt, den ein nachgelagertes Programm nicht von der Schablone
+    unterscheiden koennte.
+
+    Was NICHT fehlt, ist die Massangabe: die Auflösung steht in der Datei
+    (app/vision/encode.py). Ein Pixel ist damit 25,4/dpi Millimeter, und das laesst
+    sich lesen statt raten.
+    """
+    _, rectified, _, _ = _rectified_crop(session, request)
+    return ImageResult(
+        data=encode.encode_image(rectified, request.image_format, request.dpi),
+        width=int(rectified.shape[1]),
+        height=int(rectified.shape[0]),
+    )
+
+
+def run_export(session: Session, request: ExportRequest) -> BuildResult:
+    """Vom gewaehlten Zuschnitt zum druckfertigen PDF."""
+    # Die Sprache des Ausdrucks kommt aus der Anfrage. normalise ist idempotent -
+    # das Schema hat den Wert schon abgebildet; hier steht es noch einmal, damit
+    # auch ein von Hand gebautes ExportRequest nicht mit "en-GB" durchrutscht.
+    locale = i18n.normalise(request.locale)
+
+    solved, rectified, crop, px_per_mm = _rectified_crop(session, request)
 
     contour_mm = None
     if request.contour:
@@ -238,7 +283,8 @@ def _footer_meta(
             "pdf.footer.contour", locale, width=f"{width_mm:.1f}", height=f"{height_mm:.1f}"
         )
 
-    mode_key = "sheet" if solved.solution.mode == "sheet" else "free"
+    # Der Modus IST der Schluessel - fuer jeden gibt es pdf.footer.mode_*.
+    mode_key = solved.solution.mode
     return {
         "object_mm": object_text,
         "dpi": request.dpi,

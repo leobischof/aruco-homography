@@ -127,7 +127,7 @@ nicht bloß einen Vergleich.
 
 | Datei | Größe | eingecheckt? |
 |---|---|---|
-| `web/vendor/core/aruco_core.wasm` | 3 622 701 B | **ja** |
+| `web/vendor/core/aruco_core.wasm` | 3 635 422 B | **ja** |
 | `web/vendor/core/aruco_core.mjs` | 129 479 B | **ja** |
 | `web/vendor/pdf-lib.esm.min.js` | 523 417 B | nein — beim Bauen aus `node_modules/` |
 | `web/index.html` | 16 970 B | nein — erzeugt |

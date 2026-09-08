@@ -215,6 +215,37 @@ JNIEXPORT jdoubleArray JNICALL Java_com_bischofsnowboards_aruco_NativeCore_fitFr
     return doubles_to_java(env, result.data(), static_cast<std::int32_t>(result.size()));
 }
 
+/// Streu-Modus. Rueckgabe: neun Zahlen Homographie, dann je Marker DREI Zahlen
+/// Lage (x, y, Winkel) - auch fuer den ersten.
+///
+/// Ein Feld und kein Objekt, aus demselben Grund wie bei fitFree.
+JNIEXPORT jdoubleArray JNICALL Java_com_bischofsnowboards_aruco_NativeCore_fitScattered(
+    JNIEnv* env, jclass, jdoubleArray corners, jdouble marker_mm) {
+    const std::vector<double> corners_xy = doubles_of(env, corners);
+    if (corners_xy.empty() || corners_xy.size() % 8 != 0) {
+        throw_java(env, "java/lang/IllegalArgumentException",
+                   "fitScattered erwartet vier Ecken je Marker (8 Zahlen), bekam " +
+                       std::to_string(corners_xy.size()));
+        return nullptr;
+    }
+    const std::int32_t markers = static_cast<std::int32_t>(corners_xy.size() / 8);
+
+    Call call;
+    double homography[9] = {0.0};
+    std::vector<double> poses(static_cast<std::size_t>(markers) * 3U);
+    const std::int32_t written =
+        aruco_fit_scattered(corners_xy.data(), markers, marker_mm, homography, poses.data(),
+                            markers, call.error, kErrorCapacity);
+    if (call.failed(env, written)) {
+        return nullptr;
+    }
+
+    std::vector<double> result(9U + poses.size());
+    std::copy(homography, homography + 9, result.begin());
+    std::copy(poses.begin(), poses.end(), result.begin() + 9);
+    return doubles_to_java(env, result.data(), static_cast<std::int32_t>(result.size()));
+}
+
 // --- Kamera und Ausdehnung ---------------------------------------------------
 
 JNIEXPORT jdoubleArray JNICALL Java_com_bischofsnowboards_aruco_NativeCore_poseFromHomography(

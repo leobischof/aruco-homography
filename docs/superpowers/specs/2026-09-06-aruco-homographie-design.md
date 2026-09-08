@@ -110,7 +110,7 @@ ArUco-Homographie/
 │  │  ├─ backend.py             # welcher Rechenkern misst: Python oder C++ (ARUCO_CORE)
 │  │  ├─ geometry.py            # projektive Grundrechenarten, von mehreren Modulen geteilt
 │  │  ├─ detect.py              # EXIF-Rotation, HEIC, CLAHE, ArUco + Subpixel-Refinement
-│  │  ├─ solve.py               # Homographie: Blatt-Modus + Frei-Modus, Residuen, Hülle
+│  │  ├─ solve.py               # Homographie: Blatt, frei, verstreut; Residuen, Hülle
 │  │  ├─ camera.py              # Brennweite aus EXIF, H-Zerlegung → Höhe, Lotpunkt, Neigung
 │  │  ├─ thickness.py           # Dickenkorrektur → effektive Homographie
 │  │  ├─ extent.py              # abbildbarer Ebenenbereich (Horizont-Clipping)
@@ -217,12 +217,59 @@ Bekannt ist nur `s`. Homographie **und** Markerpositionen werden gemeinsam gesch
 
 **Vorausgesetzt wird gleiche Ausrichtung aller Marker** (auf einem gedruckten Blatt gegeben).
 Geprüft wird das über den Winkel der zurückprojizierten TL→TR-Kante je Marker relativ zum
-Ankermarker; über `MARKER_ROT_WARN_DEG` gibt es eine Warnung.
+Ankermarker; über `MARKER_ROT_WARN_DEG` gibt es eine Warnung. Wer die Marker wirklich verstreut
+liegen hat, nimmt §3.4.
 
 `n = 1` ist zulässig (8 Unbekannte, 8 Gleichungen, exakt), wird aber deutlich als redundanzfrei
 gewarnt.
 
-**Kollinearitätsmaß** (in beiden Modi geprüft, ab 2 Markern): Fläche der konvexen Hülle der
+### 3.4 Streu-Modus (beliebige Winkel)
+
+Der Frei-Modus setzt gleiche Ausrichtung voraus. Liegen die Marker verstreut auf einer
+Fläche — jeder so, wie er gefallen ist —, gilt das nicht, und das Ergebnis ist dann nicht
+etwa ungenau, sondern falsch: auf der synthetischen Szene misst der Frei-Modus einen
+500-mm-Abstand als 148 mm und meldet RMS 71 px
+(`tests/test_solve.py::test_freimodus_scheitert_an_gedrehten_markern`).
+
+Der Streu-Modus ist derselbe Ausgleich mit **einer Unbekannten mehr je Marker**.
+
+- **Unbekannte:** `h11..h32` (8) + `(x_i, y_i, θ_i)` für `i = 1..n−1`.
+- **Modell:** Ebenenkoordinate von Marker `i`, Ecke `j`:
+  `p_ij = (x_i, y_i) + R(θ_i) · s · (u_j − (½, ½))`. Gedreht wird um den **Mittelpunkt**;
+  um die Ecke gedreht wäre jede Drehung zugleich eine Verschiebung.
+- **Bestimmtheit:** `8 + 3(n−1)` gegen `8n` — für `n = 4`: 17 gegen 32. Jeder weitere Marker
+  bringt **fünf** Bestimmungsstücke netto ein statt sechs; der Frei-Modus bleibt deshalb der
+  genauere, wenn seine Annahme stimmt. Er ist kein überholter Vorläufer, sondern der engere Fall.
+- **Startwert:** wie im Frei-Modus, dazu `θ_i` aus dem Winkel der zurückprojizierten
+  TL→TR-Kante — sie zeigt im Marker selbst in `+x`, ihr Winkel in der Ebene *ist* die Drehung.
+- **Warnung:** `marker_rotation` entfällt hier. Unterschiedliche Winkel sind der Normalfall
+  dieses Modus und keine Auffälligkeit.
+
+#### Die Ebene richtet sich nach dem FOTO
+
+In den anderen beiden Modi legt das Blatt beziehungsweise der Ankermarker Ursprung und Achsen
+fest. Hier kann das nicht sein: der größte Marker liegt in einem zufälligen Winkel, und der
+Zuschnitt ist ein **achsparalleles** Rechteck — die Schablone stünde schief, und um das Objekt
+herum ginge Rand verloren.
+
+Zum Schluss wird deshalb umgerechnet:
+
+- **Achsen:** gesucht ist die Drehung, nach der die Abbildung Ebene → Bild möglichst wenig dreht.
+  Für die 2×2-Jacobimatrix `J` in der Mitte der Markerwolke ist die nächstgelegene Drehung
+  `φ = atan2(J₁₀ − J₀₁, J₀₀ + J₁₁)`; die Ebene wird um `−φ` gedreht. Übrig bleibt eine
+  **symmetrische** Streckung — die perspektivische Verkürzung, die sich nicht wegdrehen lässt.
+- **Ursprung:** die Mitte der Markerwolke.
+
+Rechnerisch ist das `H' = H · M` mit `M` = Drehung um `−φ` plus Verschiebung in die Mitte; die
+Markerlagen werden mit `M⁻¹` mitgeführt. Weil `M` eine **Bewegung** ist, bleiben alle Abstände
+Millimeter — die Umrechnung kostet nichts an Maßhaltigkeit.
+
+**Ein einzelner Marker reicht** (in jedem Modus): vier Punktpaare bestimmen eine Homographie
+exakt, denn der Marker trägt sein Koordinatensystem selbst — die Eckenreihenfolge ist über sein
+Bitmuster festgelegt. Was er nicht trägt, ist eine Probe: das Residuum ist dann null, ohne dass
+der Fehler klein wäre. Dafür gibt es `single_marker`.
+
+**Kollinearitätsmaß** (in allen Modi geprüft, ab 2 Markern): Fläche der konvexen Hülle der
 Marker-**Mittelpunkte**, geteilt durch das Quadrat des größten Mittelpunktabstands. Unter
 `COLLINEARITY_WARN` ⇒ Warnung.
 
@@ -543,6 +590,23 @@ liegt auf **demselben Papierformat wie die Kacheln**, nicht auf A4 — ein Kache
 einem Drucker, und ein Blatt anderen Formats mittendrin ist genau das, was im Fach hängen
 bleibt.
 
+**Unter dem Kachelraster liegt der Zuschnitt selbst** — dasselbe entzerrte Bild, das gekachelt
+wird, maßstabsgetreu in dasselbe Rechteck gezeichnet. Ohne es sagt der Plan, *wie viele* Blätter
+es gibt, aber nicht, *welches* man gerade in der Hand hält. Es ist ein Daumennagel und keine
+Schablone: die längere Kante wird auf `OVERVIEW_MAX_PX = 1600` gedeckelt (bei höchstens 250 mm
+Bildhöhe rund 160 dpi). Kachelränder und Außenkante bekommen deshalb denselben weißen Saum wie
+das Millimeterraster (§4.4) — eine dünne Linie ist auf einem Foto mal sichtbar und mal nicht —
+und die Blattnummern stehen auf weißem Träger.
+
+Woher der Daumennagel kommt, hängt am Weg: **am Stück** ist das ganze Raster ohnehin schon
+eingebettet und wird wiederverwendet (ein zweites, kleineres Bild wäre reine Dateigröße);
+**blattweise** gibt es kein ganzes Raster, also fragt der Bau die Bildquelle einmal nach dem
+ganzen Zuschnitt — mit Deckel, damit nicht genau das Raster entsteht, dessen Vermeidung den
+Export auf dem Telefon erst möglich gemacht hat (`web/pdf/build.js`). Die Bildquelle nimmt
+dafür ein fünftes Argument `maxPx`; null heißt Druckauflösung. In ReportLab wird stattdessen
+intern verkleinert, weil dort jedes `drawImage` neu kodiert und nichts mit den Kachelseiten
+teilt.
+
 Der Kopf `X-Image-Rect-Mm` meldet im Kachelmodus das Bildrechteck der **ersten** Kachel.
 
 ### 4.4 Overlays
@@ -653,7 +717,7 @@ einzige Stelle für Konstanten (AGENTS.md, Invariante 4), und ein abgeschriebene
 Browser wäre die zweite.
 
 **`POST /api/solve`**
-`{ session_id, marker_mm, mode: "sheet"|"free", thickness_mm, camera_height_mm|null,
+`{ session_id, marker_mm, mode: "sheet"|"free"|"scattered", thickness_mm, camera_height_mm|null,
    spacing_x_mm, spacing_y_mm }`  — die beiden Abstände nur im Blatt-Modus benutzt
 → `{ session_id, mode_used,
      markers[{id, corners_px, side_mm_measured, residual_px, rotation_deg}],
@@ -803,12 +867,20 @@ Modul ins Dunkle. Der `@media`-Block in `tokens.css` schließt `[data-theme="lig
 die Systemvorgabe eine ausdrückliche Wahl nicht überschreibt. Die Wahl liegt in `localStorage`
 unter `THEME_STORAGE_KEY`; im privaten Modus gilt sie eben nur für diese Sitzung.
 
-**Sprachwahl.** Zwei Knöpfe im Kopf (DE/EN) mit `aria-pressed`. Die Startsprache ist die
-gespeicherte Wahl (`LOCALE_STORAGE_KEY`), sonst die Browsersprache, sonst Deutsch. Der Katalog
-wird geladen, **bevor** irgendetwas gezeichnet wird — die Regler bekommen ihre Beschriftung beim
-Erzeugen, nicht nachträglich. Schlägt das Laden fehl, bleibt der Katalog leer und jede
-Beschriftung zeigt ihren Schlüssel: hässlich und genau deshalb richtig, denn die Oberfläche bleibt
-bedienbar und der Fehler ist nicht zu übersehen.
+**Sprachwahl.** Ein natives `<select>` im Kopf, das `header.js` aus `/api/locales` füllt — eine
+dritte Sprache ist damit eine Katalogdatei plus ein Eintrag in `config.SUPPORTED_LOCALES` und
+kein Markup. Geschlossen steht darin das **Kürzel** (`DE`, `EN`), aufgeklappt der Eigenname
+(`Deutsch`, `English`). HTML sieht dafür keine zwei Beschriftungen vor — `label` gilt für beides
+—, also tauscht `header.js` die Texte, und zwar bevor die Liste aufgeht: ein offenes Systemrad
+nimmt Änderungen nicht mehr an. Der Grund für das Kürzel ist die Breite: nur so stehen
+Markerblatt-Verweis, Sprache und Thema auf einem Telefon in **einer** Zeile. Der Wähler ist
+deshalb auch fest 60 px breit, sonst spränge der Themenknopf beim Aufklappen zur Seite.
+
+Die Startsprache ist die gespeicherte Wahl (`LOCALE_STORAGE_KEY`), sonst die Browsersprache,
+sonst Deutsch. Der Katalog wird geladen, **bevor** irgendetwas gezeichnet wird — die Regler
+bekommen ihre Beschriftung beim Erzeugen, nicht nachträglich. Schlägt das Laden fehl, bleibt der
+Katalog leer und jede Beschriftung zeigt ihren Schlüssel: hässlich und genau deshalb richtig,
+denn die Oberfläche bleibt bedienbar und der Fehler ist nicht zu übersehen.
 
 ---
 
@@ -882,7 +954,7 @@ Katalogeintrag.
 | 1 Marker | rechnet weiter, laute Warnung `single_marker`: redundanzfrei, kein Fehlermaß möglich |
 | Blatt-Modus, keine ID in `{0..3}` | Fehler `no_sheet_ids` mit den gefundenen IDs und dem Vorschlag, in den Frei-Modus zu wechseln |
 | Marker nahezu kollinear | Warnung `collinear_markers`, Homographie schlecht konditioniert |
-| Marker unterschiedlich rotiert (Frei-Modus) | Warnung `marker_rotation` über `MARKER_ROT_WARN_DEG` |
+| Marker unterschiedlich rotiert (Frei-Modus) | Warnung `marker_rotation` über `MARKER_ROT_WARN_DEG` — im Streu-Modus entfällt sie, dort ist das der Normalfall |
 | RMS über `RMS_WARN_PX` / `RMS_WARN_MM` | Warnung `high_residual`, kein Abbruch |
 | gemessene Markergröße weicht ab | Warnung `marker_size_deviation` mit Prozentwert je Marker |
 | Crop außerhalb der Hülle | keine Server-Warnung — der Anteil wird in der Oberfläche angezeigt und über `EXTRAPOLATION_WARN_FRAC` eingefärbt (§3.7) |
@@ -1087,6 +1159,9 @@ verschiebt Kanten daher nicht.
 | `test_solve` (Blatt, rauschfrei) | rückgewonnene Objektmaße | < 1e-6 mm, RMS < 1e-6 px |
 | `test_solve` (Blatt, ±0,2 px Rauschen) | Maß über 500 mm | < 0,5 mm |
 | `test_solve` (Frei, rauschfrei) | Maße und rückgewonnenes Layout | < 1e-6 mm |
+| `test_solve` (Streu, rauschfrei) | Maße, Winkeldifferenzen, Ursprung | < 1e-6 mm bzw. Grad |
+| `test_solve` (Streu, Ausrichtung) | Markerwinkel gegen das Foto | < 0,1 Grad (Rest = Scherung) |
+| `scattered.test.mjs` | dieselben Aussagen durch das WebAssembly | wie oben, Rest-Drehung < 1e-9 Grad |
 | `test_solve` (Frei, ±0,2 px Rauschen) | Maß über 500 mm | < 1,0 mm |
 | `test_solve` (Degeneriert) | kollinear / 1 Marker / fremde IDs erzeugen die richtigen Codes | exakt |
 | `test_camera` | `d`, Lotpunkt, Neigung gegen Wahrheit | `d` < 0,5 %, `N` < 1 mm, `θ` < 0,1° |

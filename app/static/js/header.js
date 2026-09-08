@@ -38,16 +38,38 @@ export function createHeader({ themeButton, langSelect, sheetLink, getSheetParam
 
     /** Die Eintraege einmal aufbauen. Die Namen sind Eigennamen ("Deutsch",
         "English") und stehen im Katalog IHRER Sprache - sie aendern sich beim
-        Wechsel also nicht, nur die Auswahl tut es. */
+        Wechsel also nicht, nur die Auswahl tut es.
+
+        Jeder Eintrag traegt ZWEI Beschriftungen: das Kuerzel ("DE") fuer die
+        geschlossene Auswahl und den Eigennamen ("Deutsch") fuer die aufgeklappte
+        Liste. Das Kuerzel wird gerechnet und nicht uebersetzt - eine dritte
+        Sprache bleibt damit eine Katalogdatei plus ein Eintrag in
+        config.SUPPORTED_LOCALES. */
     function buildLanguageOptions() {
         langSelect.replaceChildren(
             ...getLocales().map(({ code, label }) => {
                 const option = document.createElement("option");
                 option.value = code;
-                option.textContent = label;
+                option.dataset.short = code.toUpperCase();
+                option.dataset.full = label;
                 return option;
             })
         );
+        showLanguageNames(false);
+    }
+
+    /**
+     * Kuerzel oder Eigennamen in die Eintraege schreiben.
+     *
+     * Ein natives <select> zeigt geschlossen den Text der gewaehlten Option; einen
+     * zweiten Text fuer die aufgeklappte Liste sieht HTML nicht vor - `label` gilt
+     * fuer beides. Also wird getauscht, und zwar BEVOR die Liste aufgeht: ist das
+     * Systemrad einmal offen, nimmt es Aenderungen an den Eintraegen nicht mehr an.
+     */
+    function showLanguageNames(full) {
+        for (const option of langSelect.options) {
+            option.textContent = full ? option.dataset.full : option.dataset.short;
+        }
     }
 
     function syncLanguage() {
@@ -71,6 +93,16 @@ export function createHeader({ themeButton, langSelect, sheetLink, getSheetParam
 
     themeButton.addEventListener("click", toggleTheme);
     onThemeChange(syncTheme);
+
+    // mousedown und touchstart laufen vor dem Oeffnen, focus faengt den Weg
+    // ueber die Tastatur. Zurueck auf die Kuerzel geht es, sobald die Liste
+    // wieder zu ist - nach der Wahl oder beim Verlassen.
+    for (const opening of ["mousedown", "touchstart", "focus"]) {
+        langSelect.addEventListener(opening, () => showLanguageNames(true));
+    }
+    for (const closing of ["change", "blur"]) {
+        langSelect.addEventListener(closing, () => showLanguageNames(false));
+    }
 
     langSelect.addEventListener("change", () => {
         // Schlaegt der Katalog fehl, zeigte die Auswahl eine Sprache, die gar

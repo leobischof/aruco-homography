@@ -80,6 +80,53 @@ std::vector<cv::Point2d> as_double(const std::vector<Point2>& points) {
     return converted;
 }
 
+// Dieselben vier Ecken, aber relativ zum MITTELPUNKT des Markers. Der Streu-Modus
+// dreht um den Mittelpunkt und nicht um die obere linke Ecke; nur so bleibt eine
+// Drehung eine Drehung und wird nicht zugleich eine Verschiebung.
+constexpr double kCentredCorners[4][2] = {
+    {-0.5, -0.5}, {0.5, -0.5}, {0.5, 0.5}, {-0.5, 0.5}};
+
+/// Die vier Ebenenecken eines Markers aus seiner Lage.
+std::array<Point2, 4> corners_of(const Pose2& pose, double marker_mm) {
+    const double cos_t = std::cos(pose.theta);
+    const double sin_t = std::sin(pose.theta);
+    std::array<Point2, 4> corners{};
+    for (std::size_t corner = 0; corner < 4; ++corner) {
+        const double local_x = kCentredCorners[corner][0] * marker_mm;
+        const double local_y = kCentredCorners[corner][1] * marker_mm;
+        corners[corner] = Point2{pose.x + cos_t * local_x - sin_t * local_y,
+                                 pose.y + sin_t * local_x + cos_t * local_y};
+    }
+    return corners;
+}
+
+/// Die 2x2-Jacobimatrix der Homographie an einer Stelle: {du/dx, du/dy, dv/dx, dv/dy}.
+std::array<double, 4> plane_jacobian(const Matrix3& homography, const Point2& point) {
+    const double w = homography[6] * point.x + homography[7] * point.y + homography[8];
+    if (std::abs(w) < 1e-12) {
+        throw std::invalid_argument("Jacobimatrix auf dem Horizont (w ~ 0)");
+    }
+    const double u = (homography[0] * point.x + homography[1] * point.y + homography[2]) / w;
+    const double v = (homography[3] * point.x + homography[4] * point.y + homography[5]) / w;
+    return {(homography[0] - u * homography[6]) / w, (homography[1] - u * homography[7]) / w,
+            (homography[3] - v * homography[6]) / w, (homography[4] - v * homography[7]) / w};
+}
+
+/// Zwei Homographien verketten: erst `second`, dann `first`.
+Matrix3 concatenated(const Matrix3& first, const Matrix3& second) {
+    Matrix3 result{};
+    for (std::size_t row = 0; row < 3; ++row) {
+        for (std::size_t column = 0; column < 3; ++column) {
+            double sum = 0.0;
+            for (std::size_t step = 0; step < 3; ++step) {
+                sum += first[row * 3 + step] * second[step * 3 + column];
+            }
+            result[row * 3 + column] = sum;
+        }
+    }
+    return result;
+}
+
 /// Residuum und Jacobi-Matrix fuer eine feste Punktmenge in der Ebene.
 ///
 /// `plane` darf sich zwischen den Aufrufen aendern (Frei-Modus verschiebt die
@@ -198,6 +245,216 @@ Matrix3 refine_homography(const Matrix3& start, const std::vector<Point2>& plane
     solver.optimize();
 
     return from_eight(parameters.ptr<double>());
+}
+
+ScatteredFit fit_scattered(const std::vector<std::array<Point2, 4>>& quads,
+                           double marker_mm) {
+    if (quads.empty()) {
+        throw std::invalid_argument("fit_scattered braucht mindestens einen Marker");
+    }
+
+    // Startwert: der groesste Marker liegt achsparallel im Ursprung. Das ist nur
+    // der ANFANGSPUNKT der Rechnung - ausgerichtet wird ganz unten.
+    const Pose2 anchor{marker_mm / 2.0, marker_mm / 2.0, 0.0};
+    const Matrix3 start = homography_from_quad(corners_of(anchor, marker_mm), quads[0]);
+    const Matrix3 inverse = invert(start);
+
+    const std::size_t others = quads.size() - 1;
+    std::vector<Pose2> poses(quads.size());
+    poses[0] = anchor;
+    for (std::size_t index = 0; index < others; ++index) {
+        const std::array<Point2, 4>& quad = quads[index + 1];
+        const std::vector<Point2> corners(quad.begin(), quad.end());
+        const std::vector<Point2> in_plane = project(inverse, corners);
+
+        double sum_x = 0.0;
+        double sum_y = 0.0;
+        for (const Point2& point : in_plane) {
+            sum_x += point.x;
+            sum_y += point.y;
+        }
+        // Der Winkel kommt aus der Kante Ecke 0 -> Ecke 1. Sie zeigt im Marker
+        // selbst in +x-Richtung, ihr Winkel in der Ebene IST also die Drehung.
+        poses[index + 1] = Pose2{
+            sum_x / 4.0, sum_y / 4.0,
+            std::atan2(in_plane[1].y - in_plane[0].y, in_plane[1].x - in_plane[0].x)};
+    }
+
+    std::vector<Point2> image;
+    image.reserve(quads.size() * 4);
+    for (const std::array<Point2, 4>& quad : quads) {
+        for (const Point2& corner : quad) {
+            image.push_back(corner);
+        }
+    }
+
+    const int variables = static_cast<int>(8 + 3 * others);
+    const int rows = static_cast<int>(2 * image.size());
+
+    cv::Mat_<double> parameters(variables, 1);
+    const std::array<double, 8> initial = as_eight(start);
+    for (int index = 0; index < 8; ++index) {
+        parameters(index, 0) = initial[static_cast<std::size_t>(index)];
+    }
+    for (std::size_t index = 0; index < others; ++index) {
+        parameters(static_cast<int>(8 + 3 * index), 0) = poses[index + 1].x;
+        parameters(static_cast<int>(9 + 3 * index), 0) = poses[index + 1].y;
+        parameters(static_cast<int>(10 + 3 * index), 0) = poses[index + 1].theta;
+    }
+
+    // Die Ebenenpunkte haengen an den Parametern: der Anker steht fest, jeder
+    // weitere Marker sitzt auf seinem Mittelpunkt und in seinem Winkel.
+    auto plane_points = [&anchor, marker_mm, others](const double* p) {
+        std::vector<Point2> plane;
+        plane.reserve(4 * (others + 1));
+        for (const Point2& corner : corners_of(anchor, marker_mm)) {
+            plane.push_back(corner);
+        }
+        for (std::size_t index = 0; index < others; ++index) {
+            const Pose2 pose{p[8 + 3 * index], p[9 + 3 * index], p[10 + 3 * index]};
+            for (const Point2& corner : corners_of(pose, marker_mm)) {
+                plane.push_back(corner);
+            }
+        }
+        return plane;
+    };
+
+    auto callback = [&image, &plane_points, marker_mm, rows, variables, others](
+                        cv::InputOutputArray probe, cv::OutputArray err,
+                        cv::OutputArray jacobian) -> bool {
+        const cv::Mat_<double> current = probe.getMat();
+        const double* p = current.ptr<double>();
+        const std::vector<Point2> plane = plane_points(p);
+
+        err.create(rows, 1, CV_64F);
+        cv::Mat_<double> residual = err.getMat();
+        fill_residual(p, plane, image, residual);
+
+        if (jacobian.needed()) {
+            jacobian.create(rows, variables, CV_64F);
+            cv::Mat_<double> matrix = jacobian.getMat();
+            matrix.setTo(0.0);
+            for (std::size_t index = 0; index < plane.size(); ++index) {
+                const double x = plane[index].x;
+                const double y = plane[index].y;
+                const double w = p[6] * x + p[7] * y + 1.0;
+                const double u = (p[0] * x + p[1] * y + p[2]) / w;
+                const double v = (p[3] * x + p[4] * y + p[5]) / w;
+                const int row_u = static_cast<int>(2 * index);
+                const int row_v = row_u + 1;
+
+                matrix(row_u, 0) = x / w;
+                matrix(row_u, 1) = y / w;
+                matrix(row_u, 2) = 1.0 / w;
+                matrix(row_u, 6) = -u * x / w;
+                matrix(row_u, 7) = -u * y / w;
+
+                matrix(row_v, 3) = x / w;
+                matrix(row_v, 4) = y / w;
+                matrix(row_v, 5) = 1.0 / w;
+                matrix(row_v, 6) = -v * x / w;
+                matrix(row_v, 7) = -v * y / w;
+
+                // Die ersten vier Punkte gehoeren dem Anker; der hat keine
+                // Unbekannten. Alle weiteren haengen an Mittelpunkt und Winkel
+                // ihres Markers.
+                if (index < 4) {
+                    continue;
+                }
+                const std::size_t marker = index / 4 - 1;
+                if (marker >= others) {
+                    continue;
+                }
+
+                // Ableitung des Ebenenpunktes nach dem Winkel: die Ecke laeuft
+                // auf einem Kreis um den Mittelpunkt, also steht die Ableitung
+                // senkrecht auf dem Radius.
+                const double theta = p[10 + 3 * marker];
+                const double cos_t = std::cos(theta);
+                const double sin_t = std::sin(theta);
+                const std::size_t corner = index % 4;
+                const double local_x = kCentredCorners[corner][0] * marker_mm;
+                const double local_y = kCentredCorners[corner][1] * marker_mm;
+                const double dx_dtheta = -sin_t * local_x - cos_t * local_y;
+                const double dy_dtheta = cos_t * local_x - sin_t * local_y;
+
+                // Ableitung des Bildpunktes nach dem Ebenenpunkt - dieselben
+                // vier Groessen, die auch plane_jacobian liefert.
+                const double du_dx = (p[0] - u * p[6]) / w;
+                const double du_dy = (p[1] - u * p[7]) / w;
+                const double dv_dx = (p[3] - v * p[6]) / w;
+                const double dv_dy = (p[4] - v * p[7]) / w;
+
+                const int column_x = static_cast<int>(8 + 3 * marker);
+                matrix(row_u, column_x) = du_dx;
+                matrix(row_u, column_x + 1) = du_dy;
+                matrix(row_u, column_x + 2) = du_dx * dx_dtheta + du_dy * dy_dtheta;
+                matrix(row_v, column_x) = dv_dx;
+                matrix(row_v, column_x + 1) = dv_dy;
+                matrix(row_v, column_x + 2) = dv_dx * dx_dtheta + dv_dy * dy_dtheta;
+            }
+        }
+        return true;
+    };
+
+    cv::LevMarq solver(parameters, callback, tight_settings());
+    solver.optimize();
+
+    const double* fitted = parameters.ptr<double>();
+    Matrix3 homography = from_eight(fitted);
+    for (std::size_t index = 0; index < others; ++index) {
+        poses[index + 1] = Pose2{fitted[8 + 3 * index], fitted[9 + 3 * index],
+                                 fitted[10 + 3 * index]};
+    }
+
+    // --- Die Ebene nach dem Foto ausrichten ---------------------------------
+    //
+    // Bis hierher haengen Ursprung und Achsen am Anker, und der liegt in einem
+    // zufaelligen Winkel - das ist der Modus. Der Zuschnitt ist aber ein
+    // ACHSPARALLELES Rechteck: stuende die Ebene schief, stuende die Schablone
+    // schief, und der Benutzer muesste um sein Objekt herum Rand verschenken.
+    //
+    // Gesucht ist die Drehung, nach der die Abbildung Ebene -> Bild moeglichst
+    // wenig dreht. Fuer eine 2x2-Matrix J ist die naechstgelegene Drehung
+    // atan2(J10 - J01, J00 + J11); wird sie herausgedreht, bleibt eine
+    // SYMMETRISCHE Streckung uebrig - die perspektivische Verkuerzung, die sich
+    // nicht wegdrehen laesst. Gemessen wird in der Mitte der Markerwolke, weil
+    // dort die Schablone liegt.
+    Point2 centre{0.0, 0.0};
+    for (const Pose2& pose : poses) {
+        centre.x += pose.x / static_cast<double>(poses.size());
+        centre.y += pose.y / static_cast<double>(poses.size());
+    }
+
+    const std::array<double, 4> jacobian = plane_jacobian(homography, centre);
+    const double turn = -std::atan2(jacobian[2] - jacobian[1], jacobian[0] + jacobian[3]);
+    const double cos_turn = std::cos(turn);
+    const double sin_turn = std::sin(turn);
+
+    // Von den NEUEN Ebenenkoordinaten in die alten: erst drehen, dann in die
+    // Mitte schieben. Verkettet mit der Homographie ergibt das die neue.
+    homography = concatenated(homography, Matrix3{cos_turn, -sin_turn, centre.x, sin_turn,
+                                                  cos_turn, centre.y, 0.0, 0.0, 1.0});
+    if (std::abs(homography[8]) < 1e-15) {
+        throw std::invalid_argument("Ausrichtung ergibt eine entartete Homographie");
+    }
+    for (double& value : homography) {
+        value /= homography[8];
+    }
+
+    // Und dieselbe Umrechnung fuer die Marker: der Mittelpunkt dreht sich um die
+    // Wolkenmitte zurueck, der Winkel um den Drehwinkel.
+    for (Pose2& pose : poses) {
+        const double dx = pose.x - centre.x;
+        const double dy = pose.y - centre.y;
+        pose = Pose2{cos_turn * dx + sin_turn * dy, -sin_turn * dx + cos_turn * dy,
+                     pose.theta - turn};
+    }
+
+    ScatteredFit fit;
+    fit.homography = homography;
+    fit.poses = std::move(poses);
+    return fit;
 }
 
 FreeFit fit_free(const std::vector<std::array<Point2, 4>>& quads, double marker_mm) {

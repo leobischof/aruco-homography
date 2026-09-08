@@ -13,7 +13,12 @@ import pytest
 from pypdf import PdfReader
 
 from app import config
-from app.pdf.build import ExportOptions, build_footer_lines, build_pdf
+from app.pdf.build import (
+    ExportOptions,
+    _overview_thumbnail,
+    build_footer_lines,
+    build_pdf,
+)
 
 
 def dummy_image(width_mm: float, height_mm: float, dpi: int = 300) -> np.ndarray:
@@ -92,6 +97,51 @@ def test_kachelung_hat_die_erwartete_seitenzahl_und_a4_seiten():
     assert len(reader.pages) == result.page_count
     assert result.page_count == int(result.meta["tiles"]) + 1  # plus Klebeplan
     assert page_size_mm(result.data) == pytest.approx(config.SHEET_MM, abs=0.01)
+
+
+def test_klebeplan_zeigt_den_zuschnitt_als_bild():
+    """Unter der Kachelung liegt das Bild, das gekachelt wird.
+
+    Ohne das ist der Klebeplan ein leeres Gitter mit Nummern: er sagt, WIE VIELE
+    Blaetter es gibt, aber nicht, welches man gerade in der Hand haelt.
+
+    Geprueft wird am fertigen PDF und damit fuer BEIDE Erzeuger - ARUCO_PDF=js
+    faehrt dieselbe Zeile durch web/pdf/build.js.
+    """
+    import pymupdf
+
+    crop_w, crop_h = 700.0, 500.0
+    options = ExportOptions(
+        layout="tiles", page_format="A4", orientation="portrait", tile_overview=True
+    )
+    result = build_pdf(dummy_image(crop_w, crop_h, dpi=150), crop_w, crop_h, options, FOOTER)
+
+    document = pymupdf.open(stream=result.data, filetype="pdf")
+    images = document[0].get_images(full=True)
+    assert len(images) == 1, f"Der Klebeplan traegt {len(images)} Bilder statt einem"
+
+    # Der ganze Zuschnitt und nicht eine Kachel - das Seitenverhaeltnis verraet es.
+    width_px, height_px = images[0][2], images[0][3]
+    assert width_px / height_px == pytest.approx(crop_w / crop_h, rel=0.01)
+
+
+def test_uebersichtsbild_ist_ein_daumennagel():
+    """Das Bild im Klebeplan wird verkleinert - es wird angesehen, nicht gemessen.
+
+    ReportLab kodiert bei jedem drawImage neu und teilt nichts mit den
+    Kachelseiten. In voller Aufloesung steckte der Zuschnitt also ein zweites Mal
+    in der Datei, fuer eine Handflaeche Papier.
+    """
+    big = dummy_image(700.0, 500.0, dpi=150)
+    small = _overview_thumbnail(big)
+
+    assert max(small.shape[:2]) == config.OVERVIEW_MAX_PX
+    assert small.shape[1] / small.shape[0] == pytest.approx(
+        big.shape[1] / big.shape[0], rel=0.01
+    )
+    # Was ohnehin klein genug ist, wird nicht angefasst - und schon gar nicht
+    # hochgerechnet.
+    assert _overview_thumbnail(small) is small
 
 
 def test_kachelung_ohne_klebeplan_ist_genau_die_kachelzahl():

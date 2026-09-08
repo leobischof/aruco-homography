@@ -16,7 +16,14 @@
  */
 
 import * as constants from "../constants.js";
-import { centroid, inv3, markerPlaneCorners, polygonArea, project } from "./geometry.js";
+import {
+    centroid,
+    inv3,
+    markerPlaneCorners,
+    markerPlaneCornersAt,
+    polygonArea,
+    project,
+} from "./geometry.js";
 import { AppError } from "./notices.js";
 
 /**
@@ -44,6 +51,8 @@ export function solve(core, markers, markerMm, mode, notices, spacingMm) {
         result = solveSheet(core, markers, markerMm, spacingMm);
     } else if (mode === "free") {
         result = solveFree(core, markers, markerMm);
+    } else if (mode === "scattered") {
+        result = solveScattered(core, markers, markerMm);
     } else {
         throw new AppError("bad_mode", "mode", { mode });
     }
@@ -101,6 +110,33 @@ function solveFree(core, markers, markerMm) {
             markerPlaneCorners(markerMm / 2.0 + offsetX, markerMm / 2.0 + offsetY, markerMm),
         );
     }
+    return { homography: fit.homography, planeById };
+}
+
+/**
+ * Streu-Modus: verstreute Marker in beliebigen Winkeln.
+ *
+ * Wie solveFree, nur schaetzt der Kern je Marker eine Drehung mit. Zurueck kommt
+ * eine Lage fuer JEDEN Marker - auch fuer den ersten: die fertige Ebene ist nach
+ * dem Foto ausgerichtet, und darin steht auch der Anker nicht im Ursprung
+ * (core/src/solve.cpp sagt, warum).
+ */
+function solveScattered(core, markers, markerMm) {
+    const ordered = [...markers].sort((a, b) => b.areaPx - a.areaPx);
+    const fit = core.fitScattered(concat(ordered.map((marker) => marker.corners)), markerMm);
+
+    const planeById = new Map();
+    ordered.forEach((marker, index) => {
+        planeById.set(
+            marker.id,
+            markerPlaneCornersAt(
+                fit.poses[index * 3],
+                fit.poses[index * 3 + 1],
+                fit.poses[index * 3 + 2],
+                markerMm,
+            ),
+        );
+    });
     return { homography: fit.homography, planeById };
 }
 

@@ -163,31 +163,34 @@
         loadPickedPhoto: () => callAsync("loadPickedPhoto"),
         detectMarkers: (enhance = true) => callAsync("detectMarkers", enhance),
         runConformance: (dumpCorners = false) => callAsync("runConformance", dumpCorners),
-        savePdf: (bytes, filename) => sendPdf(bytes).then(() => callAsync("savePdf", filename)),
-        sharePdf: (bytes, filename) => sendPdf(bytes).then(() => callAsync("sharePdf", filename)),
+        saveFile: (bytes, filename) =>
+            sendBytes(bytes).then(() => callAsync("saveFile", filename)),
+        sharePdf: (bytes, filename) =>
+            sendBytes(bytes).then(() => callAsync("sharePdf", filename)),
         navigate: (path) => bridge && bridge.navigate(path),
     };
 
     /**
-     * Ein PDF in Scheiben nach Java schieben.
+     * Eine Datei in Scheiben nach Java schieben.
      *
-     * Zwei Groessenordnungen, ein Weg: das A4-Markerblatt sind wenige Dutzend
+     * Drei Groessenordnungen, ein Weg: das A4-Markerblatt sind wenige Dutzend
      * Kilobyte, ein gekacheltes Schablonen-PDF mit eingebettetem 300-dpi-Raster
-     * zweistellige Megabyte. Am Stueck stuende die Base64-Zeichenkette zweimal im
-     * Speicher - einmal hier, einmal als Java-String -, und zwar genau in dem
-     * Augenblick, in dem das Rasterbild noch daneben liegt.
+     * zweistellige Megabyte, derselbe Zuschnitt als PNG noch einmal mehr. Am
+     * Stueck stuende die Base64-Zeichenkette zweimal im Speicher - einmal hier,
+     * einmal als Java-String -, und zwar genau in dem Augenblick, in dem das
+     * Rasterbild noch daneben liegt.
      *
      * 192 KB je Scheibe sind 256 KB Text: klein genug, dass es nicht ins Gewicht
      * faellt, und ein Vielfaches von 3, damit keine Scheibe mit
      * Base64-Fuellzeichen endet. Ohne das ergaeben zwei aneinandergehaengte
      * Scheiben beim Dekodieren Unsinn.
      */
-    const PDF_CHUNK_BYTES = 192 * 1024;
+    const CHUNK_BYTES = 192 * 1024;
 
-    async function sendPdf(bytes) {
+    async function sendBytes(bytes) {
         const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-        for (let offset = 0; offset < view.length; offset += PDF_CHUNK_BYTES) {
-            callSync("appendPdf", toBase64(view.subarray(offset, offset + PDF_CHUNK_BYTES)));
+        for (let offset = 0; offset < view.length; offset += CHUNK_BYTES) {
+            callSync("appendBytes", toBase64(view.subarray(offset, offset + CHUNK_BYTES)));
         }
     }
 
@@ -208,11 +211,13 @@
         return btoa(binary);
     }
 
-    // --- 4 · Das fertige PDF nach draussen ------------------------------------
+    // --- 4 · Die fertige Datei nach draussen ----------------------------------
     //
-    // In der oertlichen Betriebsart entsteht jedes PDF in der Seite und wird ueber
+    // In der oertlichen Betriebsart entsteht jede Datei in der Seite und wird ueber
     // eine `blob:`-Adresse angeboten - das Markerblatt in header.js als Verweis in
-    // der Seite, die Schablone in main.js als Anker, den niemand einhaengt.
+    // der Seite, die Schablone in main.js als Anker, den niemand einhaengt. Seit
+    // dem Bildexport ist nicht mehr jede davon ein PDF; welcher Typ es ist, sagt
+    // die Endung im Dateinamen, und die Java-Seite liest sie.
     //
     // Beides tut in einer WebView von allein NICHTS: es gibt keinen Downloadordner
     // und keinen PDF-Betrachter dahinter. Und die Java-Seite kann eine
@@ -282,7 +287,7 @@
     function deliver(url, filename) {
         fetch(url)
             .then((response) => response.arrayBuffer())
-            .then((buffer) => window.__aruco.savePdf(new Uint8Array(buffer), filename))
-            .catch((error) => console.error("PDF konnte nicht uebergeben werden", error));
+            .then((buffer) => window.__aruco.saveFile(new Uint8Array(buffer), filename))
+            .catch((error) => console.error("Datei konnte nicht uebergeben werden", error));
     }
 })();

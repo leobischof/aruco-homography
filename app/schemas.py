@@ -27,7 +27,7 @@ class CropMm(BaseModel):
 class SolveRequest(BaseModel):
     session_id: str
     marker_mm: float = Field(default=config.MARKER_MM_NOMINAL, gt=0.0)
-    mode: Literal["sheet", "free"] = "sheet"
+    mode: Literal["sheet", "free", "scattered"] = "sheet"
     thickness_mm: float = 0.0
     camera_height_mm: float | None = Field(default=None, gt=0.0)
     # Mittelpunktabstaende des Markerblatts; nur im Blatt-Modus benutzt.
@@ -84,6 +84,23 @@ class AdjustRequest(BaseModel):
 
     session_id: str
     adjust: AdjustOptions = Field(default_factory=AdjustOptions)
+
+
+class ExportImageRequest(BaseModel):
+    """Der Zuschnitt als reine Bilddatei.
+
+    Bewusst OHNE Aufdrucke, Kachelung und Seitenformat: das sind Eigenschaften
+    eines Ausdrucks, und ein Bild wird nicht gedruckt, sondern weiterverarbeitet.
+    Was bleibt, ist der Zuschnitt, die Auflösung und die Aufbereitung - also
+    genau das, was auch im PDF im Bild steckt.
+    """
+
+    session_id: str
+    crop_mm: CropMm
+    dpi: int = config.DPI_DEFAULT
+    image_format: Literal["jpeg", "png"] = "jpeg"
+    adjust: AdjustOptions = Field(default_factory=AdjustOptions)
+    filename: str = "schablone"
 
 
 class ExportRequest(BaseModel):
