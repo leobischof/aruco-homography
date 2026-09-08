@@ -20,6 +20,7 @@ import numpy as np
 
 from app import config
 from app.notices import AppError, NoticeList
+from app.vision import backend
 from app.vision.geometry import project
 
 # 35-mm-Aequivalent bezieht sich auf ein 36 x 24 mm grosses Bildfeld.
@@ -46,7 +47,7 @@ def focal_px_from_focal35(focal35_mm: float, width: int, height: int) -> float:
     return float(focal35_mm) / _FILM_WIDTH_MM * float(max(width, height))
 
 
-def pose_from_homography(
+def _pose_from_homography_python(
     homography: np.ndarray, focal_px: float, width: int, height: int
 ) -> tuple[float, tuple[float, float], float]:
     """Zerlegt H in Rotation und Translation und liefert (Hoehe, Lotpunkt, Neigung).
@@ -71,6 +72,14 @@ def pose_from_homography(
     nadir_mm = (float(center[0]), float(center[1]))
     tilt_deg = float(np.degrees(np.arccos(min(1.0, abs(rotation[2, 2])))))
     return camera_height_mm, nadir_mm, tilt_deg
+
+
+# Die Zerlegung ist Zahlenarbeit und gehoert damit in den Kern; die
+# Fallback-Kette darunter bleibt hier, weil sie Warnungen und Abbrueche mit
+# Codes erzeugt und die an den Rand gehoeren (Invariante 7).
+pose_from_homography = backend.implementation(
+    "pose_from_homography", _pose_from_homography_python
+)
 
 
 def _orthonormalize(matrix: np.ndarray) -> np.ndarray:

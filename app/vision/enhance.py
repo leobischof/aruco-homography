@@ -58,6 +58,7 @@ import cv2
 import numpy as np
 
 from app import config
+from app.vision import backend
 
 # Der Wertebereich von uint8 und der Farbkreis von OpenCV-HSV. Beides sind
 # Eigenschaften der Datentypen, keine frei gewaehlten Groessen - deshalb stehen
@@ -110,13 +111,44 @@ class AdjustOptions:
         )
 
 
-def adjust(bgr: np.ndarray, options: AdjustOptions) -> np.ndarray:
+def _adjust_python(
+    bgr: np.ndarray,
+    grayscale: bool = False,
+    invert: bool = False,
+    brightness: float = 0.0,
+    contrast: float = 0.0,
+    saturation: float = 0.0,
+    local_contrast: float = 0.0,
+    edge_boost: float = 0.0,
+    edge_overlay: float = 0.0,
+    color_emphasis: str = "none",
+    emphasis_strength: float = 0.0,
+    threshold: float = 0.0,
+) -> np.ndarray:
     """Bereitet ein entzerrtes BGR-Bild auf. Geometrie bleibt unangetastet.
+
+    Die Regler kommen hier EINZELN und nicht als AdjustOptions: das ist die
+    Grenze zum Rechenkern, und die kennt keine Python-Datenklassen - genauso wie
+    detect_markers dort (ID, Ecken) statt DetectedMarker reicht.
 
     Zurueck kommt immer ein NEUES Array - auch dann, wenn nichts zu tun war. Das
     Eingabebild wird nie veraendert und nie durchgereicht, damit der Aufrufer ins
     Ergebnis zeichnen darf, ohne sein Original zu beschaedigen.
     """
+    options = AdjustOptions(
+        grayscale=grayscale,
+        invert=invert,
+        brightness=brightness,
+        contrast=contrast,
+        saturation=saturation,
+        local_contrast=local_contrast,
+        edge_boost=edge_boost,
+        edge_overlay=edge_overlay,
+        color_emphasis=color_emphasis,
+        emphasis_strength=emphasis_strength,
+        threshold=threshold,
+    )
+
     image = _require_bgr8(bgr)
     if options.is_identity:
         return image.copy()
@@ -130,6 +162,27 @@ def adjust(bgr: np.ndarray, options: AdjustOptions) -> np.ndarray:
     image = _edge_overlay(image, options)
     image = _threshold(image, options)
     return _invert(image, options)
+
+
+_adjust = backend.implementation("adjust", _adjust_python)
+
+
+def adjust(bgr: np.ndarray, options: AdjustOptions) -> np.ndarray:
+    """Bereitet ein entzerrtes BGR-Bild auf. Geometrie bleibt unangetastet."""
+    return _adjust(
+        bgr,
+        grayscale=options.grayscale,
+        invert=options.invert,
+        brightness=options.brightness,
+        contrast=options.contrast,
+        saturation=options.saturation,
+        local_contrast=options.local_contrast,
+        edge_boost=options.edge_boost,
+        edge_overlay=options.edge_overlay,
+        color_emphasis=options.color_emphasis,
+        emphasis_strength=options.emphasis_strength,
+        threshold=options.threshold,
+    )
 
 
 def _require_bgr8(bgr: np.ndarray) -> np.ndarray:

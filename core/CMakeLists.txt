@@ -97,7 +97,15 @@ add_custom_command(
 
 # --- Die Bibliothek -----------------------------------------------------------
 add_library(aruco_core_lib STATIC
+  src/camera.cpp
+  src/contour.cpp
   src/detect.cpp
+  src/enhance.cpp
+  src/extent.cpp
+  src/geometry.cpp
+  src/image_bridge.cpp
+  src/rectify.cpp
+  src/solve.cpp
   "${ARUCO_CONSTANTS_HPP}")
 
 target_include_directories(aruco_core_lib PUBLIC include "${ARUCO_GENERATED_DIR}")

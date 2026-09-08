@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from app import config
+from app.vision import backend
 from app.vision.geometry import (
     clip_polygon_halfplane,
     convex_intersection_area,
@@ -50,9 +51,9 @@ class Extent:
         )
 
 
-def plane_extent(
+def _plane_extent_python(
     homography: np.ndarray, width: int, height: int, hull_mm: np.ndarray
-) -> Extent:
+) -> tuple[float, float, float, float]:
     """Bounding-Box des abbildbaren Ebenenbereichs, horizontsicher und geklammert."""
     inverse = np.linalg.inv(np.asarray(homography, dtype=np.float64))
     a, b, c = inverse[2, 0], inverse[2, 1], inverse[2, 2]
@@ -71,12 +72,12 @@ def plane_extent(
         eps=epsilon,
     )
     if len(visible) < 3:  # Kein brauchbarer Bereich: auf die Marker zurueckfallen.
-        return _hull_clamp(hull_mm)
+        return _as_tuple(_hull_clamp(hull_mm))
 
     mapped = project(inverse, visible)
     finite = mapped[np.isfinite(mapped).all(axis=1)]
     if len(finite) < 3:
-        return _hull_clamp(hull_mm)
+        return _as_tuple(_hull_clamp(hull_mm))
 
     candidate = Extent(
         float(finite[:, 0].min()),
@@ -84,7 +85,22 @@ def plane_extent(
         float(finite[:, 0].max()),
         float(finite[:, 1].max()),
     )
-    return candidate.clamped_to(_hull_clamp(hull_mm))
+    return _as_tuple(candidate.clamped_to(_hull_clamp(hull_mm)))
+
+
+def _as_tuple(extent: Extent) -> tuple[float, float, float, float]:
+    """Vier Zahlen statt der Datenklasse - die Grenze zum Kern kennt keine Klassen."""
+    return (extent.x0, extent.y0, extent.x1, extent.y1)
+
+
+_plane_extent = backend.implementation("plane_extent", _plane_extent_python)
+
+
+def plane_extent(
+    homography: np.ndarray, width: int, height: int, hull_mm: np.ndarray
+) -> Extent:
+    """Bounding-Box des abbildbaren Ebenenbereichs, horizontsicher und geklammert."""
+    return Extent(*_plane_extent(homography, width, height, hull_mm))
 
 
 def _hull_clamp(hull_mm: np.ndarray) -> Extent:

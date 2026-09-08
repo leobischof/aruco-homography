@@ -2,12 +2,20 @@
 
 Diese Helfer werden von solve, extent, thickness und rectify gemeinsam benutzt.
 Sie stehen hier einmal, damit keine zweite Variante derselben Formel entsteht.
+
+Drei davon rufen OpenCV und koennen deshalb im C++-Kern liegen (Huelle,
+Schnittflaeche, lokaler Massstab); welcher Kern rechnet, entscheidet
+`app/vision/backend.py`. Der Rest ist reine Formel und bleibt hier: eine
+Matrixmultiplikation ueber die Bindungsgrenze zu schicken kostet mehr, als sie
+wert ist, und driften kann sie nicht.
 """
 
 from __future__ import annotations
 
 import cv2
 import numpy as np
+
+from app.vision import backend
 
 
 def project(homography: np.ndarray, points: np.ndarray) -> np.ndarray:
@@ -24,7 +32,7 @@ def project(homography: np.ndarray, points: np.ndarray) -> np.ndarray:
         return mapped[:, :2] / mapped[:, 2:3]
 
 
-def local_px_per_mm(homography: np.ndarray, point_mm: np.ndarray) -> float:
+def _local_px_per_mm_python(homography: np.ndarray, point_mm: np.ndarray) -> float:
     """Lokaler Abbildungsmassstab der Homographie Ebene -> Bild an einer Stelle.
 
     Definition laut Spec 3.7: Wurzel aus dem Betrag der Jacobi-Determinante. Dieses
@@ -48,6 +56,9 @@ def local_px_per_mm(homography: np.ndarray, point_mm: np.ndarray) -> float:
     return float(np.sqrt(abs(du_dx * dv_dy - du_dy * dv_dx)))
 
 
+local_px_per_mm = backend.implementation("local_px_per_mm", _local_px_per_mm_python)
+
+
 def rect_polygon(x0: float, y0: float, x1: float, y1: float) -> np.ndarray:
     """Rechteck als (4,2)-Polygon, im Uhrzeigersinn bei y-nach-unten."""
     return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.float64)
@@ -62,18 +73,26 @@ def polygon_area(polygon: np.ndarray) -> float:
     return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2.0)
 
 
-def convex_hull(points: np.ndarray) -> np.ndarray:
+def _convex_hull_python(points: np.ndarray) -> np.ndarray:
     """Konvexe Huelle als (N,2)-Polygon."""
     pts = np.asarray(points, dtype=np.float32).reshape(-1, 1, 2)
     return cv2.convexHull(pts).reshape(-1, 2).astype(np.float64)
 
 
-def convex_intersection_area(first: np.ndarray, second: np.ndarray) -> float:
+def _convex_intersection_area_python(first: np.ndarray, second: np.ndarray) -> float:
     """Flaeche des Schnitts zweier KONVEXER Polygone."""
     a = np.asarray(first, dtype=np.float32).reshape(-1, 1, 2)
     b = np.asarray(second, dtype=np.float32).reshape(-1, 1, 2)
     area, _ = cv2.intersectConvexConvex(a, b)
     return float(area)
+
+
+# Die float32-Zwischenstufe oben ist kein Schoenheitsfehler, sondern Teil des
+# Ergebnisses - der C++-Kern legt sie an derselben Stelle ein.
+convex_hull = backend.implementation("convex_hull", _convex_hull_python)
+convex_intersection_area = backend.implementation(
+    "convex_intersection_area", _convex_intersection_area_python
+)
 
 
 def clip_polygon_halfplane(
