@@ -732,6 +732,50 @@ public final class MainActivity extends Activity {
      * Zeichenkette dieser Groesse stuende zweimal im Speicher, einmal auf jeder Seite der
      * Grenze.
      */
+    /**
+     * Ein Einzelbild des Suchers uebernehmen - ohne Foto, ohne Sitzung, ohne Spur.
+     *
+     * <p><b>Warum es diesen Weg ueberhaupt gibt.</b> {@code loadPickedPhoto} laedt das
+     * GEWAEHLTE Foto und nichts anderes; das Sucherbild gibt es als Datei gar nicht, es
+     * entsteht in der Seite aus einem {@code <canvas>}. Bis 0.1.5-alpha rief
+     * {@code image-android.js::decodeFile} auch fuer den Sucher {@code loadPickedPhoto} -
+     * ohne gewaehltes Foto antwortete Java "Es wurde noch kein Bild gewaehlt.", und der
+     * Sucher meldete "Kein Marker im Bild.". Mit einem gewaehlten Foto waere es
+     * schlimmer gewesen: er haette die Marker JENES Fotos gezeigt, unbeirrt davon, wohin
+     * die Kamera zeigt.
+     *
+     * <p>Die Bytes kommen durch denselben Scheibenkanal wie ein PDF hinaus
+     * ({@code appendBytes}). Ein zweiter Kanal waere eine zweite Stelle, an der sich
+     * Java und JavaScript ueber die Form einigen muessten. Dass sich beide nicht in die
+     * Quere kommen, liegt an der Bedienung und nicht am Zufall: der Sucher ist ein
+     * modaler Dialog, waehrend er offen ist wird kein PDF gebaut, und live.js laesst
+     * immer nur EINE Erkennung gleichzeitig laufen.
+     *
+     * <p>Das Bild landet auf dem eigenen Platz in {@link NativeImages#frame} und nicht
+     * bei {@code pin} - der gehoert dem Foto, und der Sucher darf es nicht wegwerfen.
+     */
+    void decodeFrame(long callId) {
+        byte[] data = takeIncomingFile();
+        worker.execute(() -> {
+            try {
+                Photo frame = Photo.fromBytes(data);
+                JSONObject payload = new JSONObject();
+                payload.put("handle", images.frame(frame.bgr(), frame.width, frame.height,
+                        NativeCore.CHANNELS_BGR));
+                payload.put("width", frame.width);
+                payload.put("height", frame.height);
+                resolve(callId, payload);
+            } catch (Exception failure) {
+                resolveError(callId, describe(failure));
+            }
+        });
+    }
+
+    /** Ein Einzelbild wieder hergeben. Siehe {@link NativeImages#releaseFrame}. */
+    void releaseFrame(int handle) {
+        images.releaseFrame(handle);
+    }
+
     void appendBytes(byte[] chunk) {
         incomingFile.write(chunk, 0, chunk.length);
     }

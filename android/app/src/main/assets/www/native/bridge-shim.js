@@ -168,6 +168,18 @@
         takePhoto: () => callAsync("takePhoto"),
         loadPickedPhoto: () => callAsync("loadPickedPhoto"),
         detectMarkers: (enhance = true) => callAsync("detectMarkers", enhance),
+
+        /**
+         * Ein Einzelbild des Suchers hinuebergeben und den Griff darauf holen.
+         *
+         * Ueber denselben Scheibenkanal wie saveFile/sharePdf - ein zweiter waere
+         * eine zweite Stelle, an der sich Java und JavaScript ueber die Form
+         * einigen muessten. Bei rund 60 KB je Bild ist es genau eine Scheibe.
+         */
+        decodeFrame: (bytes) => sendBytes(bytes).then(() => callAsync("decodeFrame")),
+
+        /** Dasselbe Bild wieder hergeben. Synchron: es ist ein Map-Eintrag. */
+        releaseFrame: (handle) => callSync("releaseFrame", handle),
         runConformance: (dumpCorners = false) => callAsync("runConformance", dumpCorners),
         saveFile: (bytes, filename) =>
             sendBytes(bytes).then(() => callAsync("saveFile", filename)),

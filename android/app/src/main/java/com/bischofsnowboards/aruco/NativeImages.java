@@ -74,6 +74,9 @@ final class NativeImages {
     private final Deque<Integer> transient_ = new ArrayDeque<>();
     private int nextHandle = 1;
 
+    /** Der Griff auf das Einzelbild des Suchers, oder -1. Es lebt hoechstens eines. */
+    private int frameHandle = -1;
+
     /** Ein Bild anlegen, das nie verdraengt wird - das Foto. */
     synchronized int pin(ByteBuffer pixels, int width, int height, int channels) {
         int handle = nextHandle++;
@@ -114,6 +117,46 @@ final class NativeImages {
         images.put(handle, new Image(buffer, width, height, channels));
         transient_.addLast(handle);
         return handle;
+    }
+
+    /**
+     * Ein Einzelbild des Suchers eintragen - und hoechstens EINES lebt davon.
+     *
+     * <p><b>Warum ein eigener Platz und nicht die Arena oben.</b> Der Sucher liefert
+     * rund acht Bilder in der Sekunde. In der Arena mit {@link #CAPACITY} Plaetzen
+     * haetten sie nach einer halben Sekunde jedes Zwischenraster der Rechenkette
+     * verdraengt - und {@link #require} wuerde dort werfen, wo gar nichts kaputt ist.
+     * Umgekehrt wuerde {@link #pin} nie freigeben und das Telefon in einer Minute
+     * Sucher um ein Gigabyte erleichtern.
+     *
+     * <p>Ein Platz genuegt, weil live.js immer nur EINE Erkennung gleichzeitig laufen
+     * laesst; das naechste Bild kommt erst, wenn das vorige beantwortet ist. Und weil
+     * ein neues Bild das vorige verdraengt, kann auch ein vergessenes
+     * {@link #releaseFrame} nicht mehr als dieses eine Bild liegenlassen.
+     *
+     * <p><b>Das Foto bleibt unberuehrt.</b> Es haengt an {@link #pin} und an
+     * {@code MainActivity.photoHandle}; der Sucher laeuft, bevor eines gewaehlt ist,
+     * und darf ein bereits geladenes nicht wegwerfen.
+     */
+    synchronized int frame(ByteBuffer pixels, int width, int height, int channels) {
+        releaseFrame(frameHandle);
+        frameHandle = nextHandle++;
+        images.put(frameHandle, new Image(pixels, width, height, channels));
+        return frameHandle;
+    }
+
+    /**
+     * Ein Einzelbild wieder hergeben.
+     *
+     * <p>Ein unbekannter Griff ist hier KEIN Fehler - anders als in {@link #require}.
+     * Freigeben ist kein Zugriff: wer zweimal freigibt oder ein laengst verdraengtes
+     * Bild hergibt, hat nichts falsch gemacht, und eine Ausnahme aus dem Aufraeumen
+     * heraus verdeckt nur die eigentliche.
+     */
+    synchronized void releaseFrame(int handle) {
+        if (handle < 0) return;
+        images.remove(handle);
+        if (frameHandle == handle) frameHandle = -1;
     }
 
     /**
@@ -203,5 +246,6 @@ final class NativeImages {
     synchronized void clear() {
         images.clear();
         transient_.clear();
+        frameHandle = -1;
     }
 }

@@ -57,6 +57,34 @@ export async function decodeFile(file) {
     }
 }
 
+/**
+ * Ein Einzelbild des Suchers in einen BGR-Puffer verwandeln.
+ *
+ * Im Browser ist das Wort fuer Wort `decodeFile`: `createImageBitmap` nimmt jeden
+ * Blob, und woher er kommt, ist ihm gleich. Die zweite Benennung steht trotzdem
+ * hier, weil sie auf dem ANDEREN Ziel etwas anderes bedeutet - dort holt
+ * `decodeFile` das gewaehlte Foto aus Java, und ein Sucherbild ist genau das
+ * nicht (image-android.js). Ohne diesen Namen gaebe es keine Stelle, an der sich
+ * die beiden Faelle unterscheiden liessen, und der Sucher zeigte auf Android die
+ * Marker eines alten Fotos.
+ */
+export async function decodeFrame(blob) {
+    return decodeFile(blob);
+}
+
+/**
+ * Ein Einzelbild wieder hergeben.
+ *
+ * Hier ist nichts zu tun: der Puffer haengt am Ergebnis, und wenn der Aufrufer
+ * ihn fallenlaesst, holt ihn der Sammler. Die Funktion ist trotzdem kein
+ * Beiwerk - auf Android liegen die Pixel in Java, und ohne diesen Aufruf bliebe
+ * jedes Sucherbild dort liegen. Wer nur diese Datei liest, koennte sie
+ * weglassen; genau deshalb steht der Grund hier.
+ */
+export function releaseFrame() {
+    // absichtlich leer
+}
+
 /** Ein BGR-Raster als JPEG-Bytes - das, was web/pdf/ erwartet. */
 export async function toJpegBytes(raster, quality = JPEG_QUALITY / 100.0) {
     const blob = await toJpegBlob(raster, quality);
