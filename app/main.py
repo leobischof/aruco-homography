@@ -29,8 +29,10 @@ from app.pipeline import (
 )
 from app.schemas import AdjustRequest, ExportImageRequest, ExportRequest, SolveRequest
 from app.session import store
+from app.notices import NoticeList
 from app.vision import backend, encode
 from app.vision.detect import detect_markers, load_photo
+from app.vision.solve import solve as solve_plane
 
 if TYPE_CHECKING:  # nur fuer die Typangabe - uvicorn wird erst beim Start geladen
     from uvicorn import Server
@@ -155,6 +157,75 @@ async def detect_endpoint(http_request: Request) -> dict[str, object]:
             for marker in markers
         ],
     }
+
+
+@app.post("/api/measure")
+async def measure_endpoint(
+    http_request: Request,
+    marker_mm: float = config.MARKER_MM_NOMINAL,
+    mode: str = "sheet",
+    spacing_x_mm: float = config.SHEET_SPACING_MM[0],
+    spacing_y_mm: float = config.SHEET_SPACING_MM[1],
+) -> dict[str, object]:
+    """Ein Einzelbild bis zur Homographie rechnen - fuer das messende Live-Bild.
+
+    Der Unterschied zu /api/detect ist die zweite Haelfte: dort endet es bei den
+    Ecken, hier wird daraus die Ebene. Der Unterschied zu /api/solve ist alles
+    andere - keine Sitzung, kein entzerrtes Bild, keine Vorschau. Was
+    zurueckkommt, reicht genau fuer ein Overlay: die Abbildung Ebene -> Bild, der
+    Massstab dort, wo die Marker liegen, und der Restfehler.
+
+    Die Einstellungen stehen in der Abfrage und nicht im Koerper: der Koerper ist
+    das Bild. Ein Formular mit einem Bildteil und vier Zahlenteilen waere je
+    Einzelbild dieselbe Verpackung fuer dieselben vier Zahlen.
+
+    `no_markers` ist hier KEIN Fehlerfall - im Sucher ist das der Normalzustand,
+    solange die Kamera noch gesucht wird. Die Antwort sagt dann schlicht, dass es
+    keine Ebene gibt (`plane: null`), und der Sucher zeichnet nichts.
+    """
+    data = await http_request.body()
+    size_mb = len(data) / (1024 * 1024)
+    if size_mb > config.MAX_UPLOAD_MB:
+        raise AppError(
+            "upload_too_large", "file", size_mb=f"{size_mb:.0f}", limit_mb=config.MAX_UPLOAD_MB
+        )
+
+    try:
+        photo = load_photo(data)
+    except Exception as error:  # Pillow wirft je nach Format sehr Verschiedenes.
+        raise AppError("unreadable_image", "file", reason=str(error)) from error
+
+    markers = detect_markers(photo.bgr)
+    answer: dict[str, object] = {
+        "width": photo.width,
+        "height": photo.height,
+        "grid_mm": config.GRID_STEP_MM,
+        "markers": [
+            {"id": marker.marker_id, "corners": marker.corners_px.tolist()}
+            for marker in markers
+        ],
+        "plane": None,
+    }
+    if not markers:
+        return answer
+
+    try:
+        solution = solve_plane(
+            markers, marker_mm, mode, NoticeList(), (spacing_x_mm, spacing_y_mm)
+        )
+    except AppError:
+        # Zu wenige Marker fuer diesen Modus, ein unbekannter Modus, eine
+        # entartete Lage: im Sucher ist das eine Zwischenstufe und kein Abbruch.
+        return answer
+
+    answer["plane"] = {
+        "homography": [float(value) for value in solution.homography.reshape(9)],
+        "hull_mm": solution.hull_mm.tolist(),
+        "mm_per_px": solution.mm_per_px,
+        "rms_px": solution.rms_px,
+        "mode_used": solution.mode,
+    }
+    return answer
 
 
 @app.post("/api/solve")

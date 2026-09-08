@@ -79,6 +79,18 @@
     background: var(--bfsb-night-a85);
 }
 
+/* Der Umschalter steht auf schwarzem Grund; die Feldfarben der Seite gelten
+   hier nicht. Breite nach Inhalt, sonst nimmt `select { width: 100% }` aus
+   forms.css die halbe Zeile. */
+.live-mode {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--bfsb-snow);
+    border-color: var(--bfsb-ash);
+}
+
 .live-status {
     flex: 1 1 8rem;
     min-width: 0;

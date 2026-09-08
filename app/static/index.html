@@ -460,6 +460,17 @@
         <canvas class="live-overlay" id="live-overlay"></canvas>
       </div>
       <div class="live-bar">
+        <!--
+          Die Betriebsart. "markers" zeigt, was gefunden wird; "plane" rechnet
+          daraus die Ebene und legt ihr 50-mm-Raster ueber das Werkstueck - damit
+          laesst sich messen, ohne ein Foto zu machen. Die Werte stehen so auch
+          in js/live.js.
+        -->
+        <select class="live-mode" id="live-mode"
+                data-i18n-attr="aria-label:ui.live.mode_label">
+          <option value="markers" selected data-i18n="ui.live.mode_markers"></option>
+          <option value="plane" data-i18n="ui.live.mode_plane"></option>
+        </select>
         <span class="live-status" id="live-status" role="status"></span>
         <button type="button" class="btn btn-action" id="live-shutter"
                 data-i18n="ui.live.shutter"></button>

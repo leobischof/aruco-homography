@@ -130,6 +130,72 @@ def test_detect_lehnt_ab_was_kein_bild_ist(client):
     assert response.json()["code"] == "unreadable_image"
 
 
+def test_measure_rechnet_dieselbe_ebene_wie_solve(client, uploaded, scene):
+    """Die Route des messenden Live-Bildes - und die Zusage, die sie tragen muss.
+
+    Der Sucher misst OHNE Foto. Was er anzeigt, darf sich deshalb nicht von dem
+    unterscheiden, was dasselbe Bild ueber den gewohnten Weg ergibt: sonst
+    stuende im Sucher eine Zahl und auf dem Ausdruck eine andere. Geprueft wird
+    genau das - dieselben Bytes durch /api/measure und durch /api/solve.
+    """
+    # Dieselbe Qualitaet wie beim Upload: die Zusage ist "dieselben BYTES geben
+    # dieselbe Zahl". Bei 90 gegen 95 unterscheiden sich die Ecken im
+    # Tausendstel, und der Test pruefte dann die JPEG-Kompression statt die
+    # Rechnung.
+    ok, encoded = cv2.imencode(".jpg", scene.image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    assert ok
+    response = client.post(
+        f"/api/measure?marker_mm={scene.marker_mm}&mode=sheet",
+        content=encoded.tobytes(),
+        headers={"Content-Type": "image/jpeg"},
+    )
+    assert response.status_code == 200, response.text
+    plane = response.json()["plane"]
+    assert plane is not None
+    assert plane["mode_used"] == "sheet"
+    assert len(plane["homography"]) == 9
+
+    reference = client.post(
+        "/api/solve",
+        json={"session_id": uploaded["session_id"], "marker_mm": scene.marker_mm, "mode": "sheet"},
+    ).json()
+    # Die Schranken sind die halbe Rundungsstufe von /api/solve (dort: 5 bzw. 3
+    # Nachkommastellen, app/pipeline.py). /api/measure rundet NICHT - was rechnet,
+    # rundet nicht, und der Bericht ist die einzige Stelle, die es fuer Augen tut.
+    # Naeher als eine halbe Stufe kann keine Pruefung kommen; weiter auseinander
+    # waeren es zwei verschiedene Rechnungen.
+    assert abs(plane["mm_per_px"] - reference["mm_per_px"]) < 0.5e-5
+    assert abs(plane["rms_px"] - reference["rms_px"]) < 0.5e-3
+
+    # Die Homographie bildet Millimeter auf Bildpixel ab. Der Ursprung der Ebene
+    # muss deshalb dort landen, wo ihn auch die Loesung sieht - sonst laege das
+    # Raster im Sucher versetzt ueber dem Werkstueck.
+    matrix = np.asarray(plane["homography"], dtype=np.float64).reshape(3, 3)
+    origin = matrix @ np.array([0.0, 0.0, 1.0])
+    assert 0.0 < origin[0] / origin[2] < scene.image_size[0]
+    assert 0.0 < origin[1] / origin[2] < scene.image_size[1]
+
+
+def test_measure_ohne_marker_ist_kein_fehler(client, scene):
+    """Im Sucher ist "noch nichts zu sehen" der Normalzustand.
+
+    Ein Fehler waere hier falsch: er faerbte die Oberflaeche rot, waehrend der
+    Benutzer die Kamera noch ausrichtet. Die Antwort sagt stattdessen, dass es
+    keine Ebene gibt.
+    """
+    leer = np.full((480, 640, 3), 200, dtype=np.uint8)
+    ok, encoded = cv2.imencode(".jpg", leer)
+    assert ok
+    response = client.post(
+        "/api/measure", content=encoded.tobytes(), headers={"Content-Type": "image/jpeg"}
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["markers"] == []
+    assert payload["plane"] is None
+    assert payload["grid_mm"] == config.GRID_STEP_MM
+
+
 def test_export_liefert_pdf_mit_exakter_seitengroesse(client, solved):
     response = client.post(
         "/api/export",
