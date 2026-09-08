@@ -16,6 +16,11 @@
  *    URI seit `onShowFileChooser`, und ein 12-MP-Foto ein zweites Mal durch die
  *    JavaScript-Grenze zu ziehen waeren 48 MB ohne Gegenwert.
  *
+ *    **Fuer das Sucherbild gilt das Gegenteil**, und deshalb hat es eine eigene
+ *    Funktion: `decodeFrame`. Es gibt keine URI, weil es keine Datei gibt - das
+ *    Bild entsteht in der Seite aus einem `<canvas>`. Dort gehen die Bytes also
+ *    wirklich hinueber; bei 960 px und Guete 0,6 sind es rund 60 KB.
+ *
  * 2. **Kodiert wird in Java** (`Bitmap.compress`, Rasters.java). Der Kern fasst
  *    `imgcodecs` nicht an - das gilt auf jedem Ziel, im Browser macht es die
  *    Leinwand.
@@ -57,6 +62,66 @@ export async function decodeFile(file) {
         throw new AppError("unreadable_image", "file", {
             reason: String((error && error.message) || error),
         });
+    }
+}
+
+/**
+ * Ein Einzelbild des Suchers uebernehmen - und NICHT das gewaehlte Foto.
+ *
+ * Der Unterschied zu `decodeFile` ist der ganze Grund fuer diese Funktion. Bis
+ * 0.1.5-alpha rief local.js auch fuer den Sucher `decodeFile`; auf diesem Ziel
+ * heisst das "gib mir das gewaehlte Foto", und im Sucher ist keines gewaehlt.
+ * Java antwortete "Es wurde noch kein Bild gewaehlt.", der Sucher meldete "Kein
+ * Marker im Bild.", und auf dem Telefon sah es aus, als taugte die Erkennung
+ * nichts. Mit einem gewaehlten Foto waere es schlimmer gewesen: dann haette er
+ * dessen Marker gezeigt, egal wohin die Kamera zeigt.
+ *
+ * Hier gehen die Bytes also wirklich hinueber - rund 60 KB je Bild bei
+ * FRAME_MAX_PX = 960 und Guete 0,6 (live.js). Das ist der eine Fall, in dem sich
+ * der Weg lohnt, den der Modulkopf fuer das 12-MP-Foto ausschliesst: dort waeren
+ * es 48 MB, hier ist es eine Scheibe.
+ *
+ * Der Griff kommt vom eigenen Platz der Arena (NativeImages.frame): das Foto und
+ * die Zwischenraster der Kette bleiben unberuehrt, und es lebt hoechstens ein
+ * Sucherbild.
+ */
+export async function decodeFrame(blob) {
+    const native = globalThis.__aruco;
+    if (!native) {
+        throw new AppError("unreadable_image", "file", { reason: "keine native Bruecke" });
+    }
+    try {
+        const frame = await native.decodeFrame(new Uint8Array(await blob.arrayBuffer()));
+        return {
+            handle: frame.handle,
+            width: frame.width,
+            height: frame.height,
+            channels: 3,
+        };
+    } catch (error) {
+        throw new AppError("unreadable_image", "file", {
+            reason: String((error && error.message) || error),
+        });
+    }
+}
+
+/**
+ * Ein Einzelbild wieder hergeben.
+ *
+ * Ohne das bliebe nach dem Schliessen des Suchers ein Bild in Java liegen. Viel
+ * ist es nicht - ein 960er Bild sind 2 MB -, aber es ist auch nicht noetig.
+ *
+ * Wirft nie: Aufraeumen soll den Fehler nicht verdecken, der es ausgeloest hat.
+ * Ein doppeltes oder verspaetetes Hergeben ist auf der Java-Seite ausdruecklich
+ * kein Fehler (NativeImages.releaseFrame).
+ */
+export function releaseFrame(image) {
+    const native = globalThis.__aruco;
+    if (!native || !Number.isInteger(image && image.handle)) return;
+    try {
+        native.releaseFrame(image.handle);
+    } catch (error) {
+        console.error("Einzelbild nicht freigegeben", error);
     }
 }
 

@@ -22,7 +22,7 @@ import { buildMarkersheet, MODULES } from "../pdf/markersheet.js";
 import { translate } from "../pdf/i18n.js";
 import { loadCore } from "./core.js";
 import { readExif } from "./exif.js";
-import { decodeFile } from "./image.js";
+import { decodeFile, decodeFrame, releaseFrame } from "./image.js";
 import { AppError, NoticeList } from "./notices.js";
 import { drawDetection, PreviewUrls } from "./preview.js";
 import {
@@ -109,15 +109,23 @@ export async function uploadPhoto(file) {
  */
 export async function detectFrame(blob) {
     const module = await core();
-    // decodeFile nimmt alles, was createImageBitmap nimmt - ein Blob gehoert
-    // dazu. Der Name stammt aus dem Upload, der Weg ist derselbe.
-    const image = await decodeFile(blob);
-    const markers = detectMarkers(module, { image });
-    return {
-        width: image.width,
-        height: image.height,
-        markers: markers.map((marker) => ({ id: marker.id, corners: pairs(marker.corners) })),
-    };
+    // decodeFrame und NICHT decodeFile. Im Browser ist beides dasselbe; auf
+    // Android heisst decodeFile "gib mir das GEWAEHLTE Foto", und im Sucher ist
+    // keines gewaehlt - das war der Fehler, an dem die Erkennung auf dem Telefon
+    // scheiterte, waehrend sie im Browser lief (image-android.js sagt, wie).
+    const image = await decodeFrame(blob);
+    try {
+        const markers = detectMarkers(module, { image });
+        return {
+            width: image.width,
+            height: image.height,
+            markers: markers.map((marker) => ({ id: marker.id, corners: pairs(marker.corners) })),
+        };
+    } finally {
+        // finally und nicht am Ende: scheitert die Erkennung, liegt das Bild
+        // sonst bis zum naechsten in Java herum.
+        releaseFrame(image);
+    }
 }
 
 /**
@@ -129,8 +137,16 @@ export async function detectFrame(blob) {
  */
 export async function measureFrame(blob, params) {
     const module = await core();
-    const image = await decodeFile(blob);
-    const markers = detectMarkers(module, { image });
+    const image = await decodeFrame(blob);   // siehe detectFrame
+    let markers;
+    try {
+        markers = detectMarkers(module, { image });
+    } finally {
+        // Nach der Erkennung wird das Bild nicht mehr gebraucht: solvePlane
+        // rechnet nur noch mit den Eckpunkten. Es hier und nicht erst am Ende
+        // herzugeben haelt den Platz frei, solange die Ebene geloest wird.
+        releaseFrame(image);
+    }
     const answer = {
         width: image.width,
         height: image.height,

@@ -172,6 +172,38 @@ public final class WebBridge {
         activity.detectMarkers(callId, enhanceContrast);
     }
 
+    /**
+     * Ein Einzelbild des Suchers uebernehmen - erst {@link #appendBytes}, dann dies.
+     *
+     * <p>Antwort ueber {@code callId}: dekodiert wird mit {@code BitmapFactory} auf dem
+     * Arbeitsfaden. Zurueck kommt nur der Griff samt Groesse - Bildinhalt geht durch
+     * diese Bruecke nie.
+     *
+     * <p>Nicht zu verwechseln mit {@link #loadPickedPhoto}: das ist das GEWAEHLTE Foto
+     * und die Eingabe der ganzen Kette; dies hier ist ein fluechtiges Bild, das nach der
+     * Erkennung wieder verschwindet. Sitzung und Foto bleiben unberuehrt.
+     */
+    @JavascriptInterface
+    public void decodeFrame(long callId) {
+        activity.decodeFrame(callId);
+    }
+
+    /**
+     * Ein Einzelbild wieder hergeben.
+     *
+     * <p>Synchron, weil es ein Eintrag aus einer Map ist. Ein unbekannter Griff ist kein
+     * Fehler - siehe {@code NativeImages.releaseFrame}.
+     */
+    @JavascriptInterface
+    public String releaseFrame(int handle) {
+        try {
+            activity.releaseFrame(handle);
+            return ok(new JSONObject());
+        } catch (Throwable failure) {
+            return error(failure);
+        }
+    }
+
     /** Den Pruefstand aus shared/fixtures/ auf diesem Geraet laufen lassen. */
     @JavascriptInterface
     public void runConformance(long callId, boolean dumpCorners) {
