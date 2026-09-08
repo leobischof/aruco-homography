@@ -1156,19 +1156,35 @@ function Invoke-CheckAndroidUi {
         Write-Step 'Driving Chromium through the whole chain'
         Write-Host ("     {0}" -f $chrome) -ForegroundColor DarkGray
         $pdf = Join-Path $AndroidOutDir 'ui-probe-schablone.pdf'
+        # Zwei Erzeugnisse, zwei Wege: das erste mit gesetztem lokalem Kontrast
+        # (dann rastert web/vision/pipeline.js am Stueck), das zweite mit
+        # unangetasteten Reglern - und das ist BLATTWEISE, also der Regelfall.
+        $sheetsPdf = Join-Path $AndroidOutDir 'ui-probe-schablone-blattweise.pdf'
         New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
         Invoke-Native -What 'ui-probe' -Action {
             & node (Join-Path $AndroidDir 'tools\ui-probe.mjs') $chrome `
-                "http://127.0.0.1:$UiProbePort/probe.html" $pdf
+                "http://127.0.0.1:$UiProbePort/probe.html" $pdf $sheetsPdf
         }
 
         # Dass ein PDF entstand, ist noch keine Aussage - eines entsteht auch mit
         # falschen Zahlen. Also nachzaehlen, was auf dem Blatt steht.
-        Write-Step 'Measuring the template that came out'
+        Write-Step 'Measuring the template that came out (rastered in one piece)'
         Invoke-Native -What 'measure_template' -Action {
             & $VenvPython (Join-Path $AndroidDir 'tools\measure_template.py') $pdf
         }
-        Write-Ok ("Die Kette laeuft und das Blatt stimmt. PDF: {0}" -f $pdf)
+
+        # Und dasselbe fuer den blattweisen Weg. --eigenes-bild-je-seite ist dabei
+        # die eigentliche Aussage: teilen sich zwei Seiten ein Bildobjekt, ist doch
+        # ein Raster ueber den ganzen Zuschnitt entstanden - der Bau liefe gruen
+        # durch, und auf einem Telefon gaebe es den Speicherfehler wieder.
+        Write-Step 'Measuring the template that came out (rastered sheet by sheet)'
+        Invoke-Native -What 'measure_template (blattweise)' -Action {
+            & $VenvPython (Join-Path $AndroidDir 'tools\measure_template.py') `
+                $sheetsPdf --eigenes-bild-je-seite
+        }
+        Write-Ok "Die Kette laeuft, und beide Blaetter stimmen."
+        Write-Host ("     am Stueck:   {0}" -f $pdf) -ForegroundColor DarkGray
+        Write-Host ("     blattweise:  {0}" -f $sheetsPdf) -ForegroundColor DarkGray
         Write-Warn 'Ersatz und kein Geraet: Java nachgebaut, Kern als WASM, Chromium statt WebView.'
     } finally {
         if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }

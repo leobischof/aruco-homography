@@ -162,28 +162,54 @@ export async function runExport(core, session, request) {
     );
     if (width(crop) <= 0.0 || height(crop) <= 0.0) throw new AppError("empty_crop", "crop_mm");
 
-    checkOutputBudget(core, crop, request.dpi);
     const pxPerMm = pxPerMmForDpi(request.dpi);
-    let raster = rectify(
-        core,
-        session.photo.image,
-        solved.homographyEffective,
-        crop,
-        pxPerMm,
-        solved.solution.pxPerMm,
-    );
-
     // Aufbereiten NACH dem Entzerren und VOR allem anderen: die Homographie wurde
     // am unberuehrten Foto gemessen, ab hier aendert sich nur noch Farbe und Ton.
     const options = adjustOptions(request.adjust);
-    if (!isIdentity(core, options)) {
-        raster = adjust(core, raster, options);
-    }
 
-    // Gesucht wird auf dem AUFBEREITETEN Bild - also auf genau dem, das gleich
-    // gedruckt wird. Millimeter kostet das nichts: die Aufbereitung faerbt Pixel,
-    // sie verschiebt keine.
-    const contourMm = request.contour ? findContourMm(core, raster, pxPerMm) : null;
+    /** Entzerren, aufbereiten, kodieren - fuer ein Rechteck in Zuschnitt-Millimetern. */
+    const render = async (area) => {
+        // Dieselbe Pruefung wie bisher, nur auf dem, was wirklich belegt wird.
+        // Blattweise ist das ein A4-Blatt und geht ueberall durch; am Stueck ist
+        // es der ganze Zuschnitt, und dann soll dieser Abbruch kommen und nicht
+        // ein OutOfMemoryError im Entzerren.
+        checkOutputBudget(core, area, request.dpi);
+        let raster = rectify(
+            core,
+            session.photo.image,
+            solved.homographyEffective,
+            area,
+            pxPerMm,
+            solved.solution.pxPerMm,
+        );
+        if (!isIdentity(core, options)) {
+            raster = adjust(core, raster, options);
+        }
+        return { raster, jpeg: await toJpegBytes(raster) };
+    };
+
+    // Am Stueck oder blattweise - und warum, steht in needsWholeRaster.
+    let source;
+    let contourMm = null;
+    if (needsWholeRaster(request, options)) {
+        const whole = await render(crop);
+        // Gesucht wird auf dem AUFBEREITETEN Bild - also auf genau dem, das gleich
+        // gedruckt wird. Millimeter kostet das nichts: die Aufbereitung faerbt
+        // Pixel, sie verschiebt keine.
+        contourMm = request.contour ? findContourMm(core, whole.raster, pxPerMm) : null;
+        source = whole.jpeg;
+    } else {
+        // Die Bildquelle fuer web/pdf/build.js: ein Blatt, ein Raster. Der
+        // Spitzenbedarf haengt damit am Blatt und nicht mehr am Zuschnitt - genau
+        // daran ist der Export auf dem Telefon gescheitert.
+        source = async (xMm, yMm, widthMm, heightMm) =>
+            (await render(extent(
+                crop.x0 + xMm,
+                crop.y0 + yMm,
+                crop.x0 + xMm + widthMm,
+                crop.y0 + yMm + heightMm,
+            ))).jpeg;
+    }
 
     const options_ = exportOptions({
         dpi: request.dpi,
@@ -210,8 +236,41 @@ export async function runExport(core, session, request) {
         footerMeta(core, session, solved, crop, request, contourMm, locale),
         locale,
     );
-    const jpeg = await toJpegBytes(raster);
-    return buildPdf(jpeg, width(crop), height(crop), options_, footer, contourMm);
+    return buildPdf(source, width(crop), height(crop), options_, footer, contourMm);
+}
+
+/**
+ * Braucht dieser Export das ganze Raster auf einmal?
+ *
+ * <b>Der Regelfall ist nein</b>, und das ist der Unterschied zwischen einem
+ * Export, der auf einem Telefon durchlaeuft, und einem, der es nicht tut: ein
+ * Zuschnitt von 810 x 1153 mm sind bei 300 dpi 130 Megapixel und 373 MiB an
+ * einem Stueck, ein A4-Blatt derselben Aufloesung sind 26 MB.
+ *
+ * Blattweise ist das Ergebnis Bit fuer Bit dasselbe, solange nichts ueber
+ * Pixelgrenzen hinweg rechnet. Drei Dinge tun das:
+ *
+ *  - <b>Der Umriss</b> wird auf dem fertigen Bild gesucht. Blattweise faende er
+ *    je Blatt einen eigenen und nirgends den ganzen.
+ *  - <b>Lokaler Kontrast</b> ist CLAHE: Histogramme ueber ein Gitter, das ueber
+ *    das GANZE Bild gelegt wird. Blattweise bekaeme jedes Blatt sein eigenes.
+ *  - <b>Kantenschaerfe und Kantenzeichnung</b> greifen in die Nachbarschaft
+ *    (Unschaerfemaske bzw. Canny). An der Blattkante fehlt die.
+ *
+ * Alle drei stehen per Vorgabe aus. Die uebrigen Regler - Helligkeit, Kontrast,
+ * Saettigung, Graustufen, Umkehr, Farbbetonung, Schwelle - rechnen Pixel fuer
+ * Pixel; sie sind blattweise exakt dasselbe und stehen deshalb nicht hier.
+ *
+ * Bei einer Einzelseite ist die Frage ohnehin gegenstandslos: dort gibt es nur
+ * ein Blatt, und web/pdf/build.js fragt die Quelle dann einmal nach allem.
+ */
+function needsWholeRaster(request, options) {
+    return (
+        Boolean(request.contour) ||
+        options.local_contrast > 0.0 ||
+        options.edge_boost > 0.0 ||
+        options.edge_overlay > 0.0
+    );
 }
 
 /** Die Metadaten der Fusszeile - ein Ausdruck soll spaeter nachvollziehbar sein. */
