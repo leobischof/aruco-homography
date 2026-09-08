@@ -162,6 +162,8 @@
       "subtitle": "What the native core can do here — and what it cannot yet.",
       "native_heading": "The core",
       "native_page_size": "Page size",
+      "native_output_budget": "Memory budget",
+      "native_output_budget_missing": "not passed through",
       "native_marker_mm": "Marker edge (nominal)",
       "native_dictionary": "Dictionary",
       "native_device": "Device",

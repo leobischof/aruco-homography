@@ -82,6 +82,7 @@ function renderNativeInfo() {
         [t("ui.android.native_marker_mm"), `${formatNumber(info.marker_mm_nominal, 1)} mm`],
         ["ABI", info.abi],
         [t("ui.android.native_page_size"), `${info.page_size} B`],
+        [t("ui.android.native_output_budget"), outputBudgetLine(info)],
         [t("ui.android.native_device"), `${info.device} · Android ${info.android} (API ${info.sdk})`],
         ["WebView", info.webview],
         [t("ui.android.native_app"), info.app_version],
@@ -314,3 +315,32 @@ onLocaleChange(() => {
     applyTranslations();
     renderNativeInfo();
 });
+
+/**
+ * Was der Export hoechstens rastern darf - und ob die Zahl ueberhaupt ankam.
+ *
+ * Zwei Haelften muessen dafuer stimmen: NativeImages.budgetMegapixels rechnet sie
+ * aus und nativeInfo() reicht sie durch (das ist `info.max_output_mpx`), und
+ * bridge-shim.js setzt sie als globalThis.ARUCO_MAX_OUTPUT_MPX, woraus
+ * web/constants.js::outputBudgetMpx() die kleinere von Geraete- und Produktgrenze
+ * macht. Angezeigt wird die zweite - die GILT. Steht dort die Produktgrenze,
+ * obwohl Java eine kleinere gemeldet hat, ist die Bruecke die Fehlerstelle.
+ *
+ * Ohne diese Zeile war beim Speicherfehler vom 08.09.2026 auf dem Geraet nicht
+ * festzustellen, ob die Sicherung scharf war.
+ */
+function outputBudgetLine(info) {
+    const gemeldet = Number(info.max_output_mpx);
+    if (!Number.isFinite(gemeldet) || gemeldet <= 0) {
+        return t("ui.android.native_output_budget_missing");
+    }
+    // Die zweite Haelfte: gilt die Zahl auch IN DER SEITE? bridge-shim.js setzt
+    // sie beim Seitenanfang, web/constants.js liest sie beim Export. Genau das
+    // war am 08.09.2026 auf dem Geraet nicht ablesbar.
+    const angewandt = Number(globalThis.ARUCO_MAX_OUTPUT_MPX);
+    const zahl = `${formatNumber(gemeldet, 0)} MPx`;
+    if (!Number.isFinite(angewandt) || Math.abs(angewandt - gemeldet) > 0.5) {
+        return `${zahl} (${t("ui.android.native_output_budget_missing")})`;
+    }
+    return zahl;
+}

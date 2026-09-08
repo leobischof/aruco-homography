@@ -63,6 +63,19 @@ export function outputBudgetMpx() {
         ? Math.min(MAX_OUTPUT_MPX, device)
         : MAX_OUTPUT_MPX;
 }
+/**
+ * Pixel je Millimeter fuer eine Aufloesung in dpi.
+ *
+ * Steht HIER und nicht in web/vision/rectify.js, weil beide Schichten sie
+ * brauchen und die PDF-Schicht die Sichtschicht nicht kennen darf: web/pdf/
+ * laeuft auch unter Node aus der Python-Suite (ARUCO_PDF=js), wo es kein
+ * web/vision/ gibt. Zwei Fassungen derselben Division waeren die Sorte
+ * Duplikat, die man erst am schiefen Ausdruck bemerkt.
+ */
+export function pxPerMmForDpi(dpi) {
+    return dpi / MM_PER_INCH;
+}
+
 export const MAX_UPLOAD_MB = shared.MAX_UPLOAD_MB;
 export const PREVIEW_MAX_PX = shared.PREVIEW_MAX_PX;
 export const DEFAULT_CROP_MAX_MM = shared.DEFAULT_CROP_MAX_MM;

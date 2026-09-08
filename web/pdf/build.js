@@ -12,6 +12,14 @@
  * gehoert auf jedes Ziel einzeln (der WASM-Bau von OpenCV hat kein `imgcodecs`),
  * der gemeinsame Code nimmt fertige Bytes. Im Browser liefert die Leinwand sie,
  * unter Node der Pruefstand, auf Android die Huelle.
+ *
+ * **Oder eine Funktion, die je Blatt eines liefert.** Ein Zuschnitt von 810 x 1153 mm
+ * ergibt bei 300 dpi ein Raster von 130 Megapixeln - 373 MiB an einem Stueck, und die
+ * gibt ein Telefon nicht her (am 08.09.2026 auf einem Xiaomi genau so gescheitert,
+ * bei jeder Aufloesung). Gedruckt wird der Zuschnitt aber ohnehin blattweise. Wird
+ * hier statt der Bytes eine Funktion `(xMm, yMm, wMm, hMm) => JPEG-Bytes` uebergeben,
+ * holt sich jedes Blatt sein eigenes Bild, und der Spitzenbedarf haengt am BLATT
+ * statt am Zuschnitt.
  */
 
 import * as branding from "./branding.js";
@@ -54,19 +62,33 @@ export function exportOptions(overrides = {}) {
 }
 
 /** Einstiegspunkt: baut je nach Option eine Seite oder eine Kachelung. */
-export async function buildPdf(jpegBytes, cropWMm, cropHMm, options, footerLines, contourMm = null) {
+export async function buildPdf(source, cropWMm, cropHMm, options, footerLines, contourMm = null) {
     if (options.layout === "tiles") {
-        return buildTiles(jpegBytes, cropWMm, cropHMm, options, footerLines, contourMm);
+        return buildTiles(source, cropWMm, cropHMm, options, footerLines, contourMm);
     }
-    return buildSingle(jpegBytes, cropWMm, cropHMm, options, footerLines, contourMm);
+    return buildSingle(source, cropWMm, cropHMm, options, footerLines, contourMm);
 }
 
-async function buildSingle(jpegBytes, cropW, cropH, options, footerLines, contourMm) {
+/**
+ * Die Bytes fuer ein Rechteck des Zuschnitts - egal, welche der beiden Quellen.
+ *
+ * Bei fertigen Bytes gibt es genau ein Rechteck, naemlich den ganzen Zuschnitt;
+ * die Funktion reicht sie dann unveraendert durch.
+ */
+function isPerSheet(source) {
+    return typeof source === "function";
+}
+
+async function buildSingle(source, cropW, cropH, options, footerLines, contourMm) {
     const stripH = stripHeight();
     const page = singlePage(cropW, cropH, options.pageMarginMm, stripH);
 
     const document = await newDocument(options.title);
-    const image = await document.embedJpeg(jpegBytes);
+    // Eine Seite ist ein Blatt: die Bildquelle wird genau einmal gefragt, und
+    // zwar nach dem ganzen Zuschnitt. Hier ist also nichts zu gewinnen - wer ein
+    // Plakat auf EINER Seite will, braucht das Bild am Stueck.
+    const image = await document.embedJpeg(
+        isPerSheet(source) ? await source(0.0, 0.0, cropW, cropH) : source);
     const sheet = document.addSheet(page.pageW, page.pageH);
 
     placeImage(sheet, image, { x0: 0, y0: 0, x1: image.width, y1: image.height }, page.image);
@@ -88,7 +110,7 @@ async function buildSingle(jpegBytes, cropW, cropH, options, footerLines, contou
     };
 }
 
-async function buildTiles(jpegBytes, cropW, cropH, options, footerLines, contourMm) {
+async function buildTiles(source, cropW, cropH, options, footerLines, contourMm) {
     const stripH = stripHeight();
     const plan = tileLayout(
         cropW,
@@ -101,7 +123,19 @@ async function buildTiles(jpegBytes, cropW, cropH, options, footerLines, contour
     );
 
     const document = await newDocument(options.title);
-    const image = await document.embedJpeg(jpegBytes);
+    const perSheet = isPerSheet(source);
+
+    // Das Pixelgitter des GANZEN Zuschnitts. Blattweise entsteht es nie als Bild,
+    // aber seine Masse werden gebraucht: die Blattgrenzen werden auf demselben
+    // Gitter gerundet wie bisher, damit die Blaetter luecken- und ueberlappungsfrei
+    // aneinanderstossen und jedes Pixel dort landet, wo es auch vorher lag.
+    const pxPerMm = constants.pxPerMmForDpi(options.dpi);
+    const image = perSheet
+        ? {
+              width: Math.max(1, roundHalfToEven(cropW * pxPerMm)),
+              height: Math.max(1, roundHalfToEven(cropH * pxPerMm)),
+          }
+        : await document.embedJpeg(source);
     let pages = 0;
 
     if (options.tileOverview) {
@@ -109,11 +143,32 @@ async function buildTiles(jpegBytes, cropW, cropH, options, footerLines, contour
         pages += 1;
     }
 
-    const pxPerMm = image.width / cropW;
+    // Bei fertigen Bytes sagt das Bild selbst, wie fein es ist - eine Kachelung
+    // muss auch dann stimmen, wenn jemand ein Bild uebergibt, das nicht genau der
+    // eingestellten Aufloesung entspricht.
+    const gridPxPerMm = perSheet ? pxPerMm : image.width / cropW;
     for (const tile of plan.tiles) {
         const sheet = document.addSheet(plan.sheetW, plan.sheetH);
-        const pixelRect = cropPixels(image, tile.cropX, tile.cropY, tile.srcW, tile.srcH, pxPerMm);
-        placeImage(sheet, image, pixelRect, tile.placement);
+        const pixelRect =
+            cropPixels(image, tile.cropX, tile.cropY, tile.srcW, tile.srcH, gridPxPerMm);
+
+        // Blattweise: das Bild IST der Ausschnitt, also wird es ganz gezeichnet.
+        // Die Millimeter kommen aus dem gerundeten Pixelrechteck zurueck und nicht
+        // aus tile.cropX/srcW - nur so faellt das Blatt auf dieselbe Pixelgrenze
+        // wie der Ausschnitt, den cropPixels aus einem grossen Bild schneiden
+        // wuerde, und nur dann sind beide Wege Bit fuer Bit gleich.
+        let drawn = image;
+        let region = pixelRect;
+        if (perSheet) {
+            drawn = await document.embedJpeg(await source(
+                pixelRect.x0 / gridPxPerMm,
+                pixelRect.y0 / gridPxPerMm,
+                (pixelRect.x1 - pixelRect.x0) / gridPxPerMm,
+                (pixelRect.y1 - pixelRect.y0) / gridPxPerMm,
+            ));
+            region = { x0: 0, y0: 0, x1: drawn.width, y1: drawn.height };
+        }
+        placeImage(sheet, drawn, region, tile.placement);
         decorate(sheet, tile.placement, [tile.cropX, tile.cropY], options, contourMm);
 
         if (options.showMarks) {

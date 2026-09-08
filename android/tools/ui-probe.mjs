@@ -10,7 +10,7 @@
  *
  * Aufruf (macht ./dev.ps1 check-android-ui):
  *
- *   node android/tools/ui-probe.mjs <chrome.exe> <url> [<pdf-ziel>]
+ *   node android/tools/ui-probe.mjs <chrome.exe> <url> [<pdf-ziel> [<blattweise-ziel>]]
  */
 
 import { spawn } from "node:child_process";
@@ -18,9 +18,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const [chrome, url, pdfTarget] = process.argv.slice(2);
+const [chrome, url, pdfTarget, sheetsTarget] = process.argv.slice(2);
 if (!chrome || !url) {
-    console.error("Aufruf: node android/tools/ui-probe.mjs <chrome.exe> <url> [<pdf-ziel>]");
+    console.error("Aufruf: node android/tools/ui-probe.mjs <chrome.exe> <url>"
+        + " [<pdf-ziel> [<blattweise-ziel>]]");
     process.exit(2);
 }
 
@@ -135,6 +136,20 @@ try {
             console.log(`PDF geschrieben: ${pdfTarget}`);
         } else {
             console.error("Kein PDF in der Seite - nichts zu schreiben.");
+            failed = true;
+        }
+    }
+
+    // Der blattweise Export. Eigene Datei, weil er eigens nachgemessen wird:
+    // dass er dieselbe Geometrie ergibt wie der Weg am Stueck, ist die ganze
+    // Zusage der blattweisen Rasterung.
+    if (sheetsTarget) {
+        const base64 = await evaluate("window.__probeSheetsBase64 || ''");
+        if (base64) {
+            writeFileSync(sheetsTarget, Buffer.from(base64, "base64"));
+            console.log(`PDF (blattweise) geschrieben: ${sheetsTarget}`);
+        } else {
+            console.error("Kein blattweises PDF in der Seite.");
             failed = true;
         }
     }
