@@ -81,13 +81,23 @@ Am 08.09.2026 gedrückt — und er hat nicht nur `BESTANDEN` gesagt, sondern die
 vorhergesagten Zahlen auf die Stelle genau geliefert. Ein Prüfstand, der nur
 „in Ordnung" sagt, hätte das nicht gezeigt.
 
+> **Nachtrag 08.09.2026 — sie war bis 0.1.5-alpha die Startseite, jetzt ist sie es
+> nicht mehr.** Solange offen war, ob der native Kern auf einem Telefon läuft, war
+> die Werkbank die richtige erste Seite. Diese Frage ist beantwortet, und wer die
+> App danach öffnet, will messen und nicht die Bibliotheksfassung lesen — vom
+> Telefon aus gemeldet, und es lag nie am Debug-Bau: beide Fassungen luden dieselbe
+> Zeile in `MainActivity.onCreate`. Seit 0.1.6-alpha startet die Hülle auf
+> `/index.html`; hierher führt der Fußknopf **„Auf diesem Gerät"**, den
+> `bridge-shim.js` freischaltet, und zurück führt die Zurück-Taste
+> (`webView.canGoBack()`).
+
 ### Der Aufbau
 
 ```
 WebView (https://appassets.androidplatform.net/  ->  assets/www/)
    |
-   |-- /index.html          app/static/, unveraendert
-   |-- /native/index.html   die eigene Seite der Huelle
+   |-- /index.html          app/static/, unveraendert -- die STARTSEITE
+   |-- /native/index.html   die eigene Seite der Huelle, ueber den Fuss erreichbar
    |-- /web/vision/         die Rechenkette in JavaScript
    |-- /web/pdf/            der PDF-Bau in JavaScript
    |-- /shared/             constants.json
@@ -98,6 +108,7 @@ WebView (https://appassets.androidplatform.net/  ->  assets/www/)
    |     - window.__aruco: die Bruecke nach Java
    |     - blob:-Anker abfangen, PDF in Scheiben hinausreichen
    |     - window.__arucoInsets: der sichere Bereich als CSS-Variablen
+   |     - den Fussknopf "Auf diesem Geraet" freischalten
    v
 Java  (WebBridge -> MainActivity -> CoreBridge -> NativeImages)
    |

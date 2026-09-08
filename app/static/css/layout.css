@@ -283,10 +283,43 @@
    Fuss
    -------------------------------------------------------------------------- */
 .app-footer {
+    /* Zeile statt Block, seit rechts der Weg zur Geraeteseite steht. `wrap` und
+       `space-between`: auf 360 px rutscht der Knopf unter die Marke, statt die
+       Zeile aufzureissen. */
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
     padding: 1.25rem 1.5rem 2rem;
     border-top: 1px solid var(--border);
     color: var(--muted-foreground);
     font-size: var(--text-xs);
+}
+
+/* Ein Knopf, der wie ein Link aussieht.
+   Kein .btn: die Geraeteseite ist eine Auskunft und keine Handlung, und ein
+   ausgefuellter Knopf in der Fusszeile zoege den Blick von der Buehne weg. Die
+   Beruehrungsflaeche bleibt trotzdem eine ganze: min-height 44px ist die
+   Untergrenze aus components.css, und der negative Rand haelt die Zeile
+   optisch da, wo sie ohne ihn laege. */
+.footer-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin: -0.5rem 0;
+    padding: 0 0.25rem;
+    border: none;
+    background: none;
+    color: var(--muted-foreground);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.25em;
+    cursor: pointer;
+}
+
+.footer-link:hover {
+    color: var(--foreground);
 }
 
 /* --------------------------------------------------------------------------

@@ -437,6 +437,22 @@
          data-i18n-attr="alt:ui.footer.logo_alt">
     <span data-i18n="ui.footer.claim"></span>
   </a>
+  <!--
+    Der Weg zur Geraeteseite - und er ist NUR auf Android einer.
+
+    Die Seite (/native/index.html) liegt allein im APK; im Browser und in der
+    .exe gibt es sie nicht, ein sichtbarer Knopf waere dort eine Sackgasse.
+    Deshalb steht er hier verborgen, und freigeschaltet wird er von
+    native/bridge-shim.js - der einzigen Datei, die weiss, auf welchem Ziel sie
+    laeuft. Umgekehrt bliebe von dieser Zeile aus nur, `window.__aruco`
+    abzufragen, und damit wuesste die Oberflaeche zum ersten Mal von Android.
+
+    Ein <button> und kein <a href>: den Ursprung kennt der Java-Teil, und ein
+    hier zusammengesetzter Pfad waere eine zweite Stelle, an der die Adresse
+    steht (dieselbe Ueberlegung wie bei native/app.js "open-full").
+  -->
+  <button type="button" class="footer-link" id="device-page" hidden
+          data-i18n="ui.footer.device_page"></button>
 </footer>
 
 <div class="busy" id="busy" hidden>

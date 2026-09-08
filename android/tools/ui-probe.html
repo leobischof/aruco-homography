@@ -65,6 +65,23 @@
       window.__probe.chunks.push(base64);
       return answer({});
     },
+    // Das Gegenstueck zu MainActivity.decodeFrame: die Scheiben, die gerade
+    // hereingekommen sind, sind das Bild - und es wird WIRKLICH dekodiert.
+    // Wuerde dieser Stummel stattdessen den Fotogriff zurueckgeben, liefe die
+    // Probe gruen und das Telefon faende weiter nichts; genau so ist der Fehler
+    // in 0.1.5-alpha entstanden.
+    decodeFrame(callId) {
+      const base64 = window.__probe.chunks.join("");
+      window.__probe.chunks = [];
+      window.__probe.decodeFrame(base64).then(
+        (frame) => window.__arucoResolve(callId, Object.assign({ ok: true }, frame)),
+        (error) => window.__arucoResolve(callId, { ok: false, error: String(error) }),
+      );
+    },
+    releaseFrame(handle) {
+      window.__probe.bridge.drop(handle);
+      return answer({});
+    },
     saveFile(callId, filename) {
       window.__probe.pdf = { filename, base64: window.__probe.chunks.join("") };
       window.__probe.chunks = [];
@@ -123,6 +140,45 @@ try {
         return { width, height, filename: "flat.png" };
     };
 
+    // Was MainActivity.decodeFrame tut: Bytes -> Bitmap -> BGR -> eigener Platz
+    // in der Arena. Hier dekodiert die Leinwand statt BitmapFactory, dieselbe
+    // Rolle. imageOrientation wie in Photo.fromBytes, das EXIF liest.
+    window.__probe.decodeFrame = async (base64) => {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+            bytes[index] = binary.charCodeAt(index);
+        }
+        const bitmap = await createImageBitmap(new Blob([bytes]),
+            { imageOrientation: "from-image" });
+        const width = bitmap.width;
+        const height = bitmap.height;
+        const canvas = new OffscreenCanvas(width, height);
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.drawImage(bitmap, 0, 0);
+        const rgba = context.getImageData(0, 0, width, height).data;
+        bitmap.close();
+        const bgr = new Uint8Array((rgba.length / 4) * 3);
+        for (let pixel = 0; pixel * 4 < rgba.length; pixel += 1) {
+            bgr[pixel * 3] = rgba[pixel * 4 + 2];
+            bgr[pixel * 3 + 1] = rgba[pixel * 4 + 1];
+            bgr[pixel * 3 + 2] = rgba[pixel * 4];
+        }
+        return { handle: window.__probe.bridge.put(bgr, width, height, 3), width, height };
+    };
+
+    // Ein Einzelbild, so wie live.js es macht: verkleinert und als JPEG.
+    window.__probe.frameBlob = async (file, maxPx, quality) => {
+        const bitmap = await createImageBitmap(file);
+        const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height, 1));
+        const width = Math.max(1, Math.round(bitmap.width * scale));
+        const height = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = new OffscreenCanvas(width, height);
+        canvas.getContext("2d").drawImage(bitmap, 0, 0, width, height);
+        bitmap.close();
+        return canvas.convertToBlob({ type: "image/jpeg", quality });
+    };
+
     // Die Rasterbilder holt image-android.js als GET. Auf dem Geraet bedient
     // das der WebViewAssetLoader aus Rasters.java; hier die Leinwand. Zwei
     // Endungen, weil der Bildexport PNG holen kann - die Endung im PFAD ist die
@@ -155,6 +211,55 @@ try {
 
     // --- Die Kette ----------------------------------------------------------
     const local = await import("/web/vision/local.js");
+    const constants = await import("/web/constants.js");
+
+    // --- Der Sucher, und zwar VOR dem Foto ---------------------------------
+    //
+    // Die Reihenfolge ist der Punkt. Auf dem Telefon laeuft der Sucher, bevor
+    // ein Foto gewaehlt ist - und genau daran ist 0.1.5-alpha gescheitert:
+    // image-android.js holte fuer das Sucherbild das GEWAEHLTE Foto, Java
+    // antwortete "Es wurde noch kein Bild gewaehlt.", und die Statuszeile sagte
+    // "Kein Marker im Bild.". Stuende dieser Block hinter dem Upload, liefe er
+    // auch mit dem alten Code gruen (mit den Markern des Fotos statt denen des
+    // Bildes) - und waere kein Beleg.
+    const frame = await window.__probe.frameBlob(window.__probe.file, 960, 0.6);
+    say(`live einzelbild: ${frame.size} Bytes JPEG`);
+
+    const seen = await local.detectFrame(frame);
+    say(`live marker: ${seen.markers.length} Marker in ${seen.width}x${seen.height} px`);
+    if (seen.markers.length !== 4) {
+        say(`FEHLER: der Sucher findet ${seen.markers.length} statt 4 Marker`);
+    }
+    if (seen.width !== 960) {
+        say(`FEHLER: erkannt wurde auf ${seen.width} px statt auf dem Einzelbild (960)`);
+    }
+
+    const measured = await local.measureFrame(frame, {
+        marker_mm: constants.MARKER_MM_NOMINAL,
+        mode: "sheet",
+        spacing_x_mm: constants.SHEET_SPACING_MM[0],
+        spacing_y_mm: constants.SHEET_SPACING_MM[1],
+    });
+    say(`live ebene: ${measured.plane
+        ? `${measured.plane.mm_per_px.toFixed(4)} mm/px, rms ${measured.plane.rms_px.toFixed(2)} px`
+        : "keine"}, Raster ${measured.grid_mm} mm`);
+    if (!measured.plane) {
+        say("FEHLER: der Sucher rechnet keine Ebene");
+    }
+
+    // Und das Wichtigste: er hat dabei nichts angefasst. Waere das Sucherbild
+    // ueber den Fotoplatz gelaufen, stuende hier jetzt ein Foto.
+    let stillEmpty = false;
+    try {
+        await local.solve({ session_id: "keine", marker_mm: 40, spacing_x_mm: 1,
+            spacing_y_mm: 1, mode: "sheet", thickness_mm: 0, camera_height_mm: null });
+    } catch (error) {
+        stillEmpty = true;
+    }
+    say(`live spurlos: keine Sitzung angelegt = ${stillEmpty}`);
+    if (!stillEmpty) {
+        say("FEHLER: der Sucher hat eine Sitzung hinterlassen");
+    }
 
     const upload = await local.uploadPhoto(window.__probe.file);
     say(`upload: ${upload.width}x${upload.height} px, Marker-Kante ${upload.defaults.marker_mm} mm`);

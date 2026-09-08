@@ -729,6 +729,21 @@ Antwort, sonst könnte das Overlay sie nicht auf seine Bühne rechnen. Der Ortsb
 (`web/vision/local.js`) formt die acht Zahlen des Kerns dafür in vier Paare um; die Antwortform
 ist die des Servers, nicht die des Kerns.
 
+**Das Einzelbild hat einen eigenen Weg in die Bildschicht: `decodeFrame`/`releaseFrame`.**
+Nicht `decodeFile` — und dieser Unterschied ist auf einem Ziel der ganze Unterschied.
+Im Browser sind beide dasselbe (`createImageBitmap` nimmt jeden Blob). Auf Android heißt
+`decodeFile` „gib mir das **gewählte** Foto": die Pixel liegen in Java, das `File`-Objekt
+wird absichtlich nicht gelesen. Im Sucher ist aber keines gewählt — 0.1.5-alpha rief
+trotzdem `decodeFile`, Java antwortete „Es wurde noch kein Bild gewaehlt.", und die
+Statuszeile sagte „Kein Marker im Bild.". War doch eines gewählt, war es schlimmer: dann
+zeigte der Sucher **dessen** Marker, egal wohin die Kamera zeigte.
+
+Auf Android gehen die Bytes deshalb wirklich hinüber (rund 60 KB je Bild), durch denselben
+Scheibenkanal wie ein PDF hinaus. Das Bild landet auf einem **eigenen Platz** in der Arena
+(`NativeImages.frame`): das festgehaltene Foto und die Zwischenraster der Kette bleiben
+unberührt, und es lebt höchstens **ein** Sucherbild — ein neues verdrängt das vorige, auch
+wenn ein `releaseFrame` einmal ausbleibt.
+
 **`POST /api/measure?marker_mm&mode&spacing_x_mm&spacing_y_mm`** — Körper wieder die **Bytes**
 → `{ width, height, grid_mm, markers[…],
      plane: { homography[9], hull_mm[[x,y]…], mm_per_px, rms_px, mode_used } | null }`

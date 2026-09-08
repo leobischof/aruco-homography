@@ -136,10 +136,26 @@ export function makeBridgeStub(wasm) {
         }
     }
 
+    /**
+     * Ein Bild wieder hergeben - das Gegenstueck zu NativeImages.releaseFrame.
+     *
+     * Ein unbekannter Griff ist KEIN Fehler, genau wie dort: doppeltes oder
+     * verspaetetes Hergeben soll nicht werfen. Der Puffer wird wirklich
+     * freigegeben; ohne _free waechst der WASM-Haufen mit jedem Sucherbild, und
+     * genau die Sorte Leck soll dieser Doppelgaenger sichtbar machen.
+     */
+    function drop(handle) {
+        const found = images.get(handle);
+        if (!found) return;
+        wasm._free(found.pointer);
+        images.delete(handle);
+    }
+
     return {
         images,
         put,
         image,
+        drop,
         /**
          * Ein Aufruf, wie `window.__aruco.core` ihn macht.
          *
