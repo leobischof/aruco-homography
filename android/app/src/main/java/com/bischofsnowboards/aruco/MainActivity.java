@@ -1,5 +1,6 @@
 package com.bischofsnowboards.aruco;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
@@ -13,6 +14,7 @@ import android.system.OsConstants;
 import android.util.Log;
 import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
+import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -70,6 +72,7 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_SAVE_FILE = 3;
     private static final int REQUEST_FILE_CHOOSER = 4;
     private static final int REQUEST_CHOOSER_CAPTURE = 5;
+    private static final int REQUEST_CAMERA_PERMISSION = 6;
 
     private WebView webView;
     private WebViewAssetLoader assetLoader;
@@ -119,6 +122,19 @@ public final class MainActivity extends Activity {
     private long pendingCallId = -1L;
     private byte[] pendingFile;
     private ValueCallback<Uri[]> pendingFileChooser;
+
+    /**
+     * Was auf die Antwort des Systems auf die Kamerafrage wartet.
+     *
+     * <p>Zwei Sorten, und beide koennen es sein: die Seite, die per getUserMedia den
+     * Sucher aufmacht ({@code pendingCameraRequest}), oder ein Weg im Programm, der
+     * ohne die Berechtigung nicht mehr losdarf ({@code afterCamera} /
+     * {@code withoutCamera}). Der Dialog ist derselbe, die Fortsetzung nicht.
+     */
+    private PermissionRequest pendingCameraRequest;
+    private Runnable afterCamera;
+    private Runnable withoutCamera;
+
     private File pendingCapture;
 
     /**
@@ -416,20 +432,161 @@ public final class MainActivity extends Activity {
                 pendingFileChooser.onReceiveValue(null);
             }
             pendingFileChooser = callback;
-            try {
-                if (params.isCaptureEnabled()) {
-                    startActivityForResult(captureIntent(), REQUEST_CHOOSER_CAPTURE);
-                } else {
-                    startActivityForResult(imagePickerIntent(), REQUEST_FILE_CHOOSER);
-                }
-                return true;
-            } catch (Exception failure) {
-                pendingFileChooser = null;
-                pendingCapture = null;
-                pendingCaptureUri = null;
-                Log.w(TAG, "Kein Dialog verfuegbar", failure);
-                return false;
+            if (params.isCaptureEnabled()) {
+                // Erst fragen, dann starten: siehe withCamera().
+                withCamera(() -> startChooser(this::chooserCapture),
+                        () -> cancelFileChooser("Kamera nicht erlaubt"));
+            } else {
+                startChooser(() -> startActivityForResult(imagePickerIntent(),
+                        REQUEST_FILE_CHOOSER));
             }
+            return true;
+        }
+
+        private void chooserCapture() throws IOException {
+            startActivityForResult(captureIntent(), REQUEST_CHOOSER_CAPTURE);
+        }
+
+        /** Einen Dialog oeffnen und den wartenden Rueckruf sauber aufloesen, wenn nicht. */
+        private void startChooser(Opening opening) {
+            try {
+                opening.open();
+            } catch (Exception failure) {
+                Log.w(TAG, "Kein Dialog verfuegbar", failure);
+                cancelFileChooser(failure.getMessage());
+            }
+        }
+
+        /**
+         * Der Seite sagen, dass keine Datei kommt.
+         *
+         * <p>Ein {@code ValueCallback}, den niemand aufloest, laesst das Dateifeld fuer
+         * immer auf einen Wert warten - der naechste Klick darauf tut dann nichts mehr.
+         * Das ist der Grund, warum hier auch der Fehlerweg einen Wert liefert, und zwar
+         * {@code null} fuer "abgebrochen".
+         */
+        private void cancelFileChooser(String reason) {
+            Log.w(TAG, "Dateiwahl abgebrochen: " + reason);
+            if (pendingFileChooser != null) {
+                pendingFileChooser.onReceiveValue(null);
+                pendingFileChooser = null;
+            }
+            pendingCapture = null;
+            pendingCaptureUri = null;
+        }
+
+        /**
+         * Die Seite will die Kamera - das Live-Bild.
+         *
+         * <p>Ohne diese Methode antwortet eine WebView auf {@code getUserMedia} mit
+         * {@code NotAllowedError}, ganz gleich was im Manifest steht und was der Nutzer
+         * dem Programm erlaubt hat. Die WebView fragt NICHT von selbst; sie fragt
+         * hier, und die Antwort ist die des Programms.
+         *
+         * <p>Gewaehrt wird ausschliesslich {@link PermissionRequest#RESOURCE_VIDEO_CAPTURE}.
+         * Alles andere - Mikrofon, geschuetzte Medien - wird abgelehnt, auch wenn es
+         * zusammen mit der Kamera erfragt wird: diese App hat dafuer keinen Grund, und
+         * eine Erlaubnis, die man nicht braucht, gibt man nicht.
+         */
+        @Override
+        public void onPermissionRequest(PermissionRequest request) {
+            for (String resource : request.getResources()) {
+                if (!PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                    Log.w(TAG, "Abgelehnt, nicht die Kamera: " + resource);
+                    request.deny();
+                    return;
+                }
+            }
+            pendingCameraRequest = request;
+            withCamera(() -> answerCamera(request, true), () -> answerCamera(request, false));
+        }
+
+        @Override
+        public void onPermissionRequestCanceled(PermissionRequest request) {
+            if (pendingCameraRequest == request) {
+                pendingCameraRequest = null;
+            }
+        }
+    }
+
+    // --- Kamera-Berechtigung -----------------------------------------------------
+
+    /** Ein Dialogstart, der scheitern darf. */
+    private interface Opening {
+        void open() throws Exception;
+    }
+
+    private boolean hasCamera() {
+        return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Etwas tun, das die Kamera braucht - notfalls erst nachdem der Nutzer sie erlaubt.
+     *
+     * <p>Diese Klammer gibt es, weil die Berechtigung ZWEI Wege betrifft, von denen
+     * nur einer sie wirklich benutzt:
+     *
+     * <ul>
+     *   <li>Das Live-Bild braucht sie: {@code getUserMedia} laeuft im eigenen Prozess.
+     *   <li>Der Weg ueber die Kamera-App des Systems braucht sie NICHT - fotografiert
+     *       wird dort. Trotzdem muss auch er fragen: eine im Manifest DEKLARIERTE, aber
+     *       nicht erteilte {@code CAMERA}-Berechtigung laesst
+     *       {@code ACTION_IMAGE_CAPTURE} mit einer {@code SecurityException} scheitern
+     *       (dokumentiert ab Android 6). Vor dem Live-Bild stand die Berechtigung nicht
+     *       im Manifest, und der Weg lief ohne jede Frage.
+     * </ul>
+     *
+     * <p>Es wartet immer nur EINE Frage. Kommt eine zweite dazwischen, wird sie
+     * abschlaegig beschieden, statt die erste zu ueberschreiben - ein Rueckruf, den
+     * niemand aufloest, laesst die Seite fuer immer warten.
+     */
+    private void withCamera(Runnable granted, Runnable denied) {
+        if (hasCamera()) {
+            granted.run();
+            return;
+        }
+        if (afterCamera != null) {
+            Log.w(TAG, "Es wartet schon eine Kamerafrage");
+            denied.run();
+            return;
+        }
+        afterCamera = granted;
+        withoutCamera = denied;
+        requestPermissions(new String[] { Manifest.permission.CAMERA }, REQUEST_CAMERA_PERMISSION);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code != REQUEST_CAMERA_PERMISSION) {
+            return;
+        }
+        boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+        Runnable next = granted ? afterCamera : withoutCamera;
+        afterCamera = null;
+        withoutCamera = null;
+        if (next != null) {
+            next.run();
+        }
+    }
+
+    /**
+     * Der Seite antworten - falls sie noch fragt.
+     *
+     * <p>Zwischen der Frage und der Antwort des Nutzers kann die Seite ihren Wunsch
+     * zurueckziehen (Sucher geschlossen, neu geladen). {@code onPermissionRequestCanceled}
+     * loescht dann {@link #pendingCameraRequest}, und hier faellt die Antwort aus:
+     * {@code grant()} auf einer zurueckgezogenen Anfrage wirft.
+     */
+    private void answerCamera(PermissionRequest request, boolean granted) {
+        if (pendingCameraRequest != request) {
+            return;
+        }
+        pendingCameraRequest = null;
+        if (granted) {
+            request.grant(new String[] { PermissionRequest.RESOURCE_VIDEO_CAPTURE });
+        } else {
+            request.deny();
         }
     }
 
@@ -483,6 +640,13 @@ public final class MainActivity extends Activity {
 
     void takePhoto(long callId) {
         pendingCallId = callId;
+        // Fragen, obwohl dieser Weg die Kamera nicht selbst anfasst - withCamera() sagt,
+        // warum das seit dem Live-Bild noetig ist.
+        withCamera(() -> startCapture(callId),
+                () -> resolveError(callId, "Kamera nicht erlaubt"));
+    }
+
+    private void startCapture(long callId) {
         try {
             startActivityForResult(captureIntent(), REQUEST_TAKE_PHOTO);
         } catch (Exception failure) {

@@ -250,15 +250,34 @@
        das im Schritt darunter zugeschnitten wird, und beide sollen gleichzeitig
        zu sehen sein. -->
   <section class="step" id="step-adjust" hidden>
-    <h2><span class="step-num" aria-hidden="true">4</span>
-      <span data-i18n="ui.adjust.title"></span></h2>
-    <div class="adjust-grid" id="adjust-controls"></div>
-    <div class="step-actions">
-      <button type="button" class="btn btn-secondary" id="adjust-reset"
-              data-i18n="ui.adjust.reset_label"
-              data-i18n-attr="title:ui.adjust.reset_hint"></button>
-      <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
-    </div>
+    <!--
+      ZUGEKLAPPT als Vorgabe. Elf Regler sind der laengste Abschnitt der Seite,
+      und die meisten Fotos brauchen keinen einzigen davon - wer sie nicht will,
+      soll nicht an ihnen vorbeiscrollen muessen.
+
+      <details> und kein selbstgebautes Aufklappen: Tastatur, Vorlesen
+      ("eingeklappt"/"ausgeklappt") und das Suchen im Text bringt der Browser
+      mit. Nachgebaut waere das eine Menge aria-expanded, die irgendwann nicht
+      mehr stimmt.
+
+      Der Fehlerplatz steht ABSICHTLICH ausserhalb: eine Meldung hinter einem
+      zugeklappten Winkel ist keine Meldung.
+    -->
+    <details class="step-fold" id="adjust-fold">
+      <summary class="step-fold-summary">
+        <h2><span class="step-num" aria-hidden="true">4</span>
+          <span data-i18n="ui.adjust.title"></span></h2>
+      </summary>
+      <div class="step-fold-body">
+        <div class="adjust-grid" id="adjust-controls"></div>
+        <div class="step-actions">
+          <button type="button" class="btn btn-secondary" id="adjust-reset"
+                  data-i18n="ui.adjust.reset_label"
+                  data-i18n-attr="title:ui.adjust.reset_hint"></button>
+          <span class="inline-busy" id="adjust-busy" hidden aria-hidden="true"></span>
+        </div>
+      </div>
+    </details>
     <div class="notice-slot" id="adjust-error" role="alert"></div>
   </section>
 
@@ -291,6 +310,17 @@
         <span class="field-label" data-i18n="ui.steps.crop.y1_label"></span>
         <input type="number" id="y1" step="1" inputmode="decimal">
       </label>
+    </div>
+
+    <!--
+      Der einzige Weg zu einem frischen Rechteck. Seit die freie Flaeche nichts
+      mehr tut (crop-rect.js sagt warum), gaebe es sonst keinen - und ein
+      Rechteck, das man in eine Ecke geschoben hat, waere eine Sackgasse.
+    -->
+    <div class="step-actions">
+      <button type="button" class="btn btn-secondary" id="crop-reset"
+              data-i18n="ui.steps.crop.reset_label"
+              data-i18n-attr="title:ui.steps.crop.reset_hint"></button>
     </div>
 
     <div class="info" id="crop-info" role="status"></div>
@@ -375,6 +405,15 @@
         "Aufteilung": er erzeugt etwas anderes, nicht dasselbe anders verteilt.
       -->
       <span class="action-group">
+        <!--
+          Eine EIGENE Aufloesung, nicht die des PDF. Beim Druck ist eine hohe
+          Aufloesung der Zweck: die Aufdrucke sind Vektor und bleiben scharf, und
+          das Bild darunter darf weich sein. Ein Bild fuer ein anderes Programm
+          hat diesen Grund nicht - dort ist alles ueber der Aufloesung des Fotos
+          erfundene Groesse. Vorgabe ist deshalb "wie das Foto".
+        -->
+        <select id="image-dpi" data-i18n-attr="aria-label:ui.steps.export.image_dpi_label">
+        </select>
         <select id="image-format" data-i18n-attr="aria-label:ui.steps.export.image_format_label">
           <option value="jpeg" selected>JPEG</option>
           <option value="png">PNG</option>

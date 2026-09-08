@@ -793,9 +793,18 @@ Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
    beiden Mittelpunktabstände, Objektdicke (Vorgabe 0), bei Bedarf der Kameraabstand →
    „Entzerren".
 3. **Qualität**: der Bericht aus §3.7 und die Warnungen, in drei Tönen abgestuft.
-4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau. Der Abschnitt steht bewusst
-   **über** dem Zuschnitt — die Regler verändern genau das Bild, das im Schritt darunter
-   zugeschnitten wird, und beide sollen gleichzeitig zu sehen sein.
+4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau, **zugeklappt als Vorgabe**
+   hinter einem `<details>`. Elf Regler sind der längste Abschnitt der Seite, und die meisten
+   Fotos brauchen keinen einzigen davon; auf dem Telefon lag der Zuschnitt dadurch eine halbe
+   Bildschirmhöhe weiter unten (gemessen: 74 px zugeklappt gegen 603 px aufgeklappt). Der
+   Abschnitt steht trotzdem **über** dem Zuschnitt — die Regler verändern genau das Bild, das im
+   Schritt darunter zugeschnitten wird, und wer sie aufklappt, hat beide untereinander.
+
+   Ein natives `<details>` und kein nachgebautes Aufklappen: Tastatur, Vorlesen und das Suchen im
+   Text bringt der Browser mit. Der Winkel ist gezeichnet (zwei Rahmenkanten, gedreht) und ersetzt
+   die Systemmarkierung, die auf jeder Oberfläche anders aussieht — dafür braucht es `list-style:
+   none` **und** `::-webkit-details-marker`, keines der beiden ersetzt das andere. Der Fehlerplatz
+   bleibt außerhalb: eine Meldung hinter einem zugeklappten Winkel ist keine Meldung.
 5. **Zuschnitt**: Rechteck auf der entzerrten Vorschau ziehen; darunter live die Kantenlängen in
    mm, die zu erwartende Ausgabegröße in Pixeln und Megapixeln und der Extrapolationsanteil,
    beides gegen die Schwellen aus `limits` eingefärbt. Die vier Kanten lassen sich auch als Zahl
@@ -873,10 +882,9 @@ Exportmeldung. Wer nur die Zeichenketten behält, kann sie nicht mehr übersetze
 Neuladen der Seite; genau das soll der Schalter im Kopf nicht.
 
 **Zuschnitt-Rechteck.** Acht Griffe (vier Ecken, vier Kantenmitten): eine Ecke ändert beide
-Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Ziehen auf freier Fläche zieht
-ein neues Rechteck auf, Pfeiltasten verschieben um 1 mm und mit Shift um 10 mm. Vorher ließ sich
-ein bestehendes Rechteck überhaupt nicht mehr ändern — man musste ein neues aufziehen. Drei
-Dinge, ohne die das nicht trägt:
+Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Pfeiltasten verschieben um
+1 mm und mit Shift um 10 mm. Vorher ließ sich ein bestehendes Rechteck überhaupt nicht mehr
+ändern — man musste ein neues aufziehen. Drei Dinge, ohne die das nicht trägt:
 
 1. **Pointer Events mit `setPointerCapture`.** Ein Finger, der beim Ziehen den Rand des Canvas
    verlässt, verliert die Geste nicht mehr; zusammen mit `touch-action: none` scrollt die Seite
@@ -891,6 +899,15 @@ Dinge, ohne die das nicht trägt:
 Die Trefferfläche eines Griffs ist 44 px groß (`--touch-target`), gezeichnet wird er kleiner. Die
 Ecken stehen in der Trefferliste vorn: bei einem kleinen Rechteck überlappen sich alle acht
 Flächen, und eine Ecke ist dann fast immer gemeint.
+
+**Außerhalb des Rechtecks passiert nichts** — kein Fokus, kein Pointer-Capture, kein
+`preventDefault`, kein Neuzeichnen. Bis 0.1.4-alpha zog eine Geste dort ein neues Rechteck auf.
+Am Finger ist das die falsche Vorgabe: wer das Bild antippt, um es anzusehen, hatte danach einen
+Zuschnitt von null Millimetern, und ein Fehlgriff kostete die ganze bisherige Einstellung. Der
+Weg zu einem frischen Rechteck ist stattdessen der Knopf **Zuschnitt zurücksetzen**, der
+`default_crop_mm` aus der Lösung noch einmal setzt — dieselbe Zahl, nicht eine nachgerechnete.
+`hitTest` nennt den Fall seither `outside` statt `new`: der Name benennt die Lage des Punktes und
+nicht mehr eine Absicht.
 
 **Live-Regler.** 200 ms Entprellung, und jede Antwort trägt eine Wachnummer. Ohne Entprellung
 schickt ein Zug über die halbe Spur dutzende Anfragen; ohne Wachnummer gewinnt die *langsamste*
