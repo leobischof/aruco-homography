@@ -10,7 +10,15 @@
 // (core/tools/make_fixture_pack.py), damit zwischen den beiden Messungen kein
 // PNG-Dekoder steht.
 //
-// Aufruf:  aruco_conformance <pfad/zu/fixtures.txt>
+// Aufruf:  aruco_conformance <pfad/zu/fixtures.txt> [--ecken]
+//
+// `--ecken` haengt hinter jede Szene eine Zeile je Ecke mit der vollen
+// double-Genauigkeit (%.17g, also verlustfrei zurueckzulesen). Die gerundeten
+// 0,4 Stellen der Normalausgabe reichen, um eine Toleranz zu pruefen, aber nicht,
+// um zwei ZIELE gegeneinander zu halten: Windows, Android und WASM sollen
+// dieselben Bits liefern, und ein Unterschied in der 12. Stelle waere in
+// "0.2337 px" unsichtbar. Genau dieser Vergleich ist der Zweck von Stufe 4
+// (docs/cpp-migration/stage-4-cross-targets.md).
 
 #include <algorithm>
 #include <cmath>
@@ -110,8 +118,11 @@ std::vector<std::uint8_t> read_raw(const std::string& path, std::size_t expected
 
 /// Eine Szene messen. Gibt den groessten Eckfehler zurueck; `ok` sagt, ob die
 /// Toleranz gehalten wurde.
+///
+/// `mode` benennt den Durchlauf in der Ecken-Ausgabe ("clahe" oder "grau"); ist
+/// er leer, unterbleibt sie.
 double check(const SceneFixture& scene, const std::string& directory, bool enhance_contrast,
-             bool& ok) {
+             bool& ok, const char* mode = nullptr) {
     const std::size_t expected =
         static_cast<std::size_t>(scene.width) * scene.height * scene.channels;
     const std::vector<std::uint8_t> pixels = read_raw(directory + "/" + scene.raw, expected);
@@ -151,6 +162,16 @@ double check(const SceneFixture& scene, const std::string& directory, bool enhan
             marker_worst = std::max(marker_worst, error);
             sum += error;
             ++counted;
+
+            if (mode != nullptr) {
+                // Eine Zeile, sechs Felder, keine Ausrichtung: das liest ein
+                // diff und kein Mensch. Die Grundwahrheit steht bewusst NICHT
+                // dabei - sie kommt auf jedem Ziel aus derselben Datei und
+                // wuerde den Vergleich nur verwaessern.
+                std::printf("ecke %s %s %d %d %.17g %.17g %.17g\n", scene.name.c_str(), mode,
+                            marker.id, corner, marker.corners[corner][0],
+                            marker.corners[corner][1], error);
+            }
         }
         worst = std::max(worst, marker_worst);
 
@@ -170,9 +191,17 @@ double check(const SceneFixture& scene, const std::string& directory, bool enhan
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::fprintf(stderr, "Aufruf: aruco_conformance <pfad/zu/fixtures.txt>\n");
+    if (argc < 2 || argc > 3) {
+        std::fprintf(stderr, "Aufruf: aruco_conformance <pfad/zu/fixtures.txt> [--ecken]\n");
         return 2;
+    }
+    bool dump_corners = false;
+    if (argc == 3) {
+        if (std::string(argv[2]) != "--ecken") {
+            std::fprintf(stderr, "Unbekannter Schalter: %s\n", argv[2]);
+            return 2;
+        }
+        dump_corners = true;
     }
 
     const std::string manifest = argv[1];
@@ -185,14 +214,14 @@ int main(int argc, char** argv) {
                         scene.height, scene.channels);
 
             std::printf("  CLAHE + Subpixel:\n");
-            check(scene, directory, true, ok);
+            check(scene, directory, true, ok, dump_corners ? "clahe" : nullptr);
 
             // Zweiter Lauf nur zur Anschauung: er belegt, dass CLAHE wirklich
             // greift. Waeren beide Zeilen gleich, liefe der Schalter ins Leere.
             // Gewertet wird er nicht - Python misst mit CLAHE (Vorgabe true).
             bool ignored = true;
             std::printf("  Nur Graustufen (nicht gewertet):\n");
-            check(scene, directory, false, ignored);
+            check(scene, directory, false, ignored, dump_corners ? "grau" : nullptr);
             std::printf("\n");
         }
 

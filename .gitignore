@@ -76,6 +76,11 @@ spike/*.raw
 # Das Bauverzeichnis. Darin liegen auch der erzeugte Konstanten-Header, das
 # Fixture-Paket (26 MB rohe Pixel) und die kopierte opencv_world500.dll.
 /core/build/
+# Die Kreuzbauten (Stufe 4). Je Ziel ein eigenes Verzeichnis, weil CMake pro
+# Werkzeugkette einen eigenen Cache braucht - zusammen rund 200 MB, alles davon
+# mit ./dev.ps1 build-core-wasm bzw. build-core-android wiederherstellbar.
+/core/build-wasm/
+/core/build-android-*/
 # gen_constants.py schreibt normalerweise ins Bauverzeichnis. Wird es von Hand
 # mit einem anderen Ziel aufgerufen, landet der Header hier - und eingecheckt
 # waere er eine zweite Definition derselben Millimeter (AGENTS.md, Invariante 4).
