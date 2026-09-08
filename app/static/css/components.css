@@ -124,11 +124,25 @@
    Gestalt wie die Umrissknoepfe daneben (durchsichtig, Rahmen, beim Ueberfahren
    --accent), nicht wie die gefuellten Felder im Hauptteil: es steht im Kopf
    neben Verweis und Themenknopf und soll zu denen gehoeren, nicht zum Formular.
+
+   Geschlossen steht darin das Kuerzel ("DE"), aufgeklappt der Eigenname
+   ("Deutsch") - js/header.js tauscht die Beschriftungen. Der Grund ist die
+   Breite: nur mit dem Kuerzel stehen Markerblatt, Sprache und Thema auch auf
+   einem Telefon in EINER Zeile.
    -------------------------------------------------------------------------- */
 .lang-select {
-    /* Schlaegt die Feldregel aus forms.css (Klasse vor Element): hier bestimmt
-       der Inhalt die Breite, sonst schoebe das Feld die Nachbarn aus dem Kopf. */
-    width: auto;
+    /* Schlaegt die Feldregel aus forms.css (Klasse vor Element): das Feld waere
+       sonst 100% breit und schoebe die Nachbarn aus dem Kopf.
+
+       FEST und nicht `auto`: beim Aufklappen stehen laengere Texte in den
+       Eintraegen, und eine inhaltsabhaengige Breite liesse den Waehler in diesem
+       Moment wachsen und den Themenknopf danebenspringen. Die Liste selbst darf
+       breiter werden als der Waehler - das entscheidet der Browser.
+
+       3.75rem sind 60px; das Kuerzel mit Pfeil und Innenabstand misst gemessene
+       59px. Der eine Pixel Luft ist Absicht - eine andere Schrift faellt sonst
+       ins Abschneiden. */
+    width: 3.75rem;
     min-height: 2.25rem;
     padding: 0 0.5rem;
     background: transparent;
@@ -136,8 +150,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: none;
-    /* Wie .btn daneben, nicht wie das alte Segmentpaar: dort standen zwei
-       Kuerzel (DE/EN), hier steht ein ganzes Wort neben einem Knopf. */
+    /* Wie .btn daneben: es soll zu den Knoepfen im Kopf gehoeren. */
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
     cursor: pointer;
