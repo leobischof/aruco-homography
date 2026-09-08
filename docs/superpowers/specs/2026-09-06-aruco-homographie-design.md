@@ -729,6 +729,23 @@ Antwort, sonst könnte das Overlay sie nicht auf seine Bühne rechnen. Der Ortsb
 (`web/vision/local.js`) formt die acht Zahlen des Kerns dafür in vier Paare um; die Antwortform
 ist die des Servers, nicht die des Kerns.
 
+**`POST /api/measure?marker_mm&mode&spacing_x_mm&spacing_y_mm`** — Körper wieder die **Bytes**
+→ `{ width, height, grid_mm, markers[…],
+     plane: { homography[9], hull_mm[[x,y]…], mm_per_px, rms_px, mode_used } | null }`
+
+Dasselbe Einzelbild, aber bis zur Ebene gerechnet — die messende Betriebsart des Live-Bildes
+(§6.3). Der Unterschied zu `/api/solve` ist alles andere: keine Sitzung, kein entzerrtes Bild,
+keine Vorschau. Zurück kommt genau, was ein Overlay braucht.
+
+**`plane: null` ist kein Fehler.** Keine Marker, zu wenige für den Modus, eine entartete Lage —
+im Sucher ist das der Normalzustand, solange die Kamera noch ausgerichtet wird. Ein Fehler färbte
+die Oberfläche rot, während gar nichts falsch ist.
+
+`homography` bildet **Millimeter der Ebene auf Bildpixel** ab, zeilenweise als neun Zahlen.
+Gerundet wird hier **nicht**: `/api/solve` rundet für seinen Bericht (5 bzw. 3 Nachkommastellen),
+und ein Test hält fest, dass beide Wege für dieselben Bytes bis auf die halbe Rundungsstufe
+dieselbe Zahl liefern. Was der Sucher anzeigt, muss dasselbe sein, was ein Foto danach ergäbe.
+
 **`POST /api/solve`**
 `{ session_id, marker_mm, mode: "sheet"|"free"|"scattered", thickness_mm, camera_height_mm|null,
    spacing_x_mm, spacing_y_mm }`  — die beiden Abstände nur im Blatt-Modus benutzt
@@ -820,14 +837,28 @@ und `page_margin_mm` schickt die Oberfläche nicht mit und überlässt sie den V
 
 **Wozu.** Ob die Marker im Bild sind, ob keiner angeschnitten ist und ob das Licht reicht, sagt
 die App bisher erst *nach* dem Entzerren — ein Weg von zwanzig Sekunden, um zu erfahren, dass man
-näher hingehen muss. Der Sucher sagt es sofort: er zeichnet über das laufende Kamerabild je
-gefundenen Marker seinen Umriss, seine Nummer und **sein eigenes Koordinatensystem**. Die
-Achsenrichtungen folgen ohne Rechnung aus der Eckenreihenfolge des Erkenners (TL, TR, BR, BL):
-x zeigt von Ecke 0 nach Ecke 1, y von Ecke 0 nach Ecke 3. Ein verdrehter Marker ist damit schon
-hier zu sehen und nicht erst am Ausdruck.
+näher hingehen muss. Der Sucher sagt es sofort.
 
-**Gemessen wird nichts.** Der Sucher beantwortet genau eine Frage — „sind die Marker da und wie
-liegen sie?" — und übergibt dann an den gewohnten Weg.
+**Zwei Betriebsarten**, umschaltbar in seiner Fußzeile:
+
+| | |
+|---|---|
+| **Marker** | Je gefundenem Marker Umriss, Nummer und **sein eigenes Koordinatensystem**. Die Achsenrichtungen folgen ohne Rechnung aus der Eckenreihenfolge des Erkenners (TL, TR, BR, BL): x zeigt von Ecke 0 nach Ecke 1, y von Ecke 0 nach Ecke 3. Ein verdrehter Marker ist damit hier zu sehen und nicht erst am Ausdruck. |
+| **Ebene messen** | Dieselben Marker, aber daraus gerechnet (`/api/measure`): das **50-mm-Raster der Ebene** liegt im Bild auf dem Werkstück, dazu Maßstab und Restfehler in der Fußzeile. Wer nur wissen will, wie groß etwas ist, liest es hier ab und macht **gar kein Foto**. |
+
+Der Rasterschritt ist derselbe, den der Ausdruck aufdruckt (`GRID_STEP_MM`), und er kommt mit der
+Antwort — im Sucher steht keine zweite 50. Fehlt er, wird **kein** Raster gezeichnet: ein
+erfundener Schritt wäre ein zweiter Maßstab, und ein falsches Raster ist schlimmer als keines.
+Gezeichnet wird nur einen Schritt über die Markerhülle hinaus; weiter draußen wird die
+Homographie fortgeschrieben statt gemessen, und ein Raster über das ganze Bild behauptete eine
+Genauigkeit, die dort niemand geprüft hat.
+
+Der Restfehler steht **neben** dem Maßstab, weil ein Maßstab ohne ihn eine Behauptung ist:
+dieselben 1,3 mm/px können aus einer sauberen Lage kommen oder aus einer verkanteten Fläche, und
+nur die zweite Zahl unterscheidet das. Ein Raster, das sich beim Kippen verzieht, sagt außerdem
+sofort, dass die Fläche nicht eben ist — das sieht man an keiner Zahl.
+
+**Festgehalten wird nichts.** Weder Sitzung noch Foto; beide Aufrufe rechnen und vergessen.
 
 Vier Entscheidungen tragen ihn:
 
@@ -837,6 +868,10 @@ Vier Entscheidungen tragen ihn:
 | Es läuft immer nur **eine** Erkennung | Ohne diese Sperre stauen sich die Anfragen, und was man sieht, gehört zu einem Bild von vor zwei Sekunden. |
 | Gezeichnet wird bei **jedem** Bildschirmbild, erkannt alle 120 ms | Das Overlay klebt damit am Video, auch während die Erkennung läuft. |
 | Ein `<dialog>` mit `showModal()`, kein Abschnitt im Seitenfluss | Der Sucher will die ganze Fläche; Fokusfang, Esc-Taste und Verdunklung kommen vom Browser. |
+
+Markergröße, Modus und Blattabstände holt der Sucher aus **denselben Feldern** wie das Entzerren
+(Schritt 2). Eine eigene Markergröße im Sucher wäre ein zweiter Maßstab neben dem, mit dem
+gerechnet wird.
 
 **Der Auslöser** greift das laufende Bild in der Auflösung des Stroms ab (angefragt wird
 `ideal: 4096`, was kommt, entscheidet das Gerät) und übergibt es als Datei an denselben Upload
@@ -874,7 +909,8 @@ lädt ES-Module und gewöhnliches CSS. Alles, was Tailwind im Webprojekt erzeugt
 | `crop-info.js` | die Zeile unter dem Bild: mm, Pixel, Extrapolationsanteil |
 | `adjust.js` | die Regler aus §3.10 samt Live-Vorschau |
 | `report.js` | Qualitätsbericht und Warnungen aus `/api/solve` |
-| `live.js` | der Sucher aus §6.3: Kamerastrom, Einzelbilder, Overlay, Auslöser |
+| `live.js` | der Sucher aus §6.3: Kamerastrom, Takt, Auslöser |
+| `live-overlay.js` | was er über das Kamerabild malt — Marker, Achsen, Rasterebene |
 
 **Der Zustand hält die rohen Serverantworten**, nicht die fertigen Zeichenketten. Bei einem
 Sprachwechsel muss auch schon gezeichneter Text neu entstehen — Bericht, Bildangaben,

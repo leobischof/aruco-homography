@@ -528,8 +528,18 @@ async function start() {
             video: el("live-video"),
             canvas: el("live-overlay"),
             status: el("live-status"),
+            modeSelect: el("live-mode"),
             shutter: el("live-shutter"),
             closeButton: el("live-close"),
+            // Dieselben Felder wie beim Entzerren, und mit Absicht: was der
+            // Sucher misst, muss dasselbe sein, was ein Foto danach ergaebe.
+            // Eine zweite Markergroesse im Sucher waere ein zweiter Massstab.
+            getParams: () => ({
+                marker_mm: parseFloat(el("marker-mm").value),
+                mode: el("mode").value,
+                spacing_x_mm: parseFloat(el("spacing-x").value),
+                spacing_y_mm: parseFloat(el("spacing-y").value),
+            }),
             onPhoto: (file) => {
                 // Erst die Beschriftung, dann der Upload: sonst steht waehrend
                 // des Hochladens "Keine Datei ausgewaehlt" neben dem Balken.

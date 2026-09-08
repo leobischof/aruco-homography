@@ -7,9 +7,19 @@
  * flachem Winkel ist das ein Weg von zwanzig Sekunden, um zu erfahren, dass man
  * naeher hingehen muss. Der Sucher sagt es sofort.
  *
- * Was hier NICHT passiert: gemessen wird nichts. Dieser Schritt beantwortet
- * genau eine Frage - "sind die Marker da und wie liegen sie?" - und uebergibt
- * dann an den gewohnten Weg.
+ * Zwei Betriebsarten, und die zweite ist der eigentliche Grund fuer die erste:
+ *
+ *   **Marker** - Umriss, Nummer und das Koordinatensystem jedes Markers. Sagt,
+ *   ob die Erkennung ueberhaupt greift.
+ *
+ *   **Ebene** - dieselben Marker, aber daraus gerechnet: das 50-mm-Raster der
+ *   Ebene liegt im Bild auf dem Werkstueck, dazu Massstab und Restfehler. Wer
+ *   nur wissen will, wie gross etwas ist, liest es hier ab und macht gar kein
+ *   Foto. Ein Raster, das sich beim Kippen verzieht, sagt ausserdem sofort, dass
+ *   die Flaeche nicht eben ist - das sieht man an keiner Zahl.
+ *
+ * Was hier NICHT passiert: nichts wird festgehalten. Weder Sitzung noch Foto -
+ * beide Aufrufe (api.js: detectFrame, measureFrame) rechnen und vergessen.
  *
  * Drei Entscheidungen, die den Rest der Datei erklaeren:
  *
@@ -29,9 +39,9 @@
  * Server oder das WebAssembly der Seite antwortet.
  */
 
-import { detectFrame } from "./api.js";
-import { t } from "./i18n.js";
-import { onThemeChange, readCssThemeVar } from "./theme.js";
+import { detectFrame, measureFrame } from "./api.js";
+import { formatNumber, t } from "./i18n.js";
+import { createOverlay } from "./live-overlay.js";
 
 /** Laengste Kante des Bildes, das in die Erkennung geht. */
 const FRAME_MAX_PX = 960;
@@ -50,8 +60,9 @@ const PHOTO_QUALITY = 0.92;
 /** Aufloesung, um die der Strom gebeten wird. Was kommt, entscheidet das Geraet. */
 const WANTED_PX = 4096;
 
-/** Laenge der gezeichneten Achsen, als Anteil der mittleren Markerkante. */
-const AXIS_SHARE = 0.7;
+/** Die messende Betriebsart. Die andere heisst "markers" und ist alles, was
+ *  nicht diese ist - beide Zeichenketten stehen als Werte im Markup. */
+const MODE_PLANE = "plane";
 
 /** Gibt es an diesem Ort ueberhaupt eine Kamera-Schnittstelle?
  *
@@ -64,20 +75,9 @@ export function liveAvailable() {
     return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
-function readColours() {
-    return {
-        outline: readCssThemeVar("--hull-stroke", "canvastext"),
-        halo: readCssThemeVar("--crop-halo", "canvas"),
-        axisX: readCssThemeVar("--marker-axis-x", "red"),
-        axisY: readCssThemeVar("--marker-axis-y", "orange"),
-        label: readCssThemeVar("--crop-handle", "canvas"),
-        labelInk: readCssThemeVar("--foreground", "canvastext"),
-    };
-}
-
-export function createLiveView({ dialog, video, canvas, status, shutter, closeButton,
-        onPhoto, onError }) {
-    const context = canvas.getContext("2d");
+export function createLiveView({ dialog, video, canvas, status, modeSelect, shutter,
+        closeButton, getParams, onPhoto, onError }) {
+    const overlay = createOverlay(canvas);
     const shot = document.createElement("canvas");
 
     let stream = null;
@@ -85,10 +85,9 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
     let detecting = false;
     let lastRun = 0;
     let markers = [];
+    let plane = null;
+    let gridMm = 0;
     let frameWidth = 0;
-    let colours = readColours();
-
-    const stopThemeWatch = onThemeChange(() => { colours = readColours(); });
 
     // ---- Bilder aus dem Strom holen ---------------------------------------
 
@@ -116,19 +115,26 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
         });
     }
 
-    async function detect() {
+    async function look() {
         detecting = true;
+        const wantsPlane = modeSelect.value === MODE_PLANE;
         try {
-            const found = await detectFrame(await grab(FRAME_MAX_PX, FRAME_QUALITY));
+            const frame = await grab(FRAME_MAX_PX, FRAME_QUALITY);
+            const found = wantsPlane
+                ? await measureFrame(frame, getParams())
+                : await detectFrame(frame);
             markers = found.markers || [];
             frameWidth = found.width || 0;
-            showCount();
+            plane = wantsPlane ? found.plane || null : null;
+            gridMm = found.grid_mm || gridMm;
+            tellState();
         } catch (error) {
             // Ein einzelnes verlorenes Bild ist kein Fehler des Benutzers - der
-            // naechste Versuch kommt in 120 ms. Nur der Zaehler sagt die
+            // naechste Versuch kommt in 120 ms. Nur die Meldung sagt die
             // Wahrheit: nichts gefunden.
             markers = [];
-            showCount();
+            plane = null;
+            tellState();
         } finally {
             detecting = false;
             lastRun = performance.now();
@@ -163,120 +169,15 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
         };
     }
 
-    function toStage(corner, view) {
-        return { x: view.left + corner[0] * view.scale, y: view.top + corner[1] * view.scale };
-    }
-
-    // ---- Zeichnen ----------------------------------------------------------
-
-    function draw() {
-        const view = stage();
-        if (!view) return;
-
-        const ratio = window.devicePixelRatio || 1;
-        const backingWidth = Math.max(1, Math.round(view.width * ratio));
-        const backingHeight = Math.max(1, Math.round(view.height * ratio));
-        if (canvas.width !== backingWidth) canvas.width = backingWidth;
-        if (canvas.height !== backingHeight) canvas.height = backingHeight;
-
-        context.setTransform(backingWidth / view.width, 0, 0, backingHeight / view.height, 0, 0);
-        context.clearRect(0, 0, view.width, view.height);
-        for (const marker of markers) drawMarker(marker, view);
-    }
-
-    /**
-     * Ein Marker: Umriss, sein eigenes Koordinatensystem, seine Nummer.
-     *
-     * Die Eckenreihenfolge des Erkenners ist TL, TR, BR, BL im System DES
-     * MARKERS. Daraus folgt das Kreuz ohne jede Rechnung: x zeigt von Ecke 0
-     * nach Ecke 1, y von Ecke 0 nach Ecke 3. Genau diese Reihenfolge traegt der
-     * Massstab spaeter - ein verdrehter Marker ist damit schon hier zu sehen und
-     * nicht erst am Ausdruck.
-     */
-    function drawMarker(marker, view) {
-        const points = marker.corners.map((corner) => toStage(corner, view));
-
-        // Umriss zweimal: dunkle Naht, helle Kernlinie. Dieselbe Physik wie beim
-        // Zuschnitt-Rechteck (crop-rect.js) - eine einzelne Linie ist ueber
-        // einem Kamerabild irgendwann genau so hell wie ihr Untergrund.
-        context.beginPath();
-        points.forEach((point, index) => {
-            if (index === 0) context.moveTo(point.x, point.y);
-            else context.lineTo(point.x, point.y);
-        });
-        context.closePath();
-        context.strokeStyle = colours.halo;
-        context.lineWidth = 5;
-        context.stroke();
-        context.strokeStyle = colours.outline;
-        context.lineWidth = 2;
-        context.stroke();
-
-        const edge = (edgeLength(points[0], points[1]) + edgeLength(points[0], points[3])) / 2;
-        const length = edge * AXIS_SHARE;
-        drawAxis(points[0], points[1], length, colours.axisX);
-        drawAxis(points[0], points[3], length, colours.axisY);
-        drawId(marker.id, points);
-    }
-
-    function edgeLength(from, to) {
-        return Math.hypot(to.x - from.x, to.y - from.y);
-    }
-
-    function drawAxis(origin, towards, length, colour) {
-        const span = edgeLength(origin, towards) || 1;
-        const end = {
-            x: origin.x + ((towards.x - origin.x) / span) * length,
-            y: origin.y + ((towards.y - origin.y) / span) * length,
-        };
-        context.beginPath();
-        context.moveTo(origin.x, origin.y);
-        context.lineTo(end.x, end.y);
-        context.strokeStyle = colours.halo;
-        context.lineWidth = 6;
-        context.stroke();
-        context.strokeStyle = colour;
-        context.lineWidth = 3;
-        context.stroke();
-
-        // Die Spitze sagt, wohin die Achse zeigt. Ohne sie sind zwei Striche nur
-        // ein Kreuz, und das hat keine Richtung.
-        const angle = Math.atan2(end.y - origin.y, end.x - origin.x);
-        const head = Math.max(6, length * 0.22);
-        context.beginPath();
-        context.moveTo(end.x, end.y);
-        context.lineTo(end.x - head * Math.cos(angle - 0.4), end.y - head * Math.sin(angle - 0.4));
-        context.lineTo(end.x - head * Math.cos(angle + 0.4), end.y - head * Math.sin(angle + 0.4));
-        context.closePath();
-        context.fillStyle = colour;
-        context.fill();
-    }
-
-    function drawId(id, points) {
-        const centre = points.reduce(
-            (sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }),
-            { x: 0, y: 0 },
-        );
-        const text = String(id);
-        context.font = "600 15px system-ui, sans-serif";
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        const width = context.measureText(text).width;
-
-        // Traeger unter der Nummer: eine Ziffer auf einem Kamerabild ist sonst
-        // mal lesbar und mal nicht.
-        context.fillStyle = colours.label;
-        context.beginPath();
-        context.roundRect(centre.x - width / 2 - 5, centre.y - 11, width + 10, 22, 5);
-        context.fill();
-        context.strokeStyle = colours.outline;
-        context.lineWidth = 1.5;
-        context.stroke();
-        context.fillStyle = colours.labelInk;
-        context.fillText(text, centre.x, centre.y);
-    }
-
-    function showCount() {
+    function tellState() {
+        if (plane) {
+            status.textContent = t("ui.live.plane", {
+                mm_per_px: formatNumber(plane.mm_per_px, 4),
+                rms_px: formatNumber(plane.rms_px, 2),
+                count: markers.length,
+            });
+            return;
+        }
         status.textContent = markers.length
             ? t("ui.live.found", { count: markers.length })
             : t("ui.live.searching");
@@ -287,9 +188,10 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
     function tick() {
         if (!running) return;
         if (!detecting && performance.now() - lastRun >= INTERVAL_MS && video.videoWidth) {
-            void detect();
+            void look();
         }
-        draw();
+        const view = stage();
+        if (view) overlay.paint(view, { markers, plane, gridMm });
         requestAnimationFrame(tick);
     }
 
@@ -321,8 +223,9 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
         }
 
         markers = [];
+        plane = null;
         frameWidth = 0;
-        showCount();
+        tellState();
         dialog.showModal();
         running = true;
         lastRun = 0;
@@ -357,6 +260,15 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
         }
     }
 
+    // Beim Umschalten sofort neu rechnen, statt bis zum naechsten Takt das
+    // Overlay der anderen Betriebsart stehen zu lassen.
+    modeSelect.addEventListener("change", () => {
+        markers = [];
+        plane = null;
+        lastRun = 0;
+        tellState();
+    });
+
     shutter.addEventListener("click", capture);
     closeButton.addEventListener("click", close);
     // Die Esc-Taste schliesst einen <dialog> von selbst - ohne diesen Horcher
@@ -368,7 +280,7 @@ export function createLiveView({ dialog, video, canvas, status, shutter, closeBu
         close,
         destroy() {
             close();
-            stopThemeWatch();
+            overlay.destroy();
         },
     };
 }
