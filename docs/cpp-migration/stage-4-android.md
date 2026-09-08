@@ -58,7 +58,8 @@ Die Trennlinie ist die einzige Aussage dieses Dokuments, die zählt.
 | Das dabei entstandene Schablonen-PDF, an den Vektoren nachgemessen | **gemessen**: 3 Seiten je 210,000 × 297,000 mm, 13 Rasterabstände alle 50 mm |
 | **Der Prüfstand auf einem echten Telefon** | **gemessen** (08.09.2026, Xiaomi 2312DRA50G, Android 15): BESTANDEN, 0,2337 px je Szene, beide SHA-256 wie vorhergesagt |
 | Start, Importkarte und `CoreBridge` **auf dem Gerät** | **gelaufen** — die App startet, die Oberfläche lädt, Foto und Entzerren gehen durch |
-| **Der Export bis zum PDF auf dem Telefon** | **abgebrochen** (Speicher), behoben — [§6](#und-der-fehler-den-nur-ein-telefon-finden-konnte) |
+| **Der Export bis zum PDF auf dem Telefon** | **abgebrochen** (Speicher). Behoben, indem die Kachelung jetzt **blattweise** rastert — [§6](#und-der-fehler-den-nur-ein-telefon-finden-konnte) |
+| Blattweise gerastert = am Stück gerastert, Bit für Bit | **gemessen**: `web/vision/tiles.test.mjs`, dazu beide Wege im Chromium bis zum nachgemessenen PDF |
 | **Der sichere Bereich auf dem Gerät** | **nicht gemessen** — die Wirkung ist in einem Chromium nachgemessen, die vier Zahlen dort gesetzt statt gemeldet ([§7](#7--was-nicht-belegt-ist)) |
 | Die Kette **Foto → Marker → Millimeter** an einem Gegenstand bekannter Länge | **weiterhin offen** — auf jedem Ziel, nicht nur hier |
 
@@ -551,16 +552,56 @@ hat das nicht.
    verfügbaren Speicher, `bridge-shim.js` reicht ihn an die Seite, und `outputBudgetMpx()`
    nimmt **die kleinere** der beiden Zahlen. Ein Gerät kann die Grenze senken, nie heben.
 
-Der Abbruch fällt damit in `output_too_large` — eine übersetzte Meldung, die eine kleinere
-Auflösung oder einen kleineren Ausschnitt vorschlägt, und zwar nur eine, die auch wirklich
-passt. `web/vision/budget.test.mjs` hält das fest: bei 40 MPx Budget wird derselbe Export
-mit `limit_mpx: 40` und `megapixels: 169` abgewiesen, bei 300 MPx geht er durch.
+#### Und der zweite Anlauf, weil der erste nicht reichte
 
-> **Was das NICHT ist: die eigentliche Lösung.** Die wäre, die Entzerrung zu kacheln, damit
-> nie ein Riesenraster entsteht — `buildPdf` bettet heute ein einziges JPEG für alle Kacheln
-> ein, das ginge also nicht ohne `web/pdf/build.js`. Bis dahin bekommt der Bediener eine
-> verständliche Meldung statt eines Absturzes, und er kann die Auflösung senken. **Auf einem
-> Telefon nachgemessen ist auch das noch nicht** — geprüft ist die JavaScript-Hälfte hier.
+Die Meldung kam trotzdem nicht. Der Bediener sah weiterhin den Rohtext aus
+`NativeImages` — *Raster 9575x13623 braucht 373 MB und der Speicher gibt sie nicht her* —,
+**und zwar bei jeder Auflösung.** Zwei Gründe, beide gerechnet und nicht geraten:
+
+1. **Die Grenze war zu großzügig, um zu greifen.** `MAX_RASTER_BYTES` stand auf 768 MiB
+   und galt als *Summe* für beide Raster: 805 306 368 / 6 = **134 Megapixel**. Der Export
+   wollte 130,44 — er kam durch die Prüfung und scheiterte danach an einer einzelnen
+   Belegung von 373 MiB. Ein Direktpuffer will einen **zusammenhängenden** Block; wieviel
+   insgesamt frei ist, sagt darüber wenig. Die Grenze bezieht sich deshalb jetzt auf
+   **eine** Belegung (192 MiB, also rund 67 MPx) und nicht mehr auf die Summe.
+2. **Auch eine greifende Grenze hätte nur besser abgewiesen.** 150 dpi sind auf demselben
+   Zuschnitt immer noch 32,6 MPx und 98 MB an einem Stück. Eine Meldung ist kein PDF.
+
+**Also der andere Schnitt: die Kachelung rastert blattweise.** Gedruckt wird der Zuschnitt
+ohnehin in A4-Blättern; jedes Blatt holt sich jetzt sein eigenes Bild, statt aus einem
+Riesenbild geschnitten zu werden. Der Spitzenbedarf hängt damit am **Blatt** — A4 bei
+300 dpi sind rund 26 MB — und nicht mehr am Zuschnitt. Er wächst nicht mehr, wenn die
+Schablone größer wird.
+
+**Und das ändert am Erzeugnis nichts.** `core/src/rectify.cpp` bildet Ausgabepixel `u` auf
+`crop.x0 + (u + 0,5) / px_per_mm` ab. Ein Blatt, das an einer **ganzzahligen** Pixelgrenze
+beginnt, tastet deshalb genau dieselben Stellen der Ebene ab wie der entsprechende
+Ausschnitt des großen Rasters, und die Interpolation liest dabei aus dem **Quellfoto**,
+das für jedes Blatt vollständig vorliegt — kein abgeschnittener Filterkern, kein
+Randeffekt. `web/vision/tiles.test.mjs` misst genau das nach: Blatt für Blatt Bit für Bit
+gleich, und die Blätter setzen das Ganze lückenlos wieder zusammen.
+
+**Drei Regler können das nicht**, und dann wird weiterhin am Stück gerastert
+(`needsWholeRaster` in `web/vision/pipeline.js`): **lokaler Kontrast** ist CLAHE und legt
+sein Histogrammgitter über das ganze Bild, **Kantenschärfe** und **Kantenzeichnung**
+greifen in die Nachbarschaft, und der **Umriss** wird auf dem fertigen Bild gesucht. Alle
+vier stehen per Vorgabe aus. Die übrigen Regler rechnen Pixel für Pixel und sind
+blattweise exakt dasselbe.
+
+Bleibt der Abbruch doch einmal nötig, fällt er in `output_too_large` — eine übersetzte
+Meldung, die eine kleinere Auflösung oder einen kleineren Ausschnitt vorschlägt, und zwar
+nur eine, die auch wirklich passt. `web/vision/budget.test.mjs` hält das fest: bei 40 MPx
+Budget wird derselbe Export mit `limit_mpx: 40` und `megapixels: 169` abgewiesen, bei
+300 MPx geht er durch.
+
+> **Was blattweise kostet:** das PDF wird etwas größer, weil die Überlappung zwischen
+> zwei Blättern jetzt zweimal kodiert wird statt einmal geteilt. Im Prüfstand 188 894
+> gegen 155 254 Bytes, also gut ein Fünftel. Auf die Millimeter hat das keinen Einfluss:
+> beide Fassungen messen 13 Rasterabstände zu 50 mm mit 6 nm Abweichung.
+
+> **Auf einem Telefon nachgemessen ist auch das nicht.** Geprüft ist es in einem Chromium
+> aus dem gebauten APK — beide Wege, jeder bis zum nachgemessenen PDF
+> (`./dev.ps1 check-android-ui`).
 
 ### Was zu tippen ist, und was dabei herauskommen muss
 
@@ -616,10 +657,13 @@ Im Einzelnen weiterhin ungeprüft:
   `WindowInsetsCompat` ist nicht nachgebaut.
 - **Ob `NativeImages` mit drei Plätzen reicht.** Die Verdrängung ist nirgends unter Last
   gelaufen. Was der Lauf zeigte, ist die andere Hälfte: **ein einzelner Puffer kann zu groß
-  sein**, und dagegen hilft die Kapazität nicht. Der Export begrenzt sich jetzt selbst
-  ([§6](#und-der-fehler-den-nur-ein-telefon-finden-konnte)); ob die drei Plätze beim
+  sein**, und dagegen hilft die Kapazität nicht. Der Export rastert deshalb blattweise
+  ([§6](#und-der-zweite-anlauf-weil-der-erste-nicht-reichte)) — ob die drei Plätze beim
   Reglerziehen reichen, ist damit nicht beantwortet. **Kein Speicher- und kein Zeitbedarf
   ist auf einem Gerät gemessen** — außer den 83 und 84 ms des Prüfstands.
+- **Ob der blattweise Export auf einem Gerät durchläuft.** Gerechnet ist er: ein A4-Blatt
+  bei 300 dpi sind rund 26 MB statt der 373 MiB, an denen es scheiterte. Gemessen ist er
+  in einem Chromium. **Auf einem Telefon ist er nicht gelaufen.**
 - **Ob ein gekacheltes PDF in 192-KB-Scheiben durch die echte JavaScript-Brücke passt.**
   Im Chromium ja (155 kB in einem Stück Rechenzeit). `@JavascriptInterface` läuft auf dem
   JavaBridge-Faden und ist synchron; bei einem 40-MB-PDF sind das rund 220 Aufrufe, und wie

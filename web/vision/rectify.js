@@ -25,9 +25,8 @@ export function outputSize(core, crop, pxPerMm) {
     return [size.width, size.height];
 }
 
-export function pxPerMmForDpi(dpi) {
-    return dpi / constants.MM_PER_INCH;
-}
+/** Liegt jetzt in web/constants.js - die PDF-Schicht braucht sie auch. */
+export const pxPerMmForDpi = constants.pxPerMmForDpi;
 
 /** Aufloesung, bei der die Vorschau gerade noch unter PREVIEW_MAX_PX bleibt. */
 export function previewPxPerMm(area) {

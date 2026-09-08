@@ -159,16 +159,39 @@ final class NativeImages {
         ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
         manager.getMemoryInfo(memory);
 
-        double usable = Math.min(memory.availMem * 0.45, MAX_RASTER_BYTES);
-        double megapixels = usable / BYTES_PER_OUTPUT_PIXEL / 1e6;
+        // Zwei Grenzen, und die kleinere gilt.
+        double fromFree = memory.availMem * FREE_MEMORY_SHARE / BYTES_PER_OUTPUT_PIXEL;
+        double fromOne = MAX_SINGLE_RASTER_BYTES / BYTES_PER_RASTER_PIXEL;
+        double megapixels = Math.min(fromFree, fromOne) / 1e6;
         return Math.max(MIN_BUDGET_MPX, Math.floor(megapixels));
     }
 
-    /** Entzerrtes Raster plus aufbereitete Fassung, je drei Kanaele. */
-    private static final double BYTES_PER_OUTPUT_PIXEL = 6.0;
+    /** Ein Ausgabepixel im Raster: BGR. */
+    private static final double BYTES_PER_RASTER_PIXEL = 3.0;
 
-    /** Auch auf einem grossen Geraet nicht mehr als das an einem Stueck. */
-    private static final double MAX_RASTER_BYTES = 768.0 * 1024 * 1024;
+    /** Entzerrtes Raster plus aufbereitete Fassung, je drei Kanaele. */
+    private static final double BYTES_PER_OUTPUT_PIXEL = 2.0 * BYTES_PER_RASTER_PIXEL;
+
+    /** Wieviel vom freien Speicher sich der Export nehmen darf. */
+    private static final double FREE_MEMORY_SHARE = 0.45;
+
+    /**
+     * Wie gross EINE Belegung am Stueck hoechstens sein darf.
+     *
+     * <p><b>Diese Grenze ist der Grund, warum es sie gibt.</b> Bis zum 08.09.2026 stand
+     * hier 768 MiB, gemeint als Summe fuer beide Raster - das erlaubte 134 Megapixel. Auf
+     * einem Xiaomi mit Android 15 ging ein Export mit 130,44 Megapixeln deshalb durch die
+     * Pruefung und scheiterte danach an genau einer Zeile: 373 MiB fuer EIN Raster gab der
+     * Speicher nicht her, obwohl {@code availMem} reichlich meldete.
+     *
+     * <p>Ein Direktpuffer will einen zusammenhaengenden Block im nativen Haufen. Wieviel
+     * insgesamt frei ist, sagt darueber wenig; deshalb wird hier die EINZELNE Belegung
+     * begrenzt und nicht die Summe. 192 MiB sind rund 67 Megapixel - ein A0-Bogen bei
+     * 300 dpi. Wer mehr braucht, bekommt es blattweise: die Kachelung rastert seit
+     * derselben Fassung Blatt fuer Blatt (web/vision/pipeline.js), und dort ist ein
+     * A4-Blatt bei 300 dpi nicht einmal ein Zehntel davon.
+     */
+    private static final double MAX_SINGLE_RASTER_BYTES = 192.0 * 1024 * 1024;
 
     /** Darunter waere die App unbrauchbar; dann lieber ehrlich scheitern. */
     private static final double MIN_BUDGET_MPX = 8.0;
