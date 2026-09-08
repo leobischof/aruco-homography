@@ -104,6 +104,17 @@
         "result_emphasis": "100 % / keine Skalierung"
       }
     },
+    "live": {
+      "title": "Live-Bild",
+      "open": "Live-Bild",
+      "shutter": "Aufnehmen",
+      "close": "Schließen",
+      "searching": "Kein Marker im Bild.",
+      "found": "{count} Marker gefunden.",
+      "filename": "aufnahme.jpg",
+      "denied": "Die Kamera ist nicht freigegeben. In den Einstellungen der App erlauben und noch einmal versuchen.",
+      "unavailable": "Keine Kamera erreichbar: {reason}"
+    },
     "adjust": {
       "title": "Bildaufbereitung",
       "grayscale_label": "Graustufen",

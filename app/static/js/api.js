@@ -111,6 +111,36 @@ export async function postJson(url, body, { signal } = {}) {
     return unwrap(response);
 }
 
+/**
+ * Marker in EINEM Einzelbild finden - der Aufruf des Live-Bildes.
+ *
+ * Herein geht ein Blob (das Einzelbild als JPEG), heraus kommt
+ * {width, height, markers:[{id, corners}]} - in beiden Betriebsarten dieselbe
+ * Form. Der Ortsbetrieb dekodiert den Blob wieder, statt die Pixel direkt zu
+ * nehmen; das kostet ein paar Millisekunden je Bild und spart die zweite
+ * Schnittstelle, die sonst auseinanderliefe.
+ *
+ * Der Koerper sind die Bytes und kein Formular. Ein Einzelbild hat keinen
+ * Dateinamen, und eine Multipart-Huelle je Bild waere Verpackung ohne Inhalt.
+ */
+export async function detectFrame(blob) {
+    if (transport() === LOCAL) {
+        const module = await local();
+        try {
+            return await module.detectFrame(blob);
+        } catch (error) {
+            return localError(error);
+        }
+    }
+
+    const response = await fetch("/api/detect", {
+        method: "POST",
+        headers: { "Content-Type": blob.type || "image/jpeg", "Accept-Language": getLocale() },
+        body: blob,
+    });
+    return unwrap(response);
+}
+
 export async function uploadPhoto(file) {
     if (transport() === LOCAL) {
         const module = await local();

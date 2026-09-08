@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import cv2
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
@@ -11,6 +12,8 @@ import io
 from app import config
 from app.main import app
 from app.schemas import CropMm, ExportRequest
+from app.session import store
+from tests.conftest import ideal_markers
 
 
 @pytest.fixture(scope="module")
@@ -67,6 +70,64 @@ def test_solve_liefert_bericht_und_vorschau(client, uploaded, scene):
     preview = client.get(payload["preview"]["url"])
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "image/jpeg"
+
+
+def test_detect_findet_die_marker_ohne_sitzung(client, scene):
+    """Die Route des Live-Bildes: Bytes hinein, Marker heraus, nichts bleibt haengen.
+
+    Geprueft wird beides, was der Sucher braucht: dass alle vier Marker gefunden
+    werden, und dass die Ecken in BILDpixeln des eingeschickten Bildes kommen -
+    das Overlay rechnet sie ohne weitere Angabe auf die Buehne um, und ein
+    anderer Bezug waere dort erst am krummen Bild zu sehen.
+    """
+    ok, encoded = cv2.imencode(".jpg", scene.image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    assert ok
+    response = client.post(
+        "/api/detect", content=encoded.tobytes(), headers={"Content-Type": "image/jpeg"}
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert (payload["width"], payload["height"]) == scene.image_size
+    assert sorted(marker["id"] for marker in payload["markers"]) == sorted(scene.centers_mm)
+
+    # Gegen die analytisch exakten Ecken, nicht gegen einen Mittelpunkt: das
+    # prueft die Reihenfolge TL, TR, BR, BL gleich mit, und genau die zeichnet
+    # der Sucher als Koordinatensystem des Markers.
+    truth = {marker.marker_id: marker for marker in ideal_markers(scene)}
+    for marker in payload["markers"]:
+        corners = np.asarray(marker["corners"], dtype=np.float64)
+        assert corners.shape == (4, 2)
+        error = np.linalg.norm(corners - truth[marker["id"]].corners_px, axis=1)
+        assert error.max() < 1.0, f"Marker {marker['id']}: {error.max():.3f} px"
+
+
+def test_detect_haelt_keine_sitzung_fest(client, scene):
+    """Zehn Bilder in der Sekunde duerfen nichts anhaeufen.
+
+    Ohne diese Zusage waere der Sucher ein Speicherleck mit Ansage: /api/upload
+    legt je Aufruf eine Sitzung an und behaelt das Foto. Geprueft wird an der
+    Zahl der Sitzungen VOR und NACH einem Schwung Einzelbilder.
+    """
+    ok, encoded = cv2.imencode(".jpg", scene.image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    assert ok
+    # Der Speicher des Sitzungslagers direkt: eine oeffentliche Zahl gibt es
+    # nicht, und die Zusage lautet genau, dass er nicht waechst.
+    before = len(store._sessions)
+    for _ in range(3):
+        response = client.post(
+            "/api/detect", content=encoded.tobytes(), headers={"Content-Type": "image/jpeg"}
+        )
+        assert response.status_code == 200, response.text
+    assert len(store._sessions) == before
+
+
+def test_detect_lehnt_ab_was_kein_bild_ist(client):
+    response = client.post(
+        "/api/detect", content=b"kein bild", headers={"Content-Type": "image/jpeg"}
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "unreadable_image"
 
 
 def test_export_liefert_pdf_mit_exakter_seitengroesse(client, solved):

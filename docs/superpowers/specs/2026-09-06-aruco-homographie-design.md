@@ -716,6 +716,19 @@ Die Vorgabewerte kommen mit der Antwort, statt im Frontend zu stehen: `app/confi
 einzige Stelle für Konstanten (AGENTS.md, Invariante 4), und ein abgeschriebener Standardwert im
 Browser wäre die zweite.
 
+**`POST /api/detect`** — der Körper sind die **Bytes** eines Bildes, kein Formular
+→ `{ width, height, markers[{id, corners: [[x,y] × 4]}] }`
+
+Die Route des Live-Bildes (§6.3) und die einzige, die **keine Sitzung anlegt**. Der Sucher
+schickt rund achtmal in der Sekunde ein Einzelbild und will nur wissen, wo die Marker liegen;
+über `/api/upload` und `/api/solve` hieße das, im Sekundentakt Sitzungen samt Foto anzulegen.
+Ein Test hält das fest: nach drei Aufrufen ist die Zahl der Sitzungen dieselbe wie davor.
+
+Die Ecken kommen in Pixeln **des eingeschickten Bildes** — deshalb `width`/`height` in derselben
+Antwort, sonst könnte das Overlay sie nicht auf seine Bühne rechnen. Der Ortsbetrieb
+(`web/vision/local.js`) formt die acht Zahlen des Kerns dafür in vier Paare um; die Antwortform
+ist die des Servers, nicht die des Kerns.
+
 **`POST /api/solve`**
 `{ session_id, marker_mm, mode: "sheet"|"free"|"scattered", thickness_mm, camera_height_mm|null,
    spacing_x_mm, spacing_y_mm }`  — die beiden Abstände nur im Blatt-Modus benutzt
@@ -774,8 +787,8 @@ zeigte das alte Bild. Ohne vorheriges `solve` antwortet der Endpunkt mit `not_so
 
 Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
 
-1. **Foto** wählen (oder vom Handy hochladen) → Dateiname, Bildmaße und die EXIF-Brennweite,
-   falls vorhanden.
+1. **Foto** wählen, mit der Kamera-App aufnehmen oder im **Live-Bild** (§6.3) auslösen →
+   Dateiname, Bildmaße und die EXIF-Brennweite, falls vorhanden.
 2. **Maßstab**: Markergröße in mm (Vorgabe `MARKER_MM_NOMINAL` = 67), Modus, im Blatt-Modus die
    beiden Mittelpunktabstände, Objektdicke (Vorgabe 0), bei Bedarf der Kameraabstand →
    „Entzerren".
@@ -793,6 +806,41 @@ Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
 
 Nicht jedes Feld von `ExportRequest` hat einen Bedienknopf: `orientation`, `printer_margin_mm`
 und `page_margin_mm` schickt die Oberfläche nicht mit und überlässt sie den Vorgaben aus §8.
+
+### 6.3 Das Live-Bild
+
+**Wozu.** Ob die Marker im Bild sind, ob keiner angeschnitten ist und ob das Licht reicht, sagt
+die App bisher erst *nach* dem Entzerren — ein Weg von zwanzig Sekunden, um zu erfahren, dass man
+näher hingehen muss. Der Sucher sagt es sofort: er zeichnet über das laufende Kamerabild je
+gefundenen Marker seinen Umriss, seine Nummer und **sein eigenes Koordinatensystem**. Die
+Achsenrichtungen folgen ohne Rechnung aus der Eckenreihenfolge des Erkenners (TL, TR, BR, BL):
+x zeigt von Ecke 0 nach Ecke 1, y von Ecke 0 nach Ecke 3. Ein verdrehter Marker ist damit schon
+hier zu sehen und nicht erst am Ausdruck.
+
+**Gemessen wird nichts.** Der Sucher beantwortet genau eine Frage — „sind die Marker da und wie
+liegen sie?" — und übergibt dann an den gewohnten Weg.
+
+Vier Entscheidungen tragen ihn:
+
+| | |
+|---|---|
+| Erkannt wird auf einem **verkleinerten** Einzelbild (längste Kante 960 px, JPEG-Qualität 0,6) | Ein Marker, der darauf nicht mehr gefunden wird, ist im Sucher ohnehin zu klein. Die volle Auflösung achtmal in der Sekunde durch die Erkennung zu schicken kostet mehr, als der Sucher hergibt. |
+| Es läuft immer nur **eine** Erkennung | Ohne diese Sperre stauen sich die Anfragen, und was man sieht, gehört zu einem Bild von vor zwei Sekunden. |
+| Gezeichnet wird bei **jedem** Bildschirmbild, erkannt alle 120 ms | Das Overlay klebt damit am Video, auch während die Erkennung läuft. |
+| Ein `<dialog>` mit `showModal()`, kein Abschnitt im Seitenfluss | Der Sucher will die ganze Fläche; Fokusfang, Esc-Taste und Verdunklung kommen vom Browser. |
+
+**Der Auslöser** greift das laufende Bild in der Auflösung des Stroms ab (angefragt wird
+`ideal: 4096`, was kommt, entscheidet das Gerät) und übergibt es als Datei an denselben Upload
+wie die Dateiwahl. Das ist ausdrücklich **nicht** die volle Sensorauflösung — die gibt nur die
+Kamera-App des Systems her, und die zeigt kein Overlay. Ein so entstandenes Bild hat außerdem
+**kein EXIF**: die Brennweite fehlt, und eine Dickenkorrektur braucht dann den eingetippten
+Kameraabstand.
+
+**Wo es ihn nicht gibt.** `navigator.mediaDevices` fehlt in jedem unsicheren Ursprung — eine über
+`file://` geöffnete Seite hat es schlicht nicht. Der Knopf bleibt dort verborgen, statt eine
+Kamera zu versprechen, die die Umgebung nicht hergibt. Im APK ist der Ursprung
+`https://appassets.androidplatform.net` und damit sicher; die Berechtigung dafür beschreibt
+`AndroidManifest.xml`.
 
 Ein erneutes „Entzerren" behält den Reglerstand und zieht die Vorschau nach, damit Bild und
 Regler wieder zueinander passen.
@@ -817,6 +865,7 @@ lädt ES-Module und gewöhnliches CSS. Alles, was Tailwind im Webprojekt erzeugt
 | `crop-info.js` | die Zeile unter dem Bild: mm, Pixel, Extrapolationsanteil |
 | `adjust.js` | die Regler aus §3.10 samt Live-Vorschau |
 | `report.js` | Qualitätsbericht und Warnungen aus `/api/solve` |
+| `live.js` | der Sucher aus §6.3: Kamerastrom, Einzelbilder, Overlay, Auslöser |
 
 **Der Zustand hält die rohen Serverantworten**, nicht die fertigen Zeichenketten. Bei einem
 Sprachwechsel muss auch schon gezeichneter Text neu entstehen — Bericht, Bildangaben,
