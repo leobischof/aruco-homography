@@ -32,7 +32,11 @@
        kommt von dort - eine eigene Farbe hier waere der Anfang eines zweiten
        Entwurfssystems. */
     .kv { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; }
-    .kv dt { color: var(--muted); }
+    /* --muted-foreground und NICHT --muted: das eine ist eine Textfarbe, das
+       andere eine Flaeche. Als Text auf der Karte kam --muted auf 1,23:1 und
+       war auf dem Telefon praktisch unsichtbar; --muted-foreground bringt
+       6,00:1 (tokens.css sagt beide Zahlen). */
+    .kv dt { color: var(--muted-foreground); }
     .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
     .verdict { font-weight: 700; letter-spacing: 0.04em; }
     .verdict.pass { color: var(--primary); }
