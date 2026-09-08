@@ -26,6 +26,7 @@ Lesen wissen, welche Datei er aufmachen muss — und keine zweite Suchrunde brau
 | [`design/design-system.md`](design/design-system.md) | Farbe, Typografie, Form, Komponenten, Themen, Sprachen, Bewegung, Mobil — und was aus dem Webprojekt **nicht** zu übernehmen ist | developer | current |
 | [`contributing/git.md`](contributing/git.md) | Verbindliche Git-Regeln: Identität, wann committet und wann gepusht wird, Aufbau der Commit-Nachricht | developer | current |
 | [`superpowers/specs/2026-09-06-aruco-homographie-design.md`](superpowers/specs/2026-09-06-aruco-homographie-design.md) | Die Spezifikation dessen, was **existiert**, mit dem Code abgeglichen | developer | current |
+| [`cpp-migration/stage-4-android.md`](cpp-migration/stage-4-android.md) | Was die Android-App heute wirklich kann, was nur gebaut ist, und wie man sie auf ein Telefon bringt | developer | current |
 
 ### Außerhalb von `docs/` — die Dateien an der Wurzel
 
