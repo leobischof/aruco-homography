@@ -278,6 +278,12 @@ uses-permission: name='com.bischofsnowboards.aruco.DYNAMIC_RECEIVER_NOT_EXPORTED
 | Verbotene Dateien | 0 von 4 — **kein `.wasm`, kein `core.js`**, keine `.test.mjs`, keine `image.js` |
 | `versionName` | aus `app/config.py` (`APP_VERSION`), nicht abgetippt |
 
+> **Nachtrag.** Die Zeile „keine Rechte" ist der gemessene Stand dieser Stufe und bleibt
+> deshalb stehen. Seit dem Live-Bild trägt das APK `android.permission.CAMERA`: ein Sucher,
+> der die Marker im laufenden Bild findet, braucht den Strom im eigenen Prozess, und
+> `getUserMedia` bekommt ihn nicht ohne. **`INTERNET` fehlt weiterhin** — die Zusage, dass
+> nichts das Gerät verlässt, ist unberührt. Die Begründung steht im Manifest.
+
 Die vier verbotenen Einträge sind der Kern dieser Stufe als Prüfung: läge `core.js` im APK,
 holte die Seite bei einem Fehler in der Importkarte still den WebAssembly-Weg — und die
 Architekturentscheidung „nativ je Ziel" wäre lautlos rückgängig gemacht. `check-apk` zählt

@@ -354,6 +354,22 @@
     --hull-fill: var(--bfsb-petrol-a14);
     --hull-stroke: var(--bfsb-petrol-a85);
 
+    /* --- Marker im Sucher ---------------------------------------------------
+       Das Live-Bild zeichnet je Marker seinen Umriss und sein eigenes
+       Koordinatensystem. Der Umriss nimmt --hull-stroke: er sagt dasselbe wie
+       die Huelle - hier ist gemessen worden -, und zwei Toene fuer eine Aussage
+       waeren zwei Aussagen.
+
+       Die beiden Achsen brauchen dagegen eigene Marken, und ihre Anforderung
+       ist eine andere als sonst in dieser Datei: sie muessen sich VONEINANDER
+       unterscheiden lassen, nicht von einem Hintergrund. x auf Rot, y auf
+       Bernstein - beides Haustoene, in Helligkeit wie Buntton weit genug
+       auseinander, um auf einem beliebigen Werkstattfoto noch zwei Richtungen
+       zu sein. Eine Themenvariante haben sie nicht: darunter liegt das
+       Kamerabild, und das kennt kein Thema. */
+    --marker-axis-x: var(--bfsb-red);
+    --marker-axis-y: var(--bfsb-amber);
+
     /* --- Zuschnitt-Rechteck -------------------------------------------------
        Das Rechteck IST die Handlung dieser Seite - der Benutzer zieht daran,
        und was darin liegt, wird gedruckt. Also Bernstein, die Handlungsfarbe

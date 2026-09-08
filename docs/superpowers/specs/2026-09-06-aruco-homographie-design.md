@@ -716,6 +716,36 @@ Die Vorgabewerte kommen mit der Antwort, statt im Frontend zu stehen: `app/confi
 einzige Stelle für Konstanten (AGENTS.md, Invariante 4), und ein abgeschriebener Standardwert im
 Browser wäre die zweite.
 
+**`POST /api/detect`** — der Körper sind die **Bytes** eines Bildes, kein Formular
+→ `{ width, height, markers[{id, corners: [[x,y] × 4]}] }`
+
+Die Route des Live-Bildes (§6.3) und die einzige, die **keine Sitzung anlegt**. Der Sucher
+schickt rund achtmal in der Sekunde ein Einzelbild und will nur wissen, wo die Marker liegen;
+über `/api/upload` und `/api/solve` hieße das, im Sekundentakt Sitzungen samt Foto anzulegen.
+Ein Test hält das fest: nach drei Aufrufen ist die Zahl der Sitzungen dieselbe wie davor.
+
+Die Ecken kommen in Pixeln **des eingeschickten Bildes** — deshalb `width`/`height` in derselben
+Antwort, sonst könnte das Overlay sie nicht auf seine Bühne rechnen. Der Ortsbetrieb
+(`web/vision/local.js`) formt die acht Zahlen des Kerns dafür in vier Paare um; die Antwortform
+ist die des Servers, nicht die des Kerns.
+
+**`POST /api/measure?marker_mm&mode&spacing_x_mm&spacing_y_mm`** — Körper wieder die **Bytes**
+→ `{ width, height, grid_mm, markers[…],
+     plane: { homography[9], hull_mm[[x,y]…], mm_per_px, rms_px, mode_used } | null }`
+
+Dasselbe Einzelbild, aber bis zur Ebene gerechnet — die messende Betriebsart des Live-Bildes
+(§6.3). Der Unterschied zu `/api/solve` ist alles andere: keine Sitzung, kein entzerrtes Bild,
+keine Vorschau. Zurück kommt genau, was ein Overlay braucht.
+
+**`plane: null` ist kein Fehler.** Keine Marker, zu wenige für den Modus, eine entartete Lage —
+im Sucher ist das der Normalzustand, solange die Kamera noch ausgerichtet wird. Ein Fehler färbte
+die Oberfläche rot, während gar nichts falsch ist.
+
+`homography` bildet **Millimeter der Ebene auf Bildpixel** ab, zeilenweise als neun Zahlen.
+Gerundet wird hier **nicht**: `/api/solve` rundet für seinen Bericht (5 bzw. 3 Nachkommastellen),
+und ein Test hält fest, dass beide Wege für dieselben Bytes bis auf die halbe Rundungsstufe
+dieselbe Zahl liefern. Was der Sucher anzeigt, muss dasselbe sein, was ein Foto danach ergäbe.
+
 **`POST /api/solve`**
 `{ session_id, marker_mm, mode: "sheet"|"free"|"scattered", thickness_mm, camera_height_mm|null,
    spacing_x_mm, spacing_y_mm }`  — die beiden Abstände nur im Blatt-Modus benutzt
@@ -774,15 +804,24 @@ zeigte das alte Bild. Ohne vorheriges `solve` antwortet der Endpunkt mit `not_so
 
 Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
 
-1. **Foto** wählen (oder vom Handy hochladen) → Dateiname, Bildmaße und die EXIF-Brennweite,
-   falls vorhanden.
+1. **Foto** wählen, mit der Kamera-App aufnehmen oder im **Live-Bild** (§6.3) auslösen →
+   Dateiname, Bildmaße und die EXIF-Brennweite, falls vorhanden.
 2. **Maßstab**: Markergröße in mm (Vorgabe `MARKER_MM_NOMINAL` = 67), Modus, im Blatt-Modus die
    beiden Mittelpunktabstände, Objektdicke (Vorgabe 0), bei Bedarf der Kameraabstand →
    „Entzerren".
 3. **Qualität**: der Bericht aus §3.7 und die Warnungen, in drei Tönen abgestuft.
-4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau. Der Abschnitt steht bewusst
-   **über** dem Zuschnitt — die Regler verändern genau das Bild, das im Schritt darunter
-   zugeschnitten wird, und beide sollen gleichzeitig zu sehen sein.
+4. **Bildaufbereitung**: die Regler aus §3.10 mit Live-Vorschau, **zugeklappt als Vorgabe**
+   hinter einem `<details>`. Elf Regler sind der längste Abschnitt der Seite, und die meisten
+   Fotos brauchen keinen einzigen davon; auf dem Telefon lag der Zuschnitt dadurch eine halbe
+   Bildschirmhöhe weiter unten (gemessen: 74 px zugeklappt gegen 603 px aufgeklappt). Der
+   Abschnitt steht trotzdem **über** dem Zuschnitt — die Regler verändern genau das Bild, das im
+   Schritt darunter zugeschnitten wird, und wer sie aufklappt, hat beide untereinander.
+
+   Ein natives `<details>` und kein nachgebautes Aufklappen: Tastatur, Vorlesen und das Suchen im
+   Text bringt der Browser mit. Der Winkel ist gezeichnet (zwei Rahmenkanten, gedreht) und ersetzt
+   die Systemmarkierung, die auf jeder Oberfläche anders aussieht — dafür braucht es `list-style:
+   none` **und** `::-webkit-details-marker`, keines der beiden ersetzt das andere. Der Fehlerplatz
+   bleibt außerhalb: eine Meldung hinter einem zugeklappten Winkel ist keine Meldung.
 5. **Zuschnitt**: Rechteck auf der entzerrten Vorschau ziehen; darunter live die Kantenlängen in
    mm, die zu erwartende Ausgabegröße in Pixeln und Megapixeln und der Extrapolationsanteil,
    beides gegen die Schwellen aus `limits` eingefärbt. Die vier Kanten lassen sich auch als Zahl
@@ -793,6 +832,59 @@ Sechs Abschnitte, jeder erst sichtbar, wenn er etwas zu zeigen hat:
 
 Nicht jedes Feld von `ExportRequest` hat einen Bedienknopf: `orientation`, `printer_margin_mm`
 und `page_margin_mm` schickt die Oberfläche nicht mit und überlässt sie den Vorgaben aus §8.
+
+### 6.3 Das Live-Bild
+
+**Wozu.** Ob die Marker im Bild sind, ob keiner angeschnitten ist und ob das Licht reicht, sagt
+die App bisher erst *nach* dem Entzerren — ein Weg von zwanzig Sekunden, um zu erfahren, dass man
+näher hingehen muss. Der Sucher sagt es sofort.
+
+**Zwei Betriebsarten**, umschaltbar in seiner Fußzeile:
+
+| | |
+|---|---|
+| **Marker** | Je gefundenem Marker Umriss, Nummer und **sein eigenes Koordinatensystem**. Die Achsenrichtungen folgen ohne Rechnung aus der Eckenreihenfolge des Erkenners (TL, TR, BR, BL): x zeigt von Ecke 0 nach Ecke 1, y von Ecke 0 nach Ecke 3. Ein verdrehter Marker ist damit hier zu sehen und nicht erst am Ausdruck. |
+| **Ebene messen** | Dieselben Marker, aber daraus gerechnet (`/api/measure`): das **50-mm-Raster der Ebene** liegt im Bild auf dem Werkstück, dazu Maßstab und Restfehler in der Fußzeile. Wer nur wissen will, wie groß etwas ist, liest es hier ab und macht **gar kein Foto**. |
+
+Der Rasterschritt ist derselbe, den der Ausdruck aufdruckt (`GRID_STEP_MM`), und er kommt mit der
+Antwort — im Sucher steht keine zweite 50. Fehlt er, wird **kein** Raster gezeichnet: ein
+erfundener Schritt wäre ein zweiter Maßstab, und ein falsches Raster ist schlimmer als keines.
+Gezeichnet wird nur einen Schritt über die Markerhülle hinaus; weiter draußen wird die
+Homographie fortgeschrieben statt gemessen, und ein Raster über das ganze Bild behauptete eine
+Genauigkeit, die dort niemand geprüft hat.
+
+Der Restfehler steht **neben** dem Maßstab, weil ein Maßstab ohne ihn eine Behauptung ist:
+dieselben 1,3 mm/px können aus einer sauberen Lage kommen oder aus einer verkanteten Fläche, und
+nur die zweite Zahl unterscheidet das. Ein Raster, das sich beim Kippen verzieht, sagt außerdem
+sofort, dass die Fläche nicht eben ist — das sieht man an keiner Zahl.
+
+**Festgehalten wird nichts.** Weder Sitzung noch Foto; beide Aufrufe rechnen und vergessen.
+
+Vier Entscheidungen tragen ihn:
+
+| | |
+|---|---|
+| Erkannt wird auf einem **verkleinerten** Einzelbild (längste Kante 960 px, JPEG-Qualität 0,6) | Ein Marker, der darauf nicht mehr gefunden wird, ist im Sucher ohnehin zu klein. Die volle Auflösung achtmal in der Sekunde durch die Erkennung zu schicken kostet mehr, als der Sucher hergibt. |
+| Es läuft immer nur **eine** Erkennung | Ohne diese Sperre stauen sich die Anfragen, und was man sieht, gehört zu einem Bild von vor zwei Sekunden. |
+| Gezeichnet wird bei **jedem** Bildschirmbild, erkannt alle 120 ms | Das Overlay klebt damit am Video, auch während die Erkennung läuft. |
+| Ein `<dialog>` mit `showModal()`, kein Abschnitt im Seitenfluss | Der Sucher will die ganze Fläche; Fokusfang, Esc-Taste und Verdunklung kommen vom Browser. |
+
+Markergröße, Modus und Blattabstände holt der Sucher aus **denselben Feldern** wie das Entzerren
+(Schritt 2). Eine eigene Markergröße im Sucher wäre ein zweiter Maßstab neben dem, mit dem
+gerechnet wird.
+
+**Der Auslöser** greift das laufende Bild in der Auflösung des Stroms ab (angefragt wird
+`ideal: 4096`, was kommt, entscheidet das Gerät) und übergibt es als Datei an denselben Upload
+wie die Dateiwahl. Das ist ausdrücklich **nicht** die volle Sensorauflösung — die gibt nur die
+Kamera-App des Systems her, und die zeigt kein Overlay. Ein so entstandenes Bild hat außerdem
+**kein EXIF**: die Brennweite fehlt, und eine Dickenkorrektur braucht dann den eingetippten
+Kameraabstand.
+
+**Wo es ihn nicht gibt.** `navigator.mediaDevices` fehlt in jedem unsicheren Ursprung — eine über
+`file://` geöffnete Seite hat es schlicht nicht. Der Knopf bleibt dort verborgen, statt eine
+Kamera zu versprechen, die die Umgebung nicht hergibt. Im APK ist der Ursprung
+`https://appassets.androidplatform.net` und damit sicher; die Berechtigung dafür beschreibt
+`AndroidManifest.xml`.
 
 Ein erneutes „Entzerren" behält den Reglerstand und zieht die Vorschau nach, damit Bild und
 Regler wieder zueinander passen.
@@ -817,6 +909,8 @@ lädt ES-Module und gewöhnliches CSS. Alles, was Tailwind im Webprojekt erzeugt
 | `crop-info.js` | die Zeile unter dem Bild: mm, Pixel, Extrapolationsanteil |
 | `adjust.js` | die Regler aus §3.10 samt Live-Vorschau |
 | `report.js` | Qualitätsbericht und Warnungen aus `/api/solve` |
+| `live.js` | der Sucher aus §6.3: Kamerastrom, Takt, Auslöser |
+| `live-overlay.js` | was er über das Kamerabild malt — Marker, Achsen, Rasterebene |
 
 **Der Zustand hält die rohen Serverantworten**, nicht die fertigen Zeichenketten. Bei einem
 Sprachwechsel muss auch schon gezeichneter Text neu entstehen — Bericht, Bildangaben,
@@ -824,10 +918,9 @@ Exportmeldung. Wer nur die Zeichenketten behält, kann sie nicht mehr übersetze
 Neuladen der Seite; genau das soll der Schalter im Kopf nicht.
 
 **Zuschnitt-Rechteck.** Acht Griffe (vier Ecken, vier Kantenmitten): eine Ecke ändert beide
-Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Ziehen auf freier Fläche zieht
-ein neues Rechteck auf, Pfeiltasten verschieben um 1 mm und mit Shift um 10 mm. Vorher ließ sich
-ein bestehendes Rechteck überhaupt nicht mehr ändern — man musste ein neues aufziehen. Drei
-Dinge, ohne die das nicht trägt:
+Achsen, ein Kantengriff genau eine. Ziehen im Inneren verschiebt, Pfeiltasten verschieben um
+1 mm und mit Shift um 10 mm. Vorher ließ sich ein bestehendes Rechteck überhaupt nicht mehr
+ändern — man musste ein neues aufziehen. Drei Dinge, ohne die das nicht trägt:
 
 1. **Pointer Events mit `setPointerCapture`.** Ein Finger, der beim Ziehen den Rand des Canvas
    verlässt, verliert die Geste nicht mehr; zusammen mit `touch-action: none` scrollt die Seite
@@ -842,6 +935,15 @@ Dinge, ohne die das nicht trägt:
 Die Trefferfläche eines Griffs ist 44 px groß (`--touch-target`), gezeichnet wird er kleiner. Die
 Ecken stehen in der Trefferliste vorn: bei einem kleinen Rechteck überlappen sich alle acht
 Flächen, und eine Ecke ist dann fast immer gemeint.
+
+**Außerhalb des Rechtecks passiert nichts** — kein Fokus, kein Pointer-Capture, kein
+`preventDefault`, kein Neuzeichnen. Bis 0.1.4-alpha zog eine Geste dort ein neues Rechteck auf.
+Am Finger ist das die falsche Vorgabe: wer das Bild antippt, um es anzusehen, hatte danach einen
+Zuschnitt von null Millimetern, und ein Fehlgriff kostete die ganze bisherige Einstellung. Der
+Weg zu einem frischen Rechteck ist stattdessen der Knopf **Zuschnitt zurücksetzen**, der
+`default_crop_mm` aus der Lösung noch einmal setzt — dieselbe Zahl, nicht eine nachgerechnete.
+`hitTest` nennt den Fall seither `outside` statt `new`: der Name benennt die Lage des Punktes und
+nicht mehr eine Absicht.
 
 **Live-Regler.** 200 ms Entprellung, und jede Antwort trägt eine Wachnummer. Ohne Entprellung
 schickt ein Zug über die halbe Spur dutzende Anfragen; ohne Wachnummer gewinnt die *langsamste*

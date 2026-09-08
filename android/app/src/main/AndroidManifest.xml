@@ -6,13 +6,35 @@
   android.permission.INTERNET kann die App gar nicht senden - das ist eine
   Zusicherung des Systems und nicht eine des Programmierers.
 
-  KEINE Berechtigung fuer die Kamera. ACTION_IMAGE_CAPTURE laesst die Kamera-App
-  des Systems das Foto machen; erst eine deklarierte CAMERA-Berechtigung wuerde
-  sie auch verlangen. Und keine fuer den Speicher: gelesen wird ueber
-  ACTION_OPEN_DOCUMENT, geschrieben ueber ACTION_CREATE_DOCUMENT - beide geben
-  dem Nutzer die Wahl und der App nur die eine Datei.
+  KEINE Berechtigung fuer den Speicher: gelesen wird ueber ACTION_OPEN_DOCUMENT,
+  geschrieben ueber ACTION_CREATE_DOCUMENT - beide geben dem Nutzer die Wahl und
+  der App nur die eine Datei.
+
+  Die Kamera braucht die App SEIT DEM LIVE-BILD. Bis dahin stand hier, dass sie
+  ohne auskommt, und das stimmte: ACTION_IMAGE_CAPTURE laesst die Kamera-App des
+  Systems fotografieren, und zurueck kommt eine Datei. Ein Sucher, der die Marker
+  schon im laufenden Bild findet, kann das nicht - er braucht den Strom selbst,
+  und getUserMedia laeuft im eigenen Prozess.
+
+  Der Preis steht in MainActivity: eine DEKLARIERTE, aber nicht erteilte
+  CAMERA-Berechtigung laesst ACTION_IMAGE_CAPTURE mit einer SecurityException
+  scheitern (so dokumentiert ab Android 6). Der Weg ueber die Kamera-App muss
+  seither also ebenfalls erst fragen, obwohl er die Berechtigung gar nicht
+  benutzt.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
+      required="false": ein Geraet ohne Kamera soll die App trotzdem installieren
+      koennen. Sie ist dort nicht nutzlos - ein Foto laesst sich auch waehlen,
+      und der Rest der Rechnung braucht keine Linse. Ohne diese Zeile leitet
+      Android aus der Berechtigung ein hartes <uses-feature> ab und blendet die
+      App auf solchen Geraeten aus.
+    -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <!--
       Ab Android 11 sieht eine App fremde Anwendungen nur, wenn sie danach fragt.

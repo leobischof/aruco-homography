@@ -7,8 +7,8 @@
  *   Achsen, ein Kantengriff genau eine. Vorher liess sich ein bestehendes
  *   Rechteck ueberhaupt nicht mehr aendern - man musste ein neues aufziehen.
  * - **Ziehen im Inneren** verschiebt, Groesse unveraendert.
- * - **Ziehen auf freier Flaeche** zieht ein neues Rechteck auf (die alte Geste,
- *   als Rueckfall erhalten).
+ * - **Freie Flaeche tut nichts.** Ein Zeiger ausserhalb des Rechtecks wird
+ *   ignoriert - kein Aufziehen, kein Neuzeichnen, kein Fokus, kein Scrollen.
  * - **Tastatur:** Pfeile verschieben um 1 mm, mit Shift um 10 mm.
  *
  * Drei Dinge, die diese Datei anders macht als ihre Vorgaengerin:
@@ -131,14 +131,39 @@ export function createCropRect({ canvas, onChange }) {
     canvas.addEventListener("pointerdown", (event) => {
         if (!scene || !crop || event.button > 0) return;
 
+        const view = viewport();
+        const point = localPoint(event);
+        const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
+
+        // AUSSERHALB DES RECHTECKS PASSIERT NICHTS. Kein neues Rechteck, kein
+        // Pointer-Capture, kein Neuzeichnen - und vor allem nichts davon
+        // versehentlich vorher: die Trefferpruefung steht deshalb ueber allem
+        // anderen.
+        //
+        // Frueher zog eine Geste hier ein neues Rechteck auf. Am Finger ist das
+        // die falsche Vorgabe: wer das Bild antippt, um es anzusehen, hatte
+        // danach einen Zuschnitt von null Millimetern und musste von vorn
+        // anfangen - ein Fehlgriff kostete die ganze bisherige Einstellung. Der
+        // Weg zu einem frischen Rechteck ist jetzt ein Knopf, der so heisst
+        // ("Zuschnitt zuruecksetzen"), und der ist absichtlich schwerer zu
+        // treffen als die halbe Bildflaeche.
+        if (hit.kind !== "resize" && hit.kind !== "move") {
+            // Das einzige, was hier doch geschieht, und es ist eine
+            // Unterdrueckung: ein <canvas tabindex="0"> bekommt sonst vom
+            // Browser den Fokus, und das Hereinholen der Buehne in den
+            // Sichtbereich scrollt die Seite. Auf dem Telefon waere genau das
+            // die sichtbare "Reaktion", die es hier nicht geben soll.
+            // preventDefault auf pointerdown verhindert das folgende
+            // mousedown, und damit den Fokus.
+            event.preventDefault();
+            return;
+        }
+
         // Fokus holen, damit die Pfeiltasten unmittelbar nach dem Ziehen
         // wirken. preventScroll, weil der Sprung sonst die Buehne verschiebt.
         canvas.focus({ preventScroll: true });
         canvas.setPointerCapture(event.pointerId);
 
-        const view = viewport();
-        const point = localPoint(event);
-        const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
         const pointer = clampPoint(toMm(point.x, point.y, view), scene.extent);
 
         if (hit.kind === "resize") {
@@ -150,25 +175,13 @@ export function createCropRect({ canvas, onChange }) {
                 base: { ...crop },
                 handleId: hit.handle.id,
             };
-        } else if (hit.kind === "move") {
+        } else {
             drag = {
                 pointerId: event.pointerId,
                 kind: "move",
                 grab: { x: pointer.x - crop.x0, y: pointer.y - crop.y0 },
                 handleId: null,
             };
-        } else {
-            // Freie Flaeche: ein neues Rechteck, das im Anfassenpunkt beginnt.
-            const seed = { x0: pointer.x, y0: pointer.y, x1: pointer.x, y1: pointer.y };
-            drag = {
-                pointerId: event.pointerId,
-                kind: "resize",
-                axes: "xy",
-                anchor: pointer,
-                base: seed,
-                handleId: "se",
-            };
-            commit(seed, true);
         }
         event.preventDefault();
     });
@@ -180,8 +193,10 @@ export function createCropRect({ canvas, onChange }) {
 
         if (!drag || drag.pointerId !== event.pointerId) {
             const hit = hitTest(point, rectToPx(crop, view), HIT_HALF_PX);
+            // Kein Fadenkreuz mehr ueber der freien Flaeche: es versprach eine
+            // Geste, die es dort nicht mehr gibt.
             canvas.style.cursor =
-                hit.kind === "resize" ? hit.handle.cursor : hit.kind === "move" ? "move" : "crosshair";
+                hit.kind === "resize" ? hit.handle.cursor : hit.kind === "move" ? "move" : "default";
             const nextHover = hit.kind === "resize" ? hit.handle.id : null;
             if (nextHover !== hoverId) {
                 hoverId = nextHover;
@@ -198,7 +213,7 @@ export function createCropRect({ canvas, onChange }) {
         } else {
             const result = resizeFrom(drag.anchor, pointer, drag.axes, drag.base);
             drag.handleId = result.handleId;
-            canvas.style.cursor = CURSOR_BY_ID[result.handleId] || "crosshair";
+            canvas.style.cursor = CURSOR_BY_ID[result.handleId] || "default";
             commit(clampToExtent(result.rect, scene.extent), true);
         }
         event.preventDefault();

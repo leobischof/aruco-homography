@@ -69,6 +69,8 @@
         "title": "Crop",
         "hint": "Grab the rectangle by a corner or an edge, or drag it to move it. The shaded area is the marker hull – anything well outside it is extrapolated and therefore uncertain.",
         "preview_alt": "Rectified preview",
+        "reset_label": "Reset crop",
+        "reset_hint": "The rectangle back to the proposal it started with.",
         "x0_label": "x0 (mm)",
         "y0_label": "y0 (mm)",
         "x1_label": "x1 (mm)",
@@ -98,11 +100,29 @@
         "submit": "Create PDF",
         "submit_image": "Save as image",
         "image_format_label": "Image format",
+        "image_dpi_label": "Image resolution",
+        "image_dpi_source": "as fine as the photo",
         "image_result": "{filename} – {pixels} px at {dpi} dpi. The resolution is written into the file; one pixel is {mm_per_px} mm.",
+        "image_result_source": "{filename} – {pixels} px at {dpi} dpi, as fine as the photo. The resolution is written into the file; one pixel is {mm_per_px} mm.",
         "result": "PDF created: {pages} page(s), page size {page_size} mm.",
         "result_hint": "When printing, be sure to choose {emphasis}, then measure the printed 100 mm scale to check.",
         "result_emphasis": "100 % / no scaling"
       }
+    },
+    "live": {
+      "title": "Live view",
+      "open": "Live view",
+      "shutter": "Take photo",
+      "close": "Close",
+      "mode_label": "What the live view shows",
+      "mode_markers": "Markers",
+      "mode_plane": "Measure plane",
+      "plane": "{count} markers · {mm_per_px} mm/px · residual {rms_px} px",
+      "searching": "No marker in view.",
+      "found": "{count} markers found.",
+      "filename": "capture.jpg",
+      "denied": "The camera is not allowed. Grant it in the app settings and try again.",
+      "unavailable": "No camera available: {reason}"
     },
     "adjust": {
       "title": "Image adjustment",

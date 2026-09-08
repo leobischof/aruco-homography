@@ -91,5 +91,24 @@ export function createFilePicker({ input, cameraInput, dropZone, nameOutput, onF
     onLocaleChange(renderName);
     renderName();
 
-    return { renderName };
+    return {
+        renderName,
+        /**
+         * Eine Datei uebernehmen, die NICHT aus einem dieser Felder kam.
+         *
+         * Der Sucher (js/live.js) baut sein Bild selbst und uebergibt es direkt
+         * an den Upload. Ohne diesen Weg stuende danach weiter "Keine Datei
+         * ausgewaehlt" neben einem Foto, das gerade verarbeitet wird - die
+         * Beschriftung wuerde die Unwahrheit sagen.
+         *
+         * `onFile` wird ABSICHTLICH nicht ausgeloest: wer hierher kommt, hat den
+         * Upload schon angestossen. Ein zweiter Lauf lade dasselbe Bild noch
+         * einmal hoch.
+         */
+        adopt(file) {
+            for (const field of fields) field.value = "";
+            chosen = file;
+            renderName();
+        },
+    };
 }

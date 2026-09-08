@@ -111,6 +111,70 @@ export async function postJson(url, body, { signal } = {}) {
     return unwrap(response);
 }
 
+/**
+ * Marker in EINEM Einzelbild finden - der Aufruf des Live-Bildes.
+ *
+ * Herein geht ein Blob (das Einzelbild als JPEG), heraus kommt
+ * {width, height, markers:[{id, corners}]} - in beiden Betriebsarten dieselbe
+ * Form. Der Ortsbetrieb dekodiert den Blob wieder, statt die Pixel direkt zu
+ * nehmen; das kostet ein paar Millisekunden je Bild und spart die zweite
+ * Schnittstelle, die sonst auseinanderliefe.
+ *
+ * Der Koerper sind die Bytes und kein Formular. Ein Einzelbild hat keinen
+ * Dateinamen, und eine Multipart-Huelle je Bild waere Verpackung ohne Inhalt.
+ */
+export async function detectFrame(blob) {
+    if (transport() === LOCAL) {
+        const module = await local();
+        try {
+            return await module.detectFrame(blob);
+        } catch (error) {
+            return localError(error);
+        }
+    }
+
+    const response = await fetch("/api/detect", {
+        method: "POST",
+        headers: { "Content-Type": blob.type || "image/jpeg", "Accept-Language": getLocale() },
+        body: blob,
+    });
+    return unwrap(response);
+}
+
+/**
+ * Dasselbe Einzelbild, aber bis zur Ebene gerechnet - das messende Live-Bild.
+ *
+ * Heraus kommt zusaetzlich `plane` mit der Abbildung Ebene(mm) -> Bild(px), der
+ * Huelle in Millimetern, dem Massstab und dem Restfehler; ohne loesbare Lage ist
+ * `plane` null. Das ist im Sucher kein Fehler, sondern der Zustand "noch nicht
+ * genug zu sehen" - deshalb kommt er als Antwort und nicht als Ausnahme.
+ *
+ * Die Einstellungen reisen in der Abfrage, weil der Koerper das Bild ist.
+ */
+export async function measureFrame(blob, params) {
+    if (transport() === LOCAL) {
+        const module = await local();
+        try {
+            return await module.measureFrame(blob, params);
+        } catch (error) {
+            return localError(error);
+        }
+    }
+
+    const query = new URLSearchParams({
+        marker_mm: String(params.marker_mm),
+        mode: String(params.mode),
+        spacing_x_mm: String(params.spacing_x_mm),
+        spacing_y_mm: String(params.spacing_y_mm),
+    });
+    const response = await fetch(`/api/measure?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": blob.type || "image/jpeg", "Accept-Language": getLocale() },
+        body: blob,
+    });
+    return unwrap(response);
+}
+
 export async function uploadPhoto(file) {
     if (transport() === LOCAL) {
         const module = await local();

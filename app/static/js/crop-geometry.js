@@ -168,7 +168,10 @@ export function hitTest(point, rect, half) {
     }
     const inside =
         point.x >= rect.x0 && point.x <= rect.x1 && point.y >= rect.y0 && point.y <= rect.y1;
-    return { kind: inside ? "move" : "new", handle: null };
+    // "outside" und nicht "new": frueher hiess dieser Fall so, weil eine Geste
+    // dort ein NEUES Rechteck aufzog. Das tut sie nicht mehr - der Name benennt
+    // jetzt die Lage des Punktes und nicht mehr eine Absicht.
+    return { kind: inside ? "move" : "outside", handle: null };
 }
 
 /** Zeiger auf den abbildbaren Bereich begrenzen. */

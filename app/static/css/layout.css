@@ -157,6 +157,63 @@
     font-weight: var(--weight-bold);
 }
 
+/* --------------------------------------------------------------------------
+   Aufklappbarer Schritt
+   -------------------------------------------------------------------------- */
+
+/* Die Ueberschrift IST der Griff: die Zeile bleibt stehen, wenn der Rest
+   verschwindet, sonst waere ein zugeklappter Schritt ein leerer Kasten. */
+.step-fold-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    /* Die Systemmarkierung weg - sie sieht auf jeder Oberflaeche anders aus.
+       list-style fuer Firefox, ::-webkit-details-marker fuer die WebKit-Reihe;
+       beide werden gebraucht, keines ersetzt das andere. */
+    list-style: none;
+}
+
+.step-fold-summary::-webkit-details-marker {
+    display: none;
+}
+
+.step-fold-summary > h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Der Winkel ist aus zwei Rahmenkanten gebaut und nicht aus einem Zeichen:
+   ein "v" aus der Schrift ist in jeder Schriftart anders gross und sitzt
+   anders auf der Grundlinie. */
+.step-fold-summary::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin: 0 0.25rem 0.2rem 0;
+    border-right: 2px solid var(--muted-foreground);
+    border-bottom: 2px solid var(--muted-foreground);
+    transform: rotate(45deg);
+    transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.step-fold[open] > .step-fold-summary::after {
+    transform: rotate(-135deg);
+    margin: 0.2rem 0.25rem 0 0;
+}
+
+/* Der Inhalt bekommt den Rhythmus der Karte zurueck: .step verteilt seine
+   Abstaende ueber `gap`, und was in <details> wandert, faellt aus dieser
+   Verteilung heraus. */
+.step-fold-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
 .step-actions {
     display: flex;
     align-items: center;
@@ -169,13 +226,31 @@
    man ihn laesst - dann bricht lieber die ZEILE um. */
 .step-actions .btn { white-space: nowrap; }
 
-/* Was zusammengehoert, bricht auch zusammen um: Format und Knopf sind EINE
-   Handlung, und ein Auswahlfeld, das allein in der naechsten Zeile steht, sieht
-   aus wie eine Einstellung, die fuer alles gilt. */
+/* Was zusammengehoert, bricht auch zusammen um: die Einstellungen des
+   Bildexports und sein Knopf sind EINE Handlung und duerfen nicht auf beiden
+   Seiten eines Zeilenumbruchs von "PDF erzeugen" landen.
+
+   INNEN darf die Gruppe umbrechen, und ab zwei Auswahlfeldern muss sie es:
+   Aufloesung, Format und Knopf sind auf einem 390 px breiten Telefon zusammen
+   zu breit. Der Umbruch faellt dann zwischen die Einstellungen und ihren Knopf
+   - erst was, dann tu es. Frueher stand hier `flex-wrap` nicht, und dabei ging
+   der Knopf ueber den rechten Rand hinaus. */
 .action-group {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Auswahlfelder in einer Handlungsgruppe richten sich nach ihrem Inhalt.
+   forms.css gibt jedem <select> `width: 100%`, weil es dort in einer Zelle des
+   Felderrasters steht; neben einem Knopf wird daraus die schmalste Breite, die
+   der Flexkasten durchgehen laesst - "so fein wie das Foto" stand als
+   "so fein wie d" da. `min-width: 0` bleibt, damit auf einem schmalen Telefon
+   immer noch geschrumpft statt uebergelaufen wird. */
+.action-group select {
+    width: auto;
+    min-width: 0;
 }
 
 /* --------------------------------------------------------------------------
