@@ -134,8 +134,14 @@ export async function detectFrame(blob) {
  * Wieder ohne Sitzung und wieder Feld fuer Feld die Antwort von /api/measure.
  * Ohne Marker oder ohne loesbare Lage kommt `plane: null` zurueck: im Sucher ist
  * beides der Normalzustand und kein Fehler.
+ *
+ * `warnings` gehoert dazu und ist kein Beiwerk. Bis 0.1.6-alpha bekam solvePlane
+ * hier eine WEGGEWORFENE NoticeList - der Sucher zeigte deshalb jede Loesung als
+ * Messwert, auch eine mit 64 px Restfehler aus zwei fast deckungsgleichen
+ * Markern. Was daraus wird, entscheidet der Sucher (live.js); diese Datei
+ * liefert nur, was der Server auch liefert.
  */
-export async function measureFrame(blob, params) {
+export async function measureFrame(blob, params, locale) {
     const module = await core();
     const image = await decodeFrame(blob);   // siehe detectFrame
     let markers;
@@ -153,9 +159,11 @@ export async function measureFrame(blob, params) {
         grid_mm: constants.GRID_STEP_MM,
         markers: markers.map((marker) => ({ id: marker.id, corners: pairs(marker.corners) })),
         plane: null,
+        warnings: [],
     };
     if (markers.length === 0) return answer;
 
+    const notices = new NoticeList();
     let solution;
     try {
         solution = solvePlane(
@@ -163,13 +171,15 @@ export async function measureFrame(blob, params) {
             markers,
             params.marker_mm,
             params.mode,
-            new NoticeList(),
+            notices,
             [params.spacing_x_mm, params.spacing_y_mm],
         );
     } catch (error) {
         if (error instanceof AppError) return answer;
         throw error;
     }
+
+    answer.warnings = notices.asDicts(describe(locale));
 
     answer.plane = {
         homography: [...solution.homography],

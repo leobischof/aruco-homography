@@ -745,7 +745,7 @@ unberührt, und es lebt höchstens **ein** Sucherbild — ein neues verdrängt d
 wenn ein `releaseFrame` einmal ausbleibt.
 
 **`POST /api/measure?marker_mm&mode&spacing_x_mm&spacing_y_mm`** — Körper wieder die **Bytes**
-→ `{ width, height, grid_mm, markers[…],
+→ `{ width, height, grid_mm, markers[…], warnings[…],
      plane: { homography[9], hull_mm[[x,y]…], mm_per_px, rms_px, mode_used } | null }`
 
 Dasselbe Einzelbild, aber bis zur Ebene gerechnet — die messende Betriebsart des Live-Bildes
@@ -760,6 +760,23 @@ die Oberfläche rot, während gar nichts falsch ist.
 Gerundet wird hier **nicht**: `/api/solve` rundet für seinen Bericht (5 bzw. 3 Nachkommastellen),
 und ein Test hält fest, dass beide Wege für dieselben Bytes bis auf die halbe Rundungsstufe
 dieselbe Zahl liefern. Was der Sucher anzeigt, muss dasselbe sein, was ein Foto danach ergäbe.
+
+**`warnings` steht in derselben Form da wie bei `/api/solve`** (`{code, params, severity,
+message}`), und es ist kein Beiwerk: **eine gelöste Lage ist nicht dasselbe wie eine
+brauchbare.** Bis 0.1.6-alpha bekam `solve_plane` hier eine weggeworfene `NoticeList` — der
+Sucher zeigte deshalb jede Lösung als Messwert. Vom Telefon gemeldet: zwei lose auf dem Tisch
+liegende Marker im Blatt-Modus, **Restfehler 64,47 px** bei einer Schwelle von 2, ein Maßstab
+mit vier Nachkommastellen daneben und ein Raster, das quer über den Schirm schoss.
+
+Was der Sucher daraus macht, entscheidet **er** (`live.js`, `PLANE_BREAKERS`): bei
+`high_residual` oder `collinear_markers` wird **kein Raster gezeichnet**, und die Zeile nennt
+statt des Maßstabs den Restfehler. Es ist dieselbe Regel wie beim fehlenden Rasterschritt —
+*ein falsches Raster ist schlimmer als keines* —, und sie steht an einer Stelle, weil das
+Overlay schon genau einen Fall „keine Ebene, also kein Raster" kennt: der Sucher übergibt dann
+`plane: null`.
+
+Nicht dabei sind `single_marker`, `marker_size_deviation` und `marker_rotation`: die sagen
+etwas über die Aufnahme, nicht darüber, dass die Abbildung selbst unbrauchbar wäre.
 
 **`POST /api/solve`**
 `{ session_id, marker_mm, mode: "sheet"|"free"|"scattered", thickness_mm, camera_height_mm|null,
