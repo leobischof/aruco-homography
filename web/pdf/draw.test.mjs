@@ -20,7 +20,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BRAND_CLAIM, BRAND_NAME } from "./constants.js";
+import { BRAND_CLAIM, BRAND_NAME } from "../constants.js";
 import { Document, HELVETICA, HELVETICA_BOLD } from "./draw.js";
 import { CLAIM_PT, NAME_PT } from "./branding.js";
 import { mmToPt } from "./units.js";

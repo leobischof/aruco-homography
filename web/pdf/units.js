@@ -12,7 +12,7 @@
  * Stelle, die es nicht geben soll.
  */
 
-import { MM_PER_INCH } from "./constants.js";
+import { MM_PER_INCH } from "../constants.js";
 
 const PT_PER_INCH = 72.0;
 const PT_PER_MM = PT_PER_INCH / MM_PER_INCH;

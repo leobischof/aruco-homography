@@ -15,7 +15,7 @@
  */
 
 import * as branding from "./branding.js";
-import * as constants from "./constants.js";
+import * as constants from "../constants.js";
 import { Document, HELVETICA, HELVETICA_BOLD } from "./draw.js";
 import { translate } from "./i18n.js";
 import { Rect, singlePage, stripHeight, tileLayout } from "./layout.js";

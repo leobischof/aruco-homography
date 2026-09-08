@@ -18,7 +18,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 
-import { ARUCO_DICT_NAME } from "../web/pdf/constants.js";
+import { ARUCO_DICT_NAME } from "../web/constants.js";
 import { buildPdf, exportOptions } from "../web/pdf/build.js";
 import { MODULES, buildMarkersheet } from "../web/pdf/markersheet.js";
 import { markerBitsFromOpenCv } from "./opencv_markers.mjs";

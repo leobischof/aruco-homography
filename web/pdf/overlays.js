@@ -13,7 +13,7 @@
  */
 
 import * as branding from "./branding.js";
-import * as constants from "./constants.js";
+import * as constants from "../constants.js";
 import { HELVETICA, HELVETICA_BOLD, grayColor, rgbColor } from "./draw.js";
 import { translate } from "./i18n.js";
 import { ptToMm } from "./units.js";

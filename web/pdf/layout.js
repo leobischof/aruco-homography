@@ -16,7 +16,7 @@
  * Zeichnen, in units.js.
  */
 
-import * as constants from "./constants.js";
+import * as constants from "../constants.js";
 import { AppError } from "./errors.js";
 
 /** Rechteck in mm, Ursprung linke untere Ecke der Seite. */
