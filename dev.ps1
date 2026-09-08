@@ -366,8 +366,11 @@ function Invoke-BuildCoreWasm {
     if (-not $node) { throw "Kein node.exe im emsdk unter $emsdk\node gefunden." }
 
     Write-Step 'Running the WASM conformance program under Node'
+    # .cjs: sobald eine package.json mit "type": "module" im Wurzelverzeichnis
+    # liegt, faerbt sie jede .js-Datei darunter zum ES-Modul ein - Emscriptens
+    # Lader ist aber CommonJS. Warum die Endung das loest: core/CMakeLists.txt.
     Invoke-Native -What 'conformance (wasm)' -Action {
-        & $node.FullName (Join-Path $buildDir 'aruco_conformance.js') `
+        & $node.FullName (Join-Path $buildDir 'aruco_conformance.cjs') `
                          (Join-Path $buildDir 'fixtures\fixtures.txt') @Rest
     }
 

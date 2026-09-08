@@ -268,7 +268,7 @@ Zwei Ehrlichkeiten dazu:
 | Ziel | Bibliothek | Programm | gestrippt | daneben nötig |
 |---|---:|---:|---:|---|
 | Windows x64 | 329 KB `.lib` | 68 KB `.exe` | — | `opencv_world500.dll` **80 MB** |
-| WASM | 21 KB `.a` | **2 377 KB** `.wasm` | — | 94 KB `.js`-Lader |
+| WASM | 21 KB `.a` | **2 377 KB** `.wasm` | — | 94 KB `.cjs`-Lader |
 | Android arm64-v8a | 473 KB `.a` | 10 909 KB | **6 215 KB** | — (statisch) |
 | Android armeabi-v7a | 352 KB | 6 920 KB | **3 113 KB** | — |
 | Android x86 | 378 KB | 18 553 KB | 13 903 KB | — |
@@ -385,6 +385,28 @@ Erzeugnis mit `--preload-file`; das kostet eine 26-MB-`.data` neben dem Bau. Und
 `EXIT_RUNTIME` muss dort **aus** sein, sonst reißt `callMain` die Laufzeit ab und wirft
 den Rückgabewert weg, statt ihn zurückzugeben.
 
+**3a · `"type": "module"` in der Wurzel-`package.json` erschlägt Emscriptens Lader.**
+Der PDF-Umzug nach JavaScript hat eine `package.json` ins Wurzelverzeichnis gelegt, und
+die färbt **jede** `.js`-Datei darunter zum ES-Modul ein — auch eine erzeugte in
+`core/build-wasm/`, die niemand je als Modul gemeint hat. Node bricht dann ab:
+
+```
+ReferenceError: require is not defined in ES module scope, you can use import instead
+This file is being treated as an ES module because it has a '.js' file extension
+and '...\package.json' contains "type": "module".
+```
+
+Der Node-Prüfstand heißt deshalb **`aruco_conformance.cjs`**
+(`set_target_properties(... SUFFIX ".cjs")`) — diese Endung liest Node immer als
+CommonJS, gleichgültig was darüber steht. Der Browser-Bau behält `.js`; ihn lädt ein
+`<script src>`, und den kümmert `package.json` nicht.
+
+Bemerkenswert daran ist, **wie** es gefunden wurde: beide Zweige waren für sich grün.
+Der Fehler entstand erst beim Verschmelzen, und nur, weil vor dem Öffnen des PR ein
+`git merge --no-commit origin/develop` samt Neubau gelaufen ist. Ein grüner
+Feature-Zweig sagt bei zwei gleichzeitigen Umbauten eben nicht, dass der Stamm danach
+grün ist.
+
 **4 · Emscriptens Stapel ist 64 KiB groß.** Seit 3.1.27 die Vorgabe, native Ziele geben
 Megabytes. OpenCVs Aufrufketten sind tief; hier steht deshalb `-sSTACK_SIZE=8MB`. Ein zu
 kleiner Stapel äußert sich als Absturz irgendwo in `imgproc` und sieht nach einem
@@ -468,7 +490,7 @@ $env:ARUCO_CORE='cpp'; .\venv\Scripts\python.exe -m pytest  # 183 passed
 # 4 · Ecke fuer Ecke
 .\core\build\aruco_conformance.exe core\build\fixtures\fixtures.txt --ecken `
     | Select-String '^ecke ' | Set-Content windows.txt
-<emsdk>\node\24.19.0_64bit\node.exe core\build-wasm\aruco_conformance.js `
+<emsdk>\node\24.19.0_64bit\node.exe core\build-wasm\aruco_conformance.cjs `
     core\build-wasm\fixtures\fixtures.txt --ecken `
     | Select-String '^ecke ' | Set-Content wasm.txt
 .\venv\Scripts\python.exe core\tools\compare_corners.py windows.txt wasm.txt Windows WASM

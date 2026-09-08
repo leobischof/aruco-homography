@@ -182,6 +182,18 @@ if(ARUCO_BUILD_CONFORMANCE)
       -sEXIT_RUNTIME=1
       -sSTACK_SIZE=8MB)
 
+    # `.cjs` und nicht `.js`. Emscripten schreibt einen CommonJS-Lader (`require`),
+    # aber im Wurzelverzeichnis dieses Repos steht seit dem Umzug des PDF-Baus eine
+    # package.json mit "type": "module" - und die faerbt JEDE .js-Datei darunter zum
+    # ES-Modul ein, auch eine erzeugte in core/build-wasm/. Node bricht dann ab mit
+    #
+    #   ReferenceError: require is not defined in ES module scope
+    #
+    # Die Endung `.cjs` ist die Ausnahme, die Node immer als CommonJS liest, egal
+    # was darueber steht. Der Browser-Bau darunter behaelt `.js`: den laedt ein
+    # <script src>, und das kuemmert package.json nicht.
+    set_target_properties(aruco_conformance PROPERTIES SUFFIX ".cjs")
+
     # --- Und derselbe Pruefstand noch einmal, fuer einen echten Browser -------
     # Node und Chrome fahren beide V8, der Unterschied ist also klein - aber
     # "klein" ist keine Messung, und der Browser ist das ZIEL. Ein Bau, der nur
