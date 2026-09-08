@@ -229,8 +229,11 @@ gebraucht wird.
 für alle drei Ziele, ohne ein einziges Ziel-`ifdef`; ausgeführt und Ecke für Ecke
 verglichen sind Windows und WASM (unter Node **und** in Chrome). Sie stimmen bis auf
 **5 von 64 Ecken zu je einem `float32`-ULP** überein — 0,000122 px, das ist
-0,000048 mm und 6100-mal unter der Toleranz. **Android bindet für alle vier ABIs, ist
-aber ungemessen:** auf dem Entwicklungsrechner gibt es weder Gerät noch Emulator.
+0,000048 mm und 6100-mal unter der Toleranz. **Android bindet für alle vier ABIs;
+gemessen ist arm64-v8a** — am 08.09.2026 auf einem Xiaomi 2312DRA50G (Android 15), wo
+der Prüfstand mit demselben größten Eckfehler von 0,2337 px je Szene bestanden hat.
+Die anderen drei ABIs binden und sind ungemessen; auf dem Entwicklungsrechner gibt es
+weder Gerät noch Emulator.
 
 Vorgezogen wurde das, weil es die Frage ist, für die der ganze Umzug betrieben wird.
 Wäre sie erst hier gestellt worden, stünden die Stufen 2 und 3 auf einer Annahme.
@@ -243,11 +246,13 @@ und ohne Netzberechtigung. `web/vision/` hat dafür **drei neue Dateien** bekomm
 **keine einzige geänderte**: eine Importkarte tauscht `core.js` gegen eine Fassung,
 die statt zu WebAssembly zu JNI greift. Die JNI-Schicht ist auf einer echten JVM
 **gemessen** — 18 Größen je Prüfszene, bitgenau gleich zu demselben Kern durch
-pybind11, die Rasterbilder per SHA-256. **Auf einem Telefon ist weiterhin nichts
-gelaufen**; die JavaScript-Hälfte fährt stattdessen aus dem gebauten APK in einem
-echten Chromium bis zum nachgemessenen PDF. Und ein Telefon kann den Prüfstand aus
-`shared/fixtures/` selbst fahren — damit lässt sich der Satz „Android ist ungemessen"
-in dreißig Sekunden streichen.
+pybind11, die Rasterbilder per SHA-256. Die JavaScript-Hälfte fährt aus dem gebauten
+APK in einem echten Chromium bis zum nachgemessenen PDF. **Und am 08.09.2026 hat ein
+Telefon den Prüfstand aus `shared/fixtures/` selbst gefahren** — Xiaomi 2312DRA50G,
+Android 15: bestanden, 0,2337 px je Szene, beide SHA-256 genau die vorhergesagten.
+Damit ist der Satz „Android ist ungemessen" gestrichen. Derselbe Lauf hat den Export
+am Speicher scheitern lassen — der Hergang steht in
+[`stage-4-android.md`](stage-4-android.md).
 
 ### Stufe 5 · Aufräumen — Tage
 

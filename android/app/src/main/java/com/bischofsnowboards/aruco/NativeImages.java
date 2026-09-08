@@ -1,5 +1,8 @@
 package com.bischofsnowboards.aruco;
 
+import android.app.ActivityManager;
+import android.content.Context;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
@@ -94,8 +97,19 @@ final class NativeImages {
         while (transient_.size() >= CAPACITY) {
             images.remove(transient_.removeFirst());
         }
-        ByteBuffer buffer =
-                ByteBuffer.allocateDirect((int) bytes).order(ByteOrder.nativeOrder());
+        ByteBuffer buffer;
+        try {
+            buffer = ByteBuffer.allocateDirect((int) bytes).order(ByteOrder.nativeOrder());
+        } catch (OutOfMemoryError exhausted) {
+            // Mit Zahlen, nicht mit "Speicher voll": wer das liest, will wissen, ob er
+            // 20 MB oder 500 MB zu viel verlangt hat. Weitergegeben als Exception, damit
+            // der Aufrufer sie behandeln kann wie jeden anderen Fehlschlag auch - der
+            // Prozess ist gesund, es fehlte nur dieser eine Puffer.
+            throw new IllegalStateException(
+                    "Raster " + width + "x" + height + " braucht " + (bytes >> 20)
+                            + " MB und der Speicher gibt sie nicht her.",
+                    exhausted);
+        }
         int handle = nextHandle++;
         images.put(handle, new Image(buffer, width, height, channels));
         transient_.addLast(handle);
@@ -118,6 +132,49 @@ final class NativeImages {
         }
         return image;
     }
+
+    /**
+     * Wieviele Ausgabepixel dieses Geraet noch vertraegt.
+     *
+     * <p><b>Warum das nicht in shared/constants.json stehen kann.</b> Dort stehen
+     * Aussagen ueber das PRODUKT - Millimeter, Papier, Schwellen -, und die gelten
+     * ueberall gleich. Wieviel Speicher da ist, ist eine Aussage ueber die MASCHINE.
+     * {@code MAX_OUTPUT_MPX} = 300 bedeutet auf dem Schreibtisch 900 MB Raster und ist
+     * dort in Ordnung; auf einem Telefon ist es der sichere Tod, und zwar genau in dem
+     * Augenblick, in dem der Bediener auf "PDF erzeugen" drueckt.
+     *
+     * <p><b>Sechs Byte je Ausgabepixel</b>, nicht drei: {@code runExport} in
+     * web/vision/pipeline.js haelt das entzerrte Raster UND seine aufbereitete Fassung
+     * gleichzeitig (die Arena verdraengt bei CAPACITY=3 noch nichts). Dazu kommen das
+     * festgehaltene Foto, die JPEG-Bytes und das PDF - dafuer ist der Faktor 0,45.
+     *
+     * <p>Die Obergrenze ist kein Geiz, sondern eine zweite Sicherung: {@code availMem}
+     * meldet auf einem grossen Geraet Gigabyte, aber ein einzelner Direktpuffer dieser
+     * Groesse bringt den Prozess trotzdem in die Naehe des Low-Memory-Killers.
+     */
+    static double budgetMegapixels(Context context) {
+        ActivityManager manager =
+                (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager == null) return FALLBACK_BUDGET_MPX;
+        ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
+        manager.getMemoryInfo(memory);
+
+        double usable = Math.min(memory.availMem * 0.45, MAX_RASTER_BYTES);
+        double megapixels = usable / BYTES_PER_OUTPUT_PIXEL / 1e6;
+        return Math.max(MIN_BUDGET_MPX, Math.floor(megapixels));
+    }
+
+    /** Entzerrtes Raster plus aufbereitete Fassung, je drei Kanaele. */
+    private static final double BYTES_PER_OUTPUT_PIXEL = 6.0;
+
+    /** Auch auf einem grossen Geraet nicht mehr als das an einem Stueck. */
+    private static final double MAX_RASTER_BYTES = 768.0 * 1024 * 1024;
+
+    /** Darunter waere die App unbrauchbar; dann lieber ehrlich scheitern. */
+    private static final double MIN_BUDGET_MPX = 8.0;
+
+    /** Wenn das System die Auskunft verweigert - vorsichtig, aber benutzbar. */
+    private static final double FALLBACK_BUDGET_MPX = 24.0;
 
     /** Alles wegwerfen - beim naechsten Foto. Das Foto selbst eingeschlossen. */
     synchronized void clear() {

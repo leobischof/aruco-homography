@@ -51,6 +51,23 @@
     // fest; api.js liest sie einmal beim Laden.
     window.ARUCO_TRANSPORT = "local";
 
+    // Und gleich daneben: wieviele Ausgabepixel dieses Geraet vertraegt.
+    // web/constants.js::outputBudgetMpx() liest das und senkt die Obergrenze;
+    // fehlt der Wert, gilt die Produktgrenze aus shared/constants.json.
+    //
+    // Hier und nicht spaeter, weil rectify.js die Zahl beim ERSTEN Export
+    // braucht - und weil es hier nichts kostet: die Bruecke antwortet synchron.
+    // Scheitert der Aufruf, bleibt die Produktgrenze stehen; das ist die
+    // Lage von gestern und nicht schlimmer als sie.
+    try {
+        const budget = JSON.parse(bridge.nativeInfo()).max_output_mpx;
+        if (Number.isFinite(budget) && budget > 0) {
+            window.ARUCO_MAX_OUTPUT_MPX = budget;
+        }
+    } catch (error) {
+        console.error("Speicherbudget nicht ermittelbar", error);
+    }
+
     // --- 2 · Importkarte ------------------------------------------------------
     // Sie muss VOR dem ersten Modul-Import im Dokument stehen. Zu diesem
     // Zeitpunkt ist <head> noch nicht geparst, deshalb haengt sie an
