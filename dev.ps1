@@ -190,7 +190,30 @@ function Confirm-NodeModules {
     $needed = @('node_modules\pdf-lib', 'node_modules\@techstark\opencv-js')
     if (-not ($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })) { return }
     Write-Warn 'node_modules fehlt oder ist unvollstaendig - npm install laeuft jetzt'
-    Invoke-Native -What 'npm install' -Action { npm install --prefix $RepoRoot }
+
+    # npm.cmd und NICHT npm: unter Windows loest `npm` auf npm.ps1 auf, und dieser
+    # PowerShell-Aufsatz liest $MyInvocation.Statement - eine Eigenschaft, die es nicht
+    # gibt. Das Set-StrictMode -Version Latest weiter oben macht daraus einen Abbruch:
+    #
+    #   Die Eigenschaft "Statement" wurde fuer dieses Objekt nicht gefunden.
+    #
+    # Die Meldung nennt weder npm noch StrictMode und schickt einen auf die Suche nach
+    # einem Fehler in dev.ps1. Sie schlaegt nur zu, wenn node_modules FEHLT - also nie
+    # auf einem Rechner, auf dem schon einmal gebaut wurde, und immer beim frischen Klon.
+    $npm = Get-Command 'npm.cmd' -ErrorAction SilentlyContinue
+    if (-not $npm) { throw 'npm.cmd wurde nicht gefunden - Node.js installieren.' }
+
+    # Push-Location statt --prefix. Mit --prefix trug npm das Projekt beim ERSTEN
+    # Lauf als Abhaengigkeit von sich selbst ein ("aruco-homographie-web": "file:") und
+    # schrieb das in package.json UND package-lock.json. Auf einem Rechner mit
+    # node_modules passiert das nicht - der Schaden entsteht genau dort, wo die
+    # Selbstheilung greifen soll, und wandert von dort in einen Commit.
+    Push-Location $RepoRoot
+    try {
+        Invoke-Native -What 'npm install' -Action { & $npm.Source install }
+    } finally {
+        Pop-Location
+    }
 }
 
 # --- C++-Rechenkern -----------------------------------------------------------
@@ -485,6 +508,12 @@ function Invoke-BuildExe {
     param([string[]]$ExtraArgs = $Rest)
 
     Confirm-Deps
+
+    # Der Kern zuerst: die ausgelieferte .exe misst mit C++ (app/vision/backend.py
+    # setzt ARUCO_CORE=cpp, sobald eingefroren wurde). Ohne ihn bricht schon die
+    # Bauvorschrift ab - lieber hier als beim ersten Start auf einem fremden Rechner.
+    Invoke-BuildCore
+
     Write-Step 'Building the Windows .exe (PyInstaller, one-folder)'
     Invoke-Native -What 'build-exe' -Action {
         & $VenvPython -m PyInstaller --noconfirm $ExeSpec @ExtraArgs
@@ -517,6 +546,14 @@ function Test-BundleFresh {
     $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app'), (Join-Path $RepoRoot 'shared') -Recurse -File |
         Where-Object { $_.FullName -notlike '*__pycache__*' })
     $sources += Get-Item $ExeSpec
+
+    # Der C++-Kern liegt mit im Bundle, also gehoert er in diese Frage. Ohne die
+    # naechsten Zeilen galte ein Bundle als frisch, in dem noch der Kern von
+    # vorgestern steckt - und gemessen wird mit genau diesem Kern.
+    if (Test-Path $CoreBuildDir) {
+        $sources += @(Get-ChildItem -Path $CoreBuildDir -File |
+            Where-Object { $_.Extension -in '.pyd', '.dll' })
+    }
     $newest = ($sources | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
 
     return ($newest -le $built)
@@ -974,7 +1011,7 @@ function Show-Help {
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
-    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
+    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (baut den C++-Kern mit; ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
     Write-Cmd 'kill-servers'      'Aus diesem Repo gestartete Server beenden'
     Write-Cmd 'clean-all'         'venv, out/, build/, dist/ und Caches entfernen'

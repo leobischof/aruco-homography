@@ -28,6 +28,14 @@ import cv2
 _BUNDLE_DIR = getattr(sys, "_MEIPASS", None)   # nur im PyInstaller-Bundle gesetzt
 _PACKAGE_DIR = Path(_BUNDLE_DIR) / "app" if _BUNDLE_DIR else Path(__file__).resolve().parent
 
+# Ob dieser Prozess aus der gebauten .exe laeuft. Genau diese eine Stelle liest
+# `sys._MEIPASS`; wer sonst noch wissen muss, ob eingefroren wurde, fragt hier.
+# Gebraucht wird es ausserhalb der Pfade oben vom Rechenkern: im Quellbaum liegt
+# er in core/build/, im Bundle als .pyd neben der Anwendung, und die Vorgabe fuer
+# ARUCO_CORE haengt daran (app/vision/backend.py).
+FROZEN = _BUNDLE_DIR is not None
+BUNDLE_DIR = Path(_BUNDLE_DIR) if _BUNDLE_DIR else None
+
 
 def resource_path(*parts: str) -> Path:
     """Pfad zu einer mitgelieferten Datei unterhalb von `app/`.

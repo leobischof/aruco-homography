@@ -1,3 +1,11 @@
+---
+title: Umzug auf einen C++-Rechenkern — Fahrplan
+description: Warum C++, wie die Architektur aussieht, welche Stufen es gibt und wie das Ergebnis ausgeliefert wird.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Umzug auf einen C++-Rechenkern — Fahrplan
 
 > **Stand:** 2026-09-07 · **Entschieden**, noch nicht begonnen.
@@ -206,6 +214,15 @@ Oberfläche auf den eigenen PDF-Bau gehört zu Stufe 4.
 
 Desktop (webview), Android (WebView + NDK), Browser. Erst hier wird aus dem Kern
 ein Produkt auf drei Zielen.
+
+**Windows ist fertig und belegt:
+[`stage-4-windows-exe.md`](stage-4-windows-exe.md).** Die gebaute `.exe` misst mit
+dem C++-Kern — nicht behauptet, sondern gezeigt: nimmt man ihr die `aruco_core.pyd`
+weg, startet sie nicht mehr, und ihre Messung ist Zahl für Zahl dieselbe wie die des
+Quellbaums mit `ARUCO_CORE=cpp` (alle 32 Eckkoordinaten, rms 0,093 px). Der Preis
+steht dort ebenfalls: der ausgelieferte Ordner wächst von rund 308 MB auf 388 MB,
+weil `opencv_world500.dll` mit muss, solange `cv2` für alles außer dem Detektor
+gebraucht wird.
 
 **Die Werkzeugketten stehen bereits — vorgezogen und belegt:
 [`stage-4-cross-targets.md`](stage-4-cross-targets.md).** Derselbe `core/` übersetzt

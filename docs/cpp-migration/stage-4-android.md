@@ -1,6 +1,6 @@
 ---
 title: Stufe 4 · Die Android-Hülle — Ergebnis
-description: Was die Android-App heute wirklich kann, was nur gebaut ist, und wie man sie auf ein Telefon bringt.
+description: "Stufe 4: was die Android-App heute wirklich kann, was nur gebaut ist, und wie man sie auf ein Telefon bringt"
 audience: developer
 status: current
 updated: 2026-09-08

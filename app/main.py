@@ -22,6 +22,7 @@ from app.pdf.markersheet import build_markersheet
 from app.pipeline import run_adjust, run_export, run_solve, solve_response
 from app.schemas import AdjustRequest, ExportRequest, SolveRequest
 from app.session import store
+from app.vision import backend
 from app.vision.detect import load_photo
 
 if TYPE_CHECKING:  # nur fuer die Typangabe - uvicorn wird erst beim Start geladen
@@ -312,12 +313,27 @@ def serve_in_window(url: str, port: int) -> int:
     return 0
 
 
+# Welcher Kern misst, gehoert ins Banner und nicht in eine Protokolldatei: es ist
+# die einzige Stelle, an der jemand OHNE Werkzeug sieht, was gerade rechnet. Die
+# .exe nimmt C++, der Quellbaum die Python-Referenz - und wer das eine erwartet
+# und das andere liest, hat den Fehler gefunden, bevor er eine Messung erklaeren
+# muss. (Konsolenausgabe, kein Oberflaechentext: Invariante 7 gilt hier nicht.)
+_CORE_LABEL = {
+    backend.PYTHON: "Python (app/vision/, die Referenz)",
+    backend.CPP: "C++ (core/)",
+}
+
+
 def print_banner(local_url: str, lan_url: str) -> None:
     """URL plus ASCII-QR-Code, damit man das Handy nur draufhalten muss."""
     print()
-    print(f"  {config.APP_NAME} laeuft")
+    print(f"  {config.APP_NAME} {config.APP_VERSION} laeuft")
     print(f"  Lokal:       {local_url}")
     print(f"  Im Netzwerk: {lan_url}")
+    # flush, weil stdout blockweise puffert, sobald es KEINE Konsole ist -
+    # in eine Datei umgeleitet stuende das Banner sonst erst am Ende darin,
+    # und ausgerechnet die Zeile darueber soll man SOFORT lesen koennen.
+    print(f"  Rechenkern:  {_CORE_LABEL[backend.ACTIVE]}", flush=True)
     print()
     try:
         import qrcode
