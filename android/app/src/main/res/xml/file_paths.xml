@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Was der FileProvider herausgeben darf - und sonst nichts. Beide Pfade liegen im
+  privaten Cache der App: das aufgenommene Foto und das gebaute PDF, das geteilt
+  werden soll. Ein Eintrag auf den gesamten Speicher waere bequemer und gaebe
+  jeder Anwendung, die eine URI erhaelt, mehr als sie braucht.
+-->
+<paths>
+    <cache-path name="captures" path="captures/" />
+    <cache-path name="documents" path="documents/" />
+</paths>

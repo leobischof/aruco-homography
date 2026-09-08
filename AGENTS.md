@@ -22,8 +22,10 @@ Tests aus `tests/` grün halten — sie sind der einzige Beweis, den dieses Proj
 .\dev.ps1 run-tests           # pytest, mit dem Python-Kern
 .\dev.ps1 build-core          # C++-Rechenkern nach core/build/ (CMake + MSVC + OpenCV-SDK)
 .\dev.ps1 run-tests-cpp       # C++-Prüfstand und DIESELBE Suite gegen den C++-Kern
+.\dev.ps1 check-jni           # die JNI-Schicht auf einer echten JVM ausführen (Windows-DLL)
+.\dev.ps1 build-apk           # Android-APK nach android/out/ (Vorgabe arm64-v8a), misst danach nach
 .\dev.ps1 build-markersheet   # Markerblatt nach out/
-.\dev.ps1 build-exe           # Windows-Bundle nach dist/ (läuft ohne Python)
+.\dev.ps1 build-exe           # Windows-Bundle nach dist/ (baut den C++-Kern mit)
 .\dev.ps1 build-installer     # Windows-Installer nach dist/ — eine Datei, ohne Adminrechte
 .\dev.ps1 kill-servers        # nur Server aus DIESEM Verzeichnis (auch die gebaute .exe)
 .\dev.ps1 clean-all
@@ -61,6 +63,10 @@ app/pipeline.py      Orchestrierung der Rechenkette; main.py bleibt reiner Trans
 app/vision/          backend · geometry · detect · solve · camera · thickness · extent ·
                      rectify · contour · enhance. `backend.py` entscheidet, welcher
                      Rechenkern misst — Python oder C++ (Umgebungsvariable ARUCO_CORE).
+                     **Die Vorgabe hängt am Ort:** im Quellbaum Python (die Referenz,
+                     gegen die geprüft wird), in der gebauten `.exe` C++ (was
+                     ausgeliefert wird). Kein Rückfall — fehlt der Kern, bricht der
+                     Start ab. Beleg: docs/cpp-migration/stage-4-windows-exe.md
 app/pdf/             layout · overlays · branding · build · markersheet
 app/static/          Oberfläche: css/ (Tokens + Stylesheets), js/ (ES-Module, kein
                      Bundler), i18n/ (de.json · en.json), brand/ (Logo und Schrift)
@@ -70,6 +76,13 @@ web/pdf/             derselbe PDF-Bau in JavaScript (pdf-lib), Modul für Modul 
                      die .exe baut weiter mit ReportLab. `ARUCO_PDF=js` lässt die
                      vorhandene Testsuite gegen diesen Bau laufen (dev.ps1
                      run-tests-pdf-js). Nichts hier darf `fs` oder `path` anfassen.
+android/             die Android-Hülle: eine WebView, die app/static/ UNVERÄNDERT
+                     ausliefert, und eine JNI-Schicht auf denselben core/. Sie
+                     kopiert nichts — der Gradle-Bau legt app/static/, web/pdf/
+                     und shared/ zur Bauzeit nebeneinander. Was die App heute
+                     wirklich kann (und was nicht), steht in
+                     docs/cpp-migration/stage-4-android.md. Die .so und das APK
+                     sind Erzeugnisse und stehen in .gitignore.
 tools/               Werkzeuge NEBEN der Anwendung, nie im Bundle: der Prüfstand
                      pdf_js_bridge (Python ruft Node), die eingefrorenen Fixtures
                      und der Backvorgang für das Logo als Pfaddaten.

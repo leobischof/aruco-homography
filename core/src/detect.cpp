@@ -32,7 +32,6 @@ namespace {
 // etwas aendert, aendert es hier mit. Der Quervergleich in tests/test_backend.py
 // faellt sonst um, und das ist der Zweck jenes Tests.
 cv::aruco::ArucoDetector build_detector() {
-    const cv::aruco::Dictionary dictionary = predefined_dictionary();
     cv::aruco::DetectorParameters params;
 
     // Subpixel-Refinement: der wichtigste Genauigkeitsschalter dieses Projekts.
@@ -48,7 +47,7 @@ cv::aruco::ArucoDetector build_detector() {
     params.adaptiveThreshWinSizeStep = 10;
     params.minMarkerPerimeterRate = 0.01;
 
-    return cv::aruco::ArucoDetector(dictionary, params);
+    return cv::aruco::ArucoDetector(configured_dictionary(), params);
 }
 
 }  // namespace

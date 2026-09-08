@@ -104,3 +104,18 @@ spike/*.raw
 # mit einem anderen Ziel aufgerufen, landet der Header hier - und eingecheckt
 # waere er eine zweite Definition derselben Millimeter (AGENTS.md, Invariante 4).
 /core/include/aruco/constants.hpp
+
+# --- Android-Huelle (Stufe 4) --------------------------------------------------
+# Die .so je ABI. Sie ist ein ERZEUGNIS von ./dev.ps1 build-android-libs (rund
+# 6 MB je ABI) und gehoert damit nicht ins Repo - der Quelltext dafuer steht
+# vollstaendig in core/.
+/android/app/src/main/jniLibs/
+# Das fertige APK. Sein Weg steht in docs/cpp-migration/stage-4-android.md;
+# eine eingecheckte Binaerdatei waere bei jedem Bau ein neuer Blob.
+/android/out/
+# Gradles eigener Kram. Das Bauverzeichnis liegt ohnehin neben dem Repo
+# (android/gradle.properties, aruco.buildRoot) - der Rest entsteht hier.
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties

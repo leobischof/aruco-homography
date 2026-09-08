@@ -1,3 +1,11 @@
+---
+title: Umzug auf einen C++-Rechenkern — Fahrplan
+description: Warum C++, wie die Architektur aussieht, welche Stufen es gibt und wie das Ergebnis ausgeliefert wird.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Umzug auf einen C++-Rechenkern — Fahrplan
 
 > **Stand:** 2026-09-07 · **Entschieden**, noch nicht begonnen.
@@ -207,6 +215,15 @@ Oberfläche auf den eigenen PDF-Bau gehört zu Stufe 4.
 Desktop (webview), Android (WebView + NDK), Browser. Erst hier wird aus dem Kern
 ein Produkt auf drei Zielen.
 
+**Windows ist fertig und belegt:
+[`stage-4-windows-exe.md`](stage-4-windows-exe.md).** Die gebaute `.exe` misst mit
+dem C++-Kern — nicht behauptet, sondern gezeigt: nimmt man ihr die `aruco_core.pyd`
+weg, startet sie nicht mehr, und ihre Messung ist Zahl für Zahl dieselbe wie die des
+Quellbaums mit `ARUCO_CORE=cpp` (alle 32 Eckkoordinaten, rms 0,093 px). Der Preis
+steht dort ebenfalls: der ausgelieferte Ordner wächst von rund 308 MB auf 388 MB,
+weil `opencv_world500.dll` mit muss, solange `cv2` für alles außer dem Detektor
+gebraucht wird.
+
 **Die Werkzeugketten stehen bereits — vorgezogen und belegt:
 [`stage-4-cross-targets.md`](stage-4-cross-targets.md).** Derselbe `core/` übersetzt
 für alle drei Ziele, ohne ein einziges Ziel-`ifdef`; ausgeführt und Ecke für Ecke
@@ -217,6 +234,16 @@ aber ungemessen:** auf dem Entwicklungsrechner gibt es weder Gerät noch Emulato
 
 Vorgezogen wurde das, weil es die Frage ist, für die der ganze Umzug betrieben wird.
 Wäre sie erst hier gestellt worden, stünden die Stufen 2 und 3 auf einer Annahme.
+
+**Die Android-Hülle steht ebenfalls: [`stage-4-android.md`](stage-4-android.md).** Eine
+WebView liefert `app/static/` **unverändert** aus, eine JNI-Schicht bindet denselben
+`core/`, und `libaruco_core.so` ist für alle vier ABIs 16-KB-ausgerichtet. Die
+JNI-Schicht ist auf einer echten JVM **gemessen** — Windows-DLL desselben Quelltextes,
+64 von 64 Ecken identisch zum C++-Weg. **Auf einem Telefon ist weiterhin nichts
+gelaufen**, und die App misst noch keine Schablone: der Kern kann bis heute nur
+`detect_markers`. Fertig ist das **Markerblatt**; neu ist, dass ein Telefon den
+Prüfstand aus `shared/fixtures/` selbst fahren kann — damit lässt sich der Satz
+„Android ist ungemessen" in dreißig Sekunden streichen.
 
 ### Stufe 5 · Aufräumen — Tage
 

@@ -1,3 +1,11 @@
+---
+title: Stufe 3: Der PDF-Bau nach JavaScript
+description: Der Plan, mit dem app/pdf/ nach web/pdf/ gespiegelt wurde, damit ein PDF-Bau alle drei Ziele bedient.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Stufe 3: Der PDF-Bau nach JavaScript
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development

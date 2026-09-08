@@ -25,7 +25,7 @@ std::vector<std::uint8_t> marker_bits(int marker_id, int modules) {
     cv::Mat image;
     // borderBits = 1: das eine schwarze Randmodul gehoert zum Marker. `modules`
     // zaehlt es mit, genau wie MODULES in web/pdf/markersheet.js.
-    cv::aruco::generateImageMarker(predefined_dictionary(), marker_id, modules, image, 1);
+    cv::aruco::generateImageMarker(configured_dictionary(), marker_id, modules, image, 1);
 
     std::vector<std::uint8_t> bits;
     bits.reserve(static_cast<std::size_t>(modules) * static_cast<std::size_t>(modules));

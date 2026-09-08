@@ -156,6 +156,42 @@
       "empty": "–",
       "error_field": "(Feld: {field})",
       "error_unknown": "Unbekannter Fehler."
+    },
+    "android": {
+      "title": "Auf diesem Gerät",
+      "subtitle": "Was der native Rechenkern hier kann — und was noch nicht.",
+      "native_heading": "Der Rechenkern",
+      "native_page_size": "Seitengröße",
+      "native_marker_mm": "Markerkante (nominal)",
+      "native_dictionary": "Wörterbuch",
+      "native_device": "Gerät",
+      "native_app": "App-Fassung",
+      "conformance_heading": "Prüfstand",
+      "conformance_explain": "Die eingefrorenen Szenen aus shared/fixtures/ durch den nativen Kern, gemessen gegen die Grundwahrheit — dieselbe Prüfung, die auf Windows und im Browser läuft.",
+      "conformance_run": "Prüfstand laufen lassen",
+      "conformance_running": "wird gemessen …",
+      "conformance_passed": "BESTANDEN",
+      "conformance_failed": "FEHLGESCHLAGEN",
+      "conformance_worst": "größter Eckfehler",
+      "conformance_tolerance": "Toleranz",
+      "conformance_checksum": "SHA-256 der dekodierten Pixel",
+      "detect_heading": "Detektor am Foto",
+      "detect_explain": "Ein Foto wählen und die Marker nativ suchen lassen. Das beantwortet die eine Frage, die kein Prüfstand beantwortet: findet der Kern die Marker auf einem echten Bild dieser Kamera?",
+      "detect_pick": "Foto wählen",
+      "detect_camera": "Foto aufnehmen",
+      "detect_run": "Marker suchen",
+      "detect_running": "wird gesucht …",
+      "detect_none": "Kein Marker gefunden.",
+      "detect_found": "{count} Marker in {ms} ms",
+      "detect_edge": "mittlere Kante",
+      "sheet_heading": "Markerblatt",
+      "sheet_explain": "Das A4-Blatt, mit dem alles anfängt. Gebaut wird es hier im Gerät, aus demselben JavaScript wie auf dem Rechner und mit den Modulbits des nativen Kerns.",
+      "sheet_save": "Als PDF speichern",
+      "sheet_share": "Teilen oder drucken",
+      "sheet_saved": "Gespeichert.",
+      "full_heading": "Die vollständige Oberfläche",
+      "full_explain": "Dieselbe Oberfläche wie auf dem Rechner, unverändert. Foto laden und Sprache umschalten gehen; beim Entzerren endet sie, weil dieser Schritt noch nicht nativ vorliegt.",
+      "full_open": "Oberfläche öffnen"
     }
   },
   "notices": {
@@ -190,7 +226,9 @@
     "no_sheet_ids": "Erkannt wurden nur die Marker-IDs {found}. Das mitgelieferte Blatt benutzt {expected}. Wechsle in den Frei-Modus oder drucke das Markerblatt der App.",
     "homography_failed": "Aus den erkannten Markern ließ sich keine Homographie berechnen. Liegen sie fast auf einer Linie?",
     "homography_degenerate": "Die Homographie ist entartet (H[2,2] = 0).",
-    "thickness_too_large": "Die Objektdicke ({thickness_mm} mm) muss kleiner sein als der Kameraabstand ({camera_height_mm} mm)."
+    "thickness_too_large": "Die Objektdicke ({thickness_mm} mm) muss kleiner sein als der Kameraabstand ({camera_height_mm} mm).",
+    "android_core_incomplete": "Dieser Schritt ({step}) steckt noch nicht im nativen Rechenkern. Auf dem Gerät misst bisher nur die Markererkennung; Ausgleich, Kamerapose, Entzerrung und PDF-Export brauchen weiterhin den Rechner.",
+    "android_bridge_failed": "Die Brücke zum Gerät hat nicht geantwortet: {reason}"
   },
   "pdf": {
     "document_title": "Schablone {width} × {height} mm",

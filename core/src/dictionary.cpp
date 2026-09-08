@@ -1,14 +1,20 @@
+// Die Tabelle NAME -> OpenCV-Kennung. Herausgeloest aus detect.cpp, als capi.cpp
+// derselben Frage ein zweites Mal begegnete - siehe dictionary.hpp.
+
 #include "dictionary.hpp"
 
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
 #include "aruco/constants.hpp"
 
 namespace aruco {
 namespace {
 
+// ARUCO_DICT_NAME ist ein NAME, keine Zahl. In shared/constants.json steht
+// bewusst kein OpenCV-Zahlenwert: das waere keine sprachneutrale Angabe, sondern
+// eine Wette darauf, dass jede Bindung dieselbe Nummerierung benutzt. Python
+// loest den Namen mit getattr auf, C++ kennt keine Reflexion - also hier.
 struct DictionaryName {
     std::string_view name;
     cv::aruco::PredefinedDictionaryType id;
@@ -41,14 +47,22 @@ constexpr DictionaryName kDictionaries[] = {
 
 }  // namespace
 
-cv::aruco::Dictionary predefined_dictionary() {
+cv::aruco::PredefinedDictionaryType dictionary_id(std::string_view name) {
     for (const DictionaryName& entry : kDictionaries) {
-        if (entry.name == constants::ARUCO_DICT_NAME) {
-            return cv::aruco::getPredefinedDictionary(entry.id);
+        if (entry.name == name) {
+            return entry.id;
         }
     }
-    throw std::invalid_argument("Unbekanntes ArUco-Woerterbuch: " +
-                                std::string(constants::ARUCO_DICT_NAME));
+    throw std::invalid_argument("Unbekanntes ArUco-Woerterbuch: " + std::string(name));
+}
+
+const cv::aruco::Dictionary& configured_dictionary() {
+    // Einmal gebaut und dann gehalten. Das Woerterbuch ist unveraenderlich und
+    // haengt nur an einer erzeugten Konstanten; es bei jedem Aufruf neu
+    // aufzubauen kostet auf jedem Foto dieselbe Kopie derselben Bytes.
+    static const cv::aruco::Dictionary dictionary =
+        cv::aruco::getPredefinedDictionary(dictionary_id(constants::ARUCO_DICT_NAME));
+    return dictionary;
 }
 
 }  // namespace aruco

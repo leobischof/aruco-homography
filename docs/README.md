@@ -3,7 +3,7 @@ title: Dokumentation
 description: Verzeichnis aller Dokumente dieses Repos, mit Zweck, Zielgruppe und Stand.
 audience: developer
 status: current
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Dokumentation
@@ -26,7 +26,16 @@ Lesen wissen, welche Datei er aufmachen muss — und keine zweite Suchrunde brau
 | [`design/design-system.md`](design/design-system.md) | Farbe, Typografie, Form, Komponenten, Themen, Sprachen, Bewegung, Mobil — und was aus dem Webprojekt **nicht** zu übernehmen ist | developer | current |
 | [`contributing/git.md`](contributing/git.md) | Verbindliche Git-Regeln: Identität, wann committet und wann gepusht wird, Aufbau der Commit-Nachricht | developer | current |
 | [`superpowers/specs/2026-09-06-aruco-homographie-design.md`](superpowers/specs/2026-09-06-aruco-homographie-design.md) | Die Spezifikation dessen, was **existiert**, mit dem Code abgeglichen | developer | current |
+| [`cpp-migration/README.md`](cpp-migration/README.md) | Der Fahrplan des Umzugs auf einen C++-Rechenkern: warum, wie, in welchen Stufen, und wie ausgeliefert wird | developer | current |
+| [`cpp-migration/stage-0-opencv-js.md`](cpp-migration/stage-0-opencv-js.md) | Stufe 0: der Vorabversuch, der über den ganzen Umzug entschieden hat — läuft die Markererkennung im Browser? | developer | current |
+| [`cpp-migration/stage-4-cross-targets.md`](cpp-migration/stage-4-cross-targets.md) | Stufe 4: derselbe `core/` für Windows, WASM und Android — was gemessen ist und was nur gebaut | developer | current |
+| [`cpp-migration/stage-4-windows-exe.md`](cpp-migration/stage-4-windows-exe.md) | Stufe 4: wie die ausgelieferte `.exe` an den C++-Kern kommt, womit das belegt ist, was es kostet | developer | current |
+| [`cpp-migration/stage-4-android.md`](cpp-migration/stage-4-android.md) | Stufe 4: was die Android-App heute wirklich kann, was nur gebaut ist, und wie man sie auf ein Telefon bringt | developer | current |
 | [`cpp-migration/stage-4-web.md`](cpp-migration/stage-4-web.md) | Stufe 4: die ganze Kette ohne Server im Browser — was gemessen ist, wie gebaut wird, und was der Bau nicht kann | developer | current |
+| [`cpp-migration/AFK-PROTOKOLL.md`](cpp-migration/AFK-PROTOKOLL.md) | Protokoll der unbeaufsichtigten Arbeit am Umzug: Entscheidungen, Irrtümer und Prüflücken | developer | current |
+| [`superpowers/plans/2026-09-07-shared-truth-extraction.md`](superpowers/plans/2026-09-07-shared-truth-extraction.md) | Stufe 1: der Plan, mit dem Konstanten und Prüfszenen aus Python herausgelöst wurden | developer | current |
+| [`superpowers/plans/2026-09-08-cpp-core.md`](superpowers/plans/2026-09-08-cpp-core.md) | Stufe 2: der Plan für `core/` und die pybind11-Bindung, samt Nachweis gleicher Messung | developer | current |
+| [`superpowers/plans/2026-09-08-pdf-in-javascript.md`](superpowers/plans/2026-09-08-pdf-in-javascript.md) | Stufe 3: der Plan, mit dem `app/pdf/` nach `web/pdf/` gespiegelt wurde | developer | current |
 
 ### Außerhalb von `docs/` — die Dateien an der Wurzel
 
@@ -53,6 +62,8 @@ einzelnes Dokument, das zu keiner Gruppe gehört, liegt direkt unter `docs/`.
 | `design/` | Wie das Werkzeug aussehen soll und warum | Gegenstand. Wächst um Komponenten- und Layoutseiten, ohne den Namen zu sprengen. |
 | `contributing/` | Regeln für alle, die hier schreiben — Mensch wie Agent | Leserschaft. Nimmt später Test- und Release-Regeln auf. |
 | `superpowers/specs/` | Die Spezifikation dessen, was existiert | Herkunft: der Name kommt vom Werkzeug, das diese Specs erzeugt und wiederfindet. Er bleibt deshalb, wie er ist. |
+| `superpowers/plans/` | Die Pläne, nach denen gebaut wurde — einer je Stufe | Dieselbe Herkunft. Ein Plan ist keine Spezifikation: er sagt, wie etwas entstehen **soll**, und bleibt danach als Begründung liegen. |
+| `cpp-migration/` | Fahrplan, Stufenergebnisse und Protokoll des Umzugs auf einen C++-Rechenkern | Gegenstand. Der Umzug ist ein abgegrenztes Vorhaben mit eigener Beweislast; er läuft über Wochen und Ziele hinweg und passt in keine der anderen Gruppen. |
 
 `plans.md` liegt **flach**. Ein Ordner um eine einzige Datei ist ein zusätzlicher Klick ohne
 Gegenwert; er kommt an dem Tag, an dem daraus drei Dateien werden — und dann heißt er nach
@@ -69,6 +80,7 @@ einen Ordnerbaum.
 | Was ist **fertig**? | [`../CHANGELOG.md`](../CHANGELOG.md) |
 | Was **existiert** heute, im Detail? | [`superpowers/specs/`](superpowers/specs/) |
 | Was ist **noch nicht gebaut**? | [`plans.md`](plans.md) |
+| Was ist **gerade im Umbau**? | [`cpp-migration/`](cpp-migration/) |
 
 ---
 
@@ -140,6 +152,9 @@ Voraussetzung dafür, nicht sein Ersatz.
    Einzige Ausnahme ist die Eingangstür [`../README.md`](../README.md).
 2. **Frontmatter zuerst**, dann eine `#`-Überschrift, die dem `title` entspricht.
 3. **In §1 eintragen.** Ein Dokument, das nicht im Verzeichnis steht, findet niemand.
+   Das gilt auch für ein Ergebnisprotokoll, das „nur kurz" entsteht: `cpp-migration/`
+   und `superpowers/plans/` sind über acht Dateien gewachsen, ohne dass eine davon hier
+   stand oder einen Frontmatter-Block hatte. Wer eine neue Stufe belegt, trägt sie ein.
 4. **Querverweise relativ** (`design/design-system.md`, nicht `/docs/design/...`), damit sie
    im Editor, auf GitHub und in einer lokalen Vorschau gleichermaßen funktionieren.
 5. **Ein Zweck, eine Datei.** Wer zwei Zielgruppen bedienen will, schreibt zwei Dokumente.

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HIER STEHT NUR, WAS ANDROID SELBST ANZEIGT: der Name unter dem Symbol und die
+  Beschriftungen der System-Dialoge. Alles, was die App zeigt, kommt aus den
+  Katalogen unter app/static/i18n/ und android/app/src/main/assets/www/native/i18n/
+  (AGENTS.md, Invariante 7). Ein deutscher Satz in dieser Datei waere genau die
+  zweite Fassung, die jene Invariante verbietet.
+-->
+<resources>
+    <string name="app_name" translatable="false">ArUco-Homographie</string>
+</resources>
