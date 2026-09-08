@@ -166,7 +166,7 @@ Handyfoto **unter einer Sekunde**.
 
 **Was der Spike ausdrücklich nicht zeigt:** nur die *Erkennung* wurde geprüft, gegen
 eine *synthetische* Szene, in *einem* Browser. Homographie, Kamerazerlegung,
-Dickenkorrektur und `least_squares → cv::LMSolver` sind unberührt.
+Dickenkorrektur und `least_squares → cv::LevMarq` sind unberührt.
 
 ### Stufe 1 · `shared/` — eine Wahrheit, sprachneutral — Tage
 
@@ -245,7 +245,8 @@ Was den Aufwand kleiner macht, als er klingt: der Python-Kern *ruft* im Wesentli
 nur OpenCV auf — 46 verschiedene `cv2.*`-Symbole. Die Portierung schreibt Aufrufe um,
 die es schon gibt; sie erfindet keinen Algorithmus. Die einzige Zahlenmethode
 außerhalb von OpenCV ist `scipy.optimize.least_squares` an genau zwei Stellen
-(`solve.py:179` und `:199`) — daraus wird `cv::LMSolver` oder Ceres.
+(`solve.py:179` und `:199`) — daraus wird `cv::LevMarq` (in OpenCV 5 im Modul
+`geometry`; die Klasse hieß bis OpenCV 4 `cv::LMSolver` und lag in `calib3d`) oder Ceres.
 
 ## 7 · Woran es scheitern könnte
 

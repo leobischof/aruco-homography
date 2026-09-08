@@ -15,6 +15,8 @@
     ./dev.ps1 install-deps       # venv anlegen und Abhaengigkeiten installieren
     ./dev.ps1 start-server       # Server starten (installiert bei Bedarf vorher)
     ./dev.ps1 run-tests          # Testsuite ausfuehren
+    ./dev.ps1 build-core         # C++-Rechenkern bauen
+    ./dev.ps1 run-tests-cpp      # dieselbe Testsuite gegen den C++-Kern
     ./dev.ps1 build-markersheet  # Markerblatt-PDF nach out/ schreiben
     ./dev.ps1 build-exe          # Windows-.exe nach dist/ bauen
     ./dev.ps1 build-installer    # Windows-Installer (eine Datei) nach dist/ bauen
@@ -49,6 +51,8 @@ $ExeSpec      = Join-Path $RepoRoot 'aruco-homographie.spec'
 $DistDir      = Join-Path $RepoRoot 'dist'
 $ExeDist      = Join-Path $DistDir 'ArUco-Homographie'
 $IssScript    = Join-Path $RepoRoot 'installer\aruco-homographie.iss'
+$CoreDir      = Join-Path $RepoRoot 'core'
+$CoreBuildDir = Join-Path $CoreDir 'build'
 
 # Der Ordnername des Bundles IST der Name der .exe und der Name, unter dem der
 # Installer die Anwendung kennt. Festgelegt wird er in aruco-homographie.spec
@@ -185,6 +189,124 @@ function Confirm-NodeModules {
     if (-not ($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })) { return }
     Write-Warn 'node_modules fehlt oder ist unvollstaendig - npm install laeuft jetzt'
     Invoke-Native -What 'npm install' -Action { npm install --prefix $RepoRoot }
+}
+
+# --- C++-Rechenkern -----------------------------------------------------------
+# Warum das hier so umstaendlich aussieht: weder MSVC noch CMake stehen auf dem
+# PATH, und vcvars64.bat ist eine BATCHdatei - sie setzt Dutzende Variablen im
+# eigenen Prozess, und PowerShell kann sie nicht einlesen. Deshalb wird der ganze
+# Bau in ein Wegwerf-.cmd geschrieben und einmal durch cmd.exe geschickt. Das ist
+# haesslicher als ein Aufruf, aber es ist EIN Aufruf, und man kann die Datei im
+# Fehlerfall ansehen.
+
+function Find-VcInstall {
+    if ($env:ARUCO_VS_INSTALL) {
+        if (-not (Test-Path (Join-Path $env:ARUCO_VS_INSTALL 'VC\Auxiliary\Build\vcvars64.bat'))) {
+            throw "ARUCO_VS_INSTALL zeigt auf keine Installation mit C++-Werkzeugen: $env:ARUCO_VS_INSTALL"
+        }
+        return $env:ARUCO_VS_INSTALL
+    }
+
+    # vswhere ist der offizielle Weg und liegt seit VS 2017 immer hier. Ein fest
+    # verdrahteter Pfad auf "18\BuildTools" funktionierte auf genau einem Rechner.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $found = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+        if ($found) { return ($found | Select-Object -First 1) }
+    }
+
+    throw (@(
+        'Keine Visual-Studio-Installation mit C++-Werkzeugen gefunden.',
+        '     Gebraucht werden die Build Tools (MSVC + CMake + Ninja).',
+        '     Eine bestimmte Installation waehlen:  $env:ARUCO_VS_INSTALL = "<pfad>"'
+    ) -join [Environment]::NewLine)
+}
+
+function Find-OpenCVDir {
+    # Das SDK gehoert NICHT ins Repo (rund 1 GB) und liegt deshalb daneben.
+    $candidates = @()
+    if ($env:OpenCV_DIR) { $candidates += $env:OpenCV_DIR }
+    $candidates += Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\opencv\build'
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path (Join-Path $candidate 'OpenCVConfig.cmake')) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+
+    throw (@(
+        'Das OpenCV-SDK wurde nicht gefunden (OpenCVConfig.cmake).',
+        '     Gesucht wurde in $env:OpenCV_DIR und unter:',
+        ("       {0}" -f (Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\opencv\build'))
+    ) -join [Environment]::NewLine)
+}
+
+function Invoke-BuildCore {
+    Confirm-Deps
+
+    $install = Find-VcInstall
+    $vcvars  = Join-Path $install 'VC\Auxiliary\Build\vcvars64.bat'
+    $cmake   = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+    $ninja   = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+    foreach ($tool in @($vcvars, $cmake, $ninja)) {
+        if (-not (Test-Path $tool)) { throw "Werkzeug fehlt in $install : $tool" }
+    }
+
+    $opencv = Find-OpenCVDir
+    # Erst einsammeln, dann die erste Zeile nehmen. NICHT ueber `Select-Object
+    # -First 1` in der Pipe: das bricht den Aufruf ab, und $LASTEXITCODE meldet
+    # danach einen Fehlschlag, den es nie gab.
+    $pybindOutput = & $VenvPython -m pybind11 --cmakedir
+    if ($LASTEXITCODE -ne 0 -or -not $pybindOutput) { throw 'pybind11 nicht im venv gefunden.' }
+    $pybind = ([string[]]$pybindOutput)[0].Trim()
+
+    Write-Step 'Building the C++ core (CMake + Ninja + MSVC)'
+    Write-Host ("     Werkzeugkette: {0}" -f $install)   -ForegroundColor DarkGray
+    Write-Host ("     OpenCV:        {0}" -f $opencv)    -ForegroundColor DarkGray
+
+    $script = Join-Path ([IO.Path]::GetTempPath()) ("aruco-build-core-{0}.cmd" -f [guid]::NewGuid())
+    # OEM und nicht ASCII: cmd.exe liest Batchdateien in der OEM-Codepage. Steht
+    # ein Sonderzeichen im Pfad - ein Benutzername mit Umlaut reicht -, machte
+    # ASCII daraus ein Fragezeichen und der Bau suchte an der falschen Stelle.
+    Set-Content -Path $script -Encoding OEM -Value @(
+        '@echo off',
+        ('call "{0}" >nul || exit /b 1' -f $vcvars),
+        ('"{0}" -S "{1}" -B "{2}" -G Ninja -DCMAKE_MAKE_PROGRAM="{3}" -DCMAKE_BUILD_TYPE=Release -DOpenCV_DIR="{4}" -Dpybind11_DIR="{5}" -DPython_EXECUTABLE="{6}" || exit /b 1' -f
+            $cmake, $CoreDir, $CoreBuildDir, $ninja, $opencv, $pybind, $VenvPython),
+        ('"{0}" --build "{1}" || exit /b 1' -f $cmake, $CoreBuildDir)
+    )
+    try {
+        Invoke-Native -What 'build-core' -Action { & cmd.exe /c $script }
+    } finally {
+        Remove-Item $script -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Ok "Fertig: $CoreBuildDir"
+}
+
+# Die Testsuite gegen den C++-Kern. Es gibt bewusst keine zweite Suite - zwei
+# Suiten driften genauso wie zwei Implementierungen, nur unbemerkt
+# (docs/cpp-migration/README.md). Davor laeuft der C++-Pruefstand gegen
+# shared/fixtures/: er misst gegen die Grundwahrheit, nicht gegen Python.
+function Invoke-RunTestsCpp {
+    Invoke-BuildCore
+
+    Write-Step 'Running the C++ conformance program against shared/fixtures/'
+    $conformance = Join-Path $CoreBuildDir 'aruco_conformance.exe'
+    $pack        = Join-Path $CoreBuildDir 'fixtures\fixtures.txt'
+    Invoke-Native -What 'conformance' -Action { & $conformance $pack }
+
+    Write-Step 'Running tests with ARUCO_CORE=cpp'
+    $previous = $env:ARUCO_CORE
+    $env:ARUCO_CORE = 'cpp'
+    try {
+        Invoke-Native -What 'run-tests-cpp' -Action { & $VenvPython -m pytest -q @Rest }
+    } finally {
+        if ($null -eq $previous) { Remove-Item Env:\ARUCO_CORE -ErrorAction SilentlyContinue }
+        else { $env:ARUCO_CORE = $previous }
+    }
 }
 
 function Invoke-BuildMarkersheet {
@@ -335,7 +457,7 @@ function Invoke-KillServers {
 
 function Invoke-CleanAll {
     Write-Step 'Removing venv, outputs and caches'
-    foreach ($path in @('venv', 'out', 'build', 'dist', '.pytest_cache')) {
+    foreach ($path in @('venv', 'out', 'build', 'dist', '.pytest_cache', 'coreuild')) {
         $full = Join-Path $RepoRoot $path
         if (Test-Path $full) { Remove-Item -Recurse -Force $full }
     }
@@ -359,6 +481,9 @@ function Show-Help {
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
     Write-Cmd 'run-tests-pdf-js'  'Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node (ARUCO_PDF=js)'
     Write-Cmd 'run-tests-js'      'Die reine JavaScript-Rechnung pruefen (node --test)'
+    Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest, Python-Kern)'
+    Write-Cmd 'build-core'        'C++-Rechenkern nach core/build/ bauen (CMake + MSVC + OpenCV-SDK)'
+    Write-Cmd 'run-tests-cpp'     'C++-Pruefstand und DIESELBE Testsuite gegen den C++-Kern (ARUCO_CORE=cpp)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
@@ -375,6 +500,8 @@ switch ($Command.ToLowerInvariant()) {
     'run-tests'         { Invoke-RunTests }
     'run-tests-pdf-js'  { Invoke-RunTestsPdfJs }
     'run-tests-js'      { Invoke-RunTestsJs }
+    'build-core'        { Invoke-BuildCore }
+    'run-tests-cpp'     { Invoke-RunTestsCpp }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
     'build-installer'   { Invoke-BuildInstaller }

@@ -51,11 +51,20 @@
     },
     {
       "label": "Run tests",
-      "detail": "Testsuite ausfuehren",
+      "detail": "Testsuite ausfuehren (Python-Kern)",
       "type": "process",
       "command": "powershell",
       "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "run-tests"],
       "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run tests (C++ core)",
+      "detail": "C++-Kern bauen, den Pruefstand fahren und DIESELBE Suite gegen ihn laufen lassen",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/dev.ps1", "run-tests-cpp"],
+      "group": "test",
       "problemMatcher": []
     }
   ]

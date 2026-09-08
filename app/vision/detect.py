@@ -5,6 +5,11 @@ Zwei Dinge entscheiden hier ueber die spaetere Masshaltigkeit:
     der Detektor in einem gedrehten Bild und alle Koordinaten sind falsch.
   * Subpixel-Refinement der Ecken. Ohne das verliert man rund ein Pixel, was auf
     einem 500-mm-Objekt schon mehrere Zehntelmillimeter Fehler bedeutet.
+
+Die Erkennung selbst gibt es zweimal: hier als geprueft masshaltige Referenz und
+in C++ unter `core/`. Welche laeuft, entscheidet `app/vision/backend.py` -
+Aufrufer merken davon nichts. Das Laden des Fotos bleibt Python: es haengt an
+PIL und an EXIF, und beides gibt es im Browser nicht (Stufe 0, Abschnitt 5).
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from app import config
+from app.vision import backend
 
 try:  # Handyfotos von iPhones kommen als HEIC an.
     import pillow_heif
@@ -131,8 +137,14 @@ def build_detector() -> cv2.aruco.ArucoDetector:
     return cv2.aruco.ArucoDetector(dictionary, params)
 
 
-def detect_markers(bgr: np.ndarray, enhance_contrast: bool = True) -> list[DetectedMarker]:
-    """Alle Marker im Bild finden, sortiert nach ID.
+def _detect_markers_python(
+    bgr: np.ndarray, enhance_contrast: bool
+) -> list[tuple[int, np.ndarray]]:
+    """Die geprueft masshaltige Referenz - dieselbe Rechnung wie seit jeher.
+
+    Rueckgabe sind absichtlich nur (ID, Ecken) und keine DetectedMarker: das ist
+    die Grenze, an der der C++-Kern andockt (core/include/aruco/types.hpp), und
+    die kennt keine Python-Klassen.
 
     Bei mehrfach erkannter ID gewinnt der Marker mit der groesseren Bildflaeche -
     Doppelerkennungen sind selten, wuerden die Homographie aber verziehen.
@@ -152,7 +164,25 @@ def detect_markers(bgr: np.ndarray, enhance_contrast: bool = True) -> list[Detec
         if previous is None or marker.image_area_px > previous.image_area_px:
             best[marker.marker_id] = marker
 
-    return [best[key] for key in sorted(best)]
+    return [(key, best[key].corners_px) for key in sorted(best)]
+
+
+# Der Umschalter. Welcher Kern rechnet, entscheidet ARUCO_CORE beim Import -
+# nachgeschlagen wird es genau hier und nirgends sonst (app/vision/backend.py).
+_detect_markers = backend.implementation("detect_markers", _detect_markers_python)
+
+
+def detect_markers(bgr: np.ndarray, enhance_contrast: bool = True) -> list[DetectedMarker]:
+    """Alle Marker im Bild finden, sortiert nach ID.
+
+    Die Erkennung selbst macht der aktive Kern; diese Funktion macht aus seinem
+    sprachneutralen Ergebnis wieder DetectedMarker. Fuer alle Aufrufer sieht das
+    aus wie vorher - genau das ist der Sinn (docs/cpp-migration/README.md).
+    """
+    return [
+        DetectedMarker(int(marker_id), np.asarray(corners, dtype=np.float64).reshape(4, 2))
+        for marker_id, corners in _detect_markers(bgr, enhance_contrast)
+    ]
 
 
 def draw_detection(bgr: np.ndarray, markers: list[DetectedMarker]) -> np.ndarray:

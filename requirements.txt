@@ -15,3 +15,8 @@ pypdf
 pymupdf
 httpx
 pyinstaller
+
+# Nur fuer den Bau des C++-Kerns (./dev.ps1 build-core). Steht hier und nicht
+# in einer zweiten Liste, damit ein frischer Klon ohne Handgriff bauen kann -
+# dev.ps1 heilt sich selbst nur ueber DIESE Datei.
+pybind11
