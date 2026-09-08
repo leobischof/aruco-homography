@@ -1,3 +1,11 @@
+---
+title: Umzug auf einen C++-Rechenkern — Fahrplan
+description: Warum C++, wie die Architektur aussieht, welche Stufen es gibt und wie das Ergebnis ausgeliefert wird.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Umzug auf einen C++-Rechenkern — Fahrplan
 
 > **Stand:** 2026-09-07 · **Entschieden**, noch nicht begonnen.

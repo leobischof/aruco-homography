@@ -1,3 +1,11 @@
+---
+title: Stufe 4 · Ein Quelltext, drei Ziele — Ergebnis
+description: Derselbe core/ übersetzt für Windows, WASM und Android — was gemessen ist und was nur gebaut.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Stufe 4 · Ein Quelltext, drei Ziele — Ergebnis
 
 > **Ja. Derselbe `core/` übersetzt für Windows, Android und WebAssembly und misst auf
