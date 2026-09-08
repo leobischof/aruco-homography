@@ -31,6 +31,28 @@ val arucoVersionCode: Int = providers.gradleProperty("aruco.versionCode").getOrE
 val arucoAbis: List<String> =
     providers.gradleProperty("aruco.abis").getOrElse("arm64-v8a").split(",").map { it.trim() }
 
+/**
+ * Der Schluessel fuer den Release-Bau - als PFAD herein, nie als Datei im Repo.
+ *
+ * Ohne Signatur liefert `assembleRelease` ein unsigniertes APK, und das laesst
+ * Android nicht installieren. Mit dem Debugschluessel signiert waere es kein
+ * Release-Bau mehr, sondern ein Debug-Bau unter anderem Namen.
+ *
+ * `./dev.ps1 build-apk-release` legt den Schluessel beim ersten Mal unter
+ * _toolchain/aruco-signing/ an und reicht ihn hier herein. Fehlen die Angaben,
+ * bleibt die Signatur leer und der Release-Bau bricht mit Gradles eigener
+ * Meldung ab - besser als ein APK, das erst auf dem Geraet auffaellt.
+ *
+ * **Das Kennwort kommt aus der UMGEBUNG, der Rest aus Gradle-Eigenschaften.**
+ * Eine Gradle-Eigenschaft steht in der Befehlszeile, und die Befehlszeile eines
+ * laufenden Vorgangs kann auf diesem Rechner jeder lesen. Pfad und Alias sind
+ * dort harmlos; das Kennwort geht deshalb den anderen Weg. Denselben nimmt
+ * `keytool -storepass:env` beim Anlegen.
+ */
+val arucoKeystore: String? = providers.gradleProperty("aruco.keystore").orNull
+val arucoKeyAlias: String? = providers.gradleProperty("aruco.keyAlias").orNull
+val arucoKeystorePassword: String? = providers.environmentVariable("ARUCO_KEYSTORE_PASSWORD").orNull
+
 android {
     namespace = "com.bischofsnowboards.aruco"
     compileSdk = 35
@@ -56,12 +78,36 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        create("aruco") {
+            if (arucoKeystore != null) {
+                storeFile = File(arucoKeystore)
+                storePassword = arucoKeystorePassword
+                keyAlias = arucoKeyAlias
+                keyPassword = arucoKeystorePassword
+                // v1 dazu, weil minSdk 24 ist: v2 gilt ab Android 7, und ein
+                // Geraet mit Android 5 oder 6 pruefte sonst gar keine Signatur
+                // und wiese das APK ab.
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Kein Schrumpfen: es gibt keine Bibliothek, die sich lohnte, und
             // R8 auf einer WebView-Huelle mit JNI-Namen ist eine Fehlerquelle
             // ohne Gegenwert. Der Platz steckt in der .so, nicht im Java.
+            //
+            // Das ist hier keine Bequemlichkeit: R8 benennt um, was es fuer
+            // unerreichbar haelt, und beides ist in dieser App genau das Falsche -
+            // die @JavascriptInterface-Methoden ruft die WebView ueber ihren NAMEN,
+            // und die JNI-Einsprungpunkte findet der Linker ueber ihren NAMEN.
+            // Ohne Geraet liesse sich ein dadurch gebrochener Bau hier nicht
+            // entdecken.
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("aruco")
         }
     }
 
@@ -179,14 +225,27 @@ val gatherWebAssets by tasks.registering(Sync::class) {
 // genau nichts. Die WebView haette eine leere Seite gezeigt, und der Bau haette
 // dazu geschwiegen.
 //
-// Deshalb steht die Abhaengigkeit hier von Hand, an den Merge-Aufgaben (eine je
-// Variante). Ueber den NAMEN und nicht ueber die AGP-Klasse: der Klassenname
+// Deshalb steht die Abhaengigkeit hier von Hand, an jeder Aufgabe, die den
+// Ordner liest. Ueber den NAMEN und nicht ueber die AGP-Klasse: der Klassenname
 // wandert zwischen AGP-Fassungen, das Namensmuster nicht.
+//
+// DIE LINT-AUFGABEN GEHOEREN DAZU, und das faellt erst im Release-Bau auf:
+// lint-vital laeuft auf keiner Debug-Variante, liest aber denselben Ordner, und
+// Gradle 8 haelt einen ungemeldeten Zugriff auf die Ausgabe einer anderen
+// Aufgabe fuer einen Fehler und bricht ab. Der erste `assembleRelease` dieses
+// Projekts ist genau darueber gestolpert - zweimal hintereinander, denn die
+// beiden beteiligten Aufgaben heissen `generateReleaseLintVitalReportModel` und
+// `lintVitalAnalyzeRelease`: einmal gross geschrieben, einmal klein. Deshalb
+// wird hier auf KLEINGESCHRIEBENEN Namen verglichen; ein `contains("Lint")`
+// findet die zweite Aufgabe nicht und sieht trotzdem richtig aus.
 //
 // Und damit dieser Fehler nicht ein drittes Mal still passiert, zaehlt
 // ./dev.ps1 check-apk die Dateien im fertigen APK nach.
 android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("aruco-assets"))
 
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+tasks.matching {
+    val name = it.name.lowercase()
+    (name.startsWith("merge") && name.endsWith("assets")) || name.contains("lint")
+}.configureEach {
     dependsOn(gatherWebAssets)
 }
