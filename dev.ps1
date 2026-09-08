@@ -17,6 +17,8 @@
     ./dev.ps1 run-tests          # Testsuite ausfuehren
     ./dev.ps1 build-core         # C++-Rechenkern bauen
     ./dev.ps1 run-tests-cpp      # dieselbe Testsuite gegen den C++-Kern
+    ./dev.ps1 build-core-wasm    # derselbe Kern fuer den Browser, danach unter Node gemessen
+    ./dev.ps1 build-core-android # derselbe Kern fuer Android (NDK)
     ./dev.ps1 build-markersheet  # Markerblatt-PDF nach out/ schreiben
     ./dev.ps1 build-exe          # Windows-.exe nach dist/ bauen
     ./dev.ps1 build-installer    # Windows-Installer (eine Datei) nach dist/ bauen
@@ -309,6 +311,150 @@ function Invoke-RunTestsCpp {
     }
 }
 
+# --- Kreuzbauten: derselbe core/ fuer Browser und Android ---------------------
+# Der Beleg dazu steht in docs/cpp-migration/stage-4-cross-targets.md. Beide
+# Kommandos brauchen kein vcvars: NDK und Emscripten bringen ihren Uebersetzer
+# mit, gesucht werden muessen nur CMake und Ninja - und die liegen bei den
+# VS-Build-Tools, die dieses Repo ohnehin voraussetzt.
+
+function Get-CMakeAndNinja {
+    $install = Find-VcInstall
+    $tools = [ordered]@{
+        CMake = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+        Ninja = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+    }
+    foreach ($tool in $tools.Values) {
+        if (-not (Test-Path $tool)) { throw "Werkzeug fehlt in $install : $tool" }
+    }
+    return $tools
+}
+
+# Sucht eine Werkzeugkette neben dem Repo, wie Find-OpenCVDir es fuer das
+# Windows-SDK tut. Kein Herunterladen, kein Rateverfahren: entweder sie liegt da,
+# oder es gibt eine Fehlermeldung, die sagt, wo gesucht wurde.
+function Find-Toolchain {
+    param(
+        [Parameter(Mandatory)][string]$EnvVar,
+        [Parameter(Mandatory)][string]$RelativePath,
+        [Parameter(Mandatory)][string]$Marker,
+        [Parameter(Mandatory)][string]$What
+    )
+    $candidates = @()
+    $fromEnv = [Environment]::GetEnvironmentVariable($EnvVar)
+    if ($fromEnv) { $candidates += $fromEnv }
+    $candidates += Join-Path (Split-Path $RepoRoot -Parent) $RelativePath
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path (Join-Path $candidate $Marker)) { return (Resolve-Path $candidate).Path }
+    }
+    throw (@(
+        "$What wurde nicht gefunden (gesucht wurde nach $Marker).",
+        "     Gesucht wurde in `$env:$EnvVar und unter:",
+        ("       {0}" -f (Join-Path (Split-Path $RepoRoot -Parent) $RelativePath))
+    ) -join [Environment]::NewLine)
+}
+
+# Der Kreuzbau ohne Ziel-Python: core/CMakeLists.txt will trotzdem eines wissen,
+# weil die Konstanten und das Fixture-Paket auf DIESEM Rechner erzeugt werden -
+# und zwar mit demselben cv2, das auch die Testsuite liest.
+function Invoke-CrossCmake {
+    param(
+        [Parameter(Mandatory)][string]$What,
+        [Parameter(Mandatory)][string]$BuildDir,
+        [Parameter(Mandatory)][string[]]$Options
+    )
+    $tools = Get-CMakeAndNinja
+    $arguments = @(
+        '-S', $CoreDir, '-B', $BuildDir, '-G', 'Ninja',
+        ('-DCMAKE_MAKE_PROGRAM={0}' -f $tools.Ninja),
+        '-DCMAKE_BUILD_TYPE=Release',
+        ('-DARUCO_HOST_PYTHON={0}' -f $VenvPython)
+    ) + $Options
+
+    Invoke-Native -What "$What (configure)" -Action { & $tools.CMake @arguments }
+    Invoke-Native -What "$What (build)"     -Action { & $tools.CMake --build $BuildDir }
+}
+
+function Invoke-BuildCoreWasm {
+    Confirm-Deps
+
+    $emsdk  = Find-Toolchain -EnvVar 'ARUCO_EMSDK' -RelativePath '_toolchain\emsdk' `
+                             -Marker 'upstream\emscripten\emcc.py' -What 'Das Emscripten-SDK'
+    $opencv = Find-Toolchain -EnvVar 'ARUCO_OPENCV_WASM' -RelativePath '_toolchain\opencv-wasm' `
+                             -Marker 'lib\cmake\opencv5\OpenCVConfig.cmake' `
+                             -What 'Das fuer WASM gebaute OpenCV'
+    $buildDir = Join-Path $CoreDir 'build-wasm'
+
+    Write-Step 'Building the C++ core for WebAssembly (Emscripten)'
+    Write-Host ("     emsdk:  {0}" -f $emsdk)  -ForegroundColor DarkGray
+    Write-Host ("     OpenCV: {0}" -f $opencv) -ForegroundColor DarkGray
+
+    Invoke-CrossCmake -What 'build-core-wasm' -BuildDir $buildDir -Options @(
+        ('-DCMAKE_TOOLCHAIN_FILE={0}' -f (Join-Path $emsdk 'upstream\emscripten\cmake\Modules\Platform\Emscripten.cmake')),
+        ('-DOpenCV_DIR={0}' -f (Join-Path $opencv 'lib\cmake\opencv5'))
+    )
+
+    # Und sofort messen. Ein WASM-Bau, den niemand ausgefuehrt hat, belegt nur,
+    # dass er uebersetzt - und genau das ist die Frage NICHT (Stufe 4).
+    $node = Get-ChildItem (Join-Path $emsdk 'node') -Filter 'node.exe' -Recurse -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $node) { throw "Kein node.exe im emsdk unter $emsdk\node gefunden." }
+
+    Write-Step 'Running the WASM conformance program under Node'
+    # .cjs: sobald eine package.json mit "type": "module" im Wurzelverzeichnis
+    # liegt, faerbt sie jede .js-Datei darunter zum ES-Modul ein - Emscriptens
+    # Lader ist aber CommonJS. Warum die Endung das loest: core/CMakeLists.txt.
+    Invoke-Native -What 'conformance (wasm)' -Action {
+        & $node.FullName (Join-Path $buildDir 'aruco_conformance.cjs') `
+                         (Join-Path $buildDir 'fixtures\fixtures.txt') @Rest
+    }
+
+    Write-Ok "Fertig: $buildDir"
+    # Der Browser-Bau liegt daneben und laesst sich nicht von hier aus starten -
+    # er braucht einen HTTP-Ursprung. Also wenigstens sagen, wie.
+    Write-Host '     Im Browser nachmessen: dieses Verzeichnis ausliefern' -ForegroundColor DarkGray
+    Write-Host ("       {0} -m http.server 8013 --directory ""{1}""" -f $VenvPython, $buildDir) -ForegroundColor DarkGray
+    Write-Host '       und http://127.0.0.1:8013/conformance_web.html oeffnen' -ForegroundColor DarkGray
+}
+
+function Invoke-BuildCoreAndroid {
+    Confirm-Deps
+
+    # Vorgabe arm64-v8a: das ist die ABI jedes Handys, das noch verkauft wird.
+    # Die anderen drei baut man mit  ./dev.ps1 build-core-android x86_64
+    $abi = if ($Rest.Count -gt 0) { $Rest[0] } else { 'arm64-v8a' }
+
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'ndk' -What 'Das Android-SDK'
+    # Die NDK-Fassung nicht festschreiben - hier steht sonst in einem halben Jahr
+    # eine Zahl, die es auf keinem Rechner mehr gibt.
+    $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $ndk) { throw "Kein NDK mit android.toolchain.cmake unter $sdk\ndk gefunden." }
+
+    $opencv = Find-Toolchain -EnvVar 'ARUCO_OPENCV_ANDROID' -RelativePath '_toolchain\opencv-android' `
+                             -Marker 'OpenCV-android-sdk\sdk\native\jni\OpenCVConfig.cmake' `
+                             -What 'Das OpenCV-Android-SDK'
+    $buildDir = Join-Path $CoreDir "build-android-$abi"
+
+    Write-Step "Building the C++ core for Android ($abi, NDK $($ndk.Name))"
+    Write-Host ("     NDK:    {0}" -f $ndk.FullName) -ForegroundColor DarkGray
+    Write-Host ("     OpenCV: {0}" -f $opencv)       -ForegroundColor DarkGray
+
+    Invoke-CrossCmake -What 'build-core-android' -BuildDir $buildDir -Options @(
+        ('-DCMAKE_TOOLCHAIN_FILE={0}' -f (Join-Path $ndk.FullName 'build\cmake\android.toolchain.cmake')),
+        ('-DANDROID_ABI={0}' -f $abi),
+        # 24 und nicht 21: das OpenCV-Android-SDK setzt minSdk 21, aber 24 ist die
+        # unterste Fassung, die noch Sicherheitsaktualisierungen bekommt.
+        '-DANDROID_PLATFORM=android-24',
+        ('-DOpenCV_DIR={0}' -f (Join-Path $opencv 'OpenCV-android-sdk\sdk\native\jni'))
+    )
+
+    Write-Ok "Fertig: $buildDir"
+    Write-Warn 'Ungeprueft: auf diesem Rechner laeuft kein Android. Der Bau bindet, gemessen ist er nicht.'
+}
+
 function Invoke-BuildMarkersheet {
     Confirm-Deps
     Write-Step 'Building the A4 marker sheet PDF'
@@ -484,6 +630,8 @@ function Show-Help {
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest, Python-Kern)'
     Write-Cmd 'build-core'        'C++-Rechenkern nach core/build/ bauen (CMake + MSVC + OpenCV-SDK)'
     Write-Cmd 'run-tests-cpp'     'C++-Pruefstand und DIESELBE Testsuite gegen den C++-Kern (ARUCO_CORE=cpp)'
+    Write-Cmd 'build-core-wasm'   'Denselben Kern fuer den Browser bauen (Emscripten) und unter Node messen'
+    Write-Cmd 'build-core-android' 'Denselben Kern fuer Android bauen (NDK; Vorgabe arm64-v8a) - baut nur, misst nicht'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
     Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
@@ -502,6 +650,8 @@ switch ($Command.ToLowerInvariant()) {
     'run-tests-js'      { Invoke-RunTestsJs }
     'build-core'        { Invoke-BuildCore }
     'run-tests-cpp'     { Invoke-RunTestsCpp }
+    'build-core-wasm'   { Invoke-BuildCoreWasm }
+    'build-core-android' { Invoke-BuildCoreAndroid }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
     'build-installer'   { Invoke-BuildInstaller }

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!--
+  Derselbe Pruefstand wie aruco_conformance, nur in einem echten Browser.
+
+  Warum es diese Seite gibt: der Node-Lauf belegt, dass das WASM rechnet, aber
+  das ZIEL ist der Browser. Zwischen beiden liegen eine andere Sandbox, eine
+  andere Speicherverwaltung und ein anderer Dateiweg - alles Dinge, die man
+  nachmisst statt sie zu vermuten.
+
+  Aufruf: das Bauverzeichnis core/build-wasm/ mit einem beliebigen HTTP-Server
+  ausliefern (file:// geht nicht, WASM braucht einen Ursprung) und diese Seite
+  oeffnen. Der Ausgang steht danach in #status und im Titel, die Ausgabe in #out.
+-->
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>aruco_conformance (WASM, Browser)</title>
+  <style>
+    body { font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; margin: 1rem; }
+    #status { font-weight: 700; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <p id="status">laeuft…</p>
+  <pre id="out"></pre>
+
+  <script src="aruco_conformance_web.js"></script>
+  <script>
+    // Der Rueckgabewert von main(): 0 bestanden, 1 eine Ecke ausserhalb der
+    // Toleranz, 2 falscher Aufruf, 3 Ausnahme. Er landet zusaetzlich im
+    // Dokumenttitel, damit ein Werkzeug ohne Zugriff auf das DOM ihn ablesen
+    // kann, ohne die Ausgabe zu zerlegen.
+    const lines = [];
+    createConformance({
+      print: (text) => lines.push(text),
+      printErr: (text) => lines.push('[stderr] ' + text),
+    }).then((module) => {
+      let code;
+      try {
+        code = module.callMain(['/fixtures/fixtures.txt', '--ecken']);
+      } catch (error) {
+        lines.push('[ausnahme] ' + error);
+        code = -1;
+      }
+      document.getElementById('out').textContent = lines.join('\n');
+      document.getElementById('status').textContent = 'exit ' + code;
+      document.title = 'exit ' + code;
+    }).catch((error) => {
+      document.getElementById('status').textContent = 'Laden fehlgeschlagen: ' + error;
+      document.title = 'exit -2';
+    });
+  </script>
+</body>
+</html>
