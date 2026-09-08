@@ -195,6 +195,17 @@ heutige, und der Markenstreifen auf jedem Blatt steht.
 Desktop (webview), Android (WebView + NDK), Browser. Erst hier wird aus dem Kern
 ein Produkt auf drei Zielen.
 
+**Die Werkzeugketten stehen bereits — vorgezogen und belegt:
+[`stage-4-cross-targets.md`](stage-4-cross-targets.md).** Derselbe `core/` übersetzt
+für alle drei Ziele, ohne ein einziges Ziel-`ifdef`; ausgeführt und Ecke für Ecke
+verglichen sind Windows und WASM (unter Node **und** in Chrome). Sie stimmen bis auf
+**5 von 64 Ecken zu je einem `float32`-ULP** überein — 0,000122 px, das ist
+0,000048 mm und 6100-mal unter der Toleranz. **Android bindet für alle vier ABIs, ist
+aber ungemessen:** auf dem Entwicklungsrechner gibt es weder Gerät noch Emulator.
+
+Vorgezogen wurde das, weil es die Frage ist, für die der ganze Umzug betrieben wird.
+Wäre sie erst hier gestellt worden, stünden die Stufen 2 und 3 auf einer Annahme.
+
 ### Stufe 5 · Aufräumen — Tage
 
 `app/` → `py/`. **Zuletzt**, nicht zuerst: der Umzug bricht `dev.ps1`, die
@@ -239,9 +250,17 @@ außerhalb von OpenCV ist `scipy.optimize.least_squares` an genau zwei Stellen
 ## 7 · Woran es scheitern könnte
 
 - ~~**`opencv.js` mit `aruco` lässt sich nicht bauen**~~ → **erledigt** (Stufe 0). An
-  seine Stelle treten zwei kleinere: der benutzte Bau ist das Werk *einer* Person und
-  gehört für einen Auslieferungsstand **eingefroren und mitgeliefert**, nicht bei jedem
-  Bau frisch aus npm gezogen; und 2,7 MB liegen vor der ersten Messung.
+  seine Stelle traten zwei kleinere — ~~der benutzte Bau ist das Werk *einer* Person und
+  gehört für einen Auslieferungsstand eingefroren und mitgeliefert, nicht bei jedem
+  Bau frisch aus npm gezogen~~; ~~und 2,7 MB liegen vor der ersten Messung~~ —,
+  **und auch die sind erledigt** (Stufe 4), weil `@techstark/opencv-js`
+  **gar nicht mehr gebraucht wird**. Der C++-Kern wird *in* das wasm hineinübersetzt;
+  er ruft OpenCV direkt auf und braucht dessen JavaScript-Bindungen nicht. Nötig sind nur
+  statische Bibliotheken, und die baut man selbst — sechs Module, **sieben Minuten**,
+  ohne Docker. Damit hängt nichts mehr an einem fremden npm-Paket, und kleiner ist es
+  auch: das wasm des Prüfstands wiegt 2,38 MB roh und 603 KB über Brotli, gegen 13,3 MB
+  und 2,67 MB — und darin steckt sogar noch der Prüfstand selbst. Ein hineinübersetzter
+  Kern nimmt eben nur mit, was er aufruft.
 - **Zwei Befunde aus Stufe 0, die Stufe 2 jetzt schon binden:**
   - **`imgcodecs` ist im WASM-Bau abgeschaltet** — kein `imread`, `imencode`,
     `imwrite`. Der gemeinsame C++-Kern **darf sie nicht anfassen**: er nimmt einen
