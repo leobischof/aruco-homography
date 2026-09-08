@@ -1,6 +1,7 @@
 package com.bischofsnowboards.aruco;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -68,6 +69,7 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_TAKE_PHOTO = 2;
     private static final int REQUEST_SAVE_PDF = 3;
     private static final int REQUEST_FILE_CHOOSER = 4;
+    private static final int REQUEST_CHOOSER_CAPTURE = 5;
 
     private WebView webView;
     private WebViewAssetLoader assetLoader;
@@ -118,6 +120,15 @@ public final class MainActivity extends Activity {
     private byte[] pendingPdf;
     private ValueCallback<Uri[]> pendingFileChooser;
     private File pendingCapture;
+
+    /**
+     * Dieselbe Datei wie {@link #pendingCapture}, als content-URI.
+     *
+     * <p>Die WebView bekommt sie zurueckgereicht und baut daraus ihr File-Objekt. Eine
+     * {@code file://}-URI taugt dafuer nicht: Android verbietet sie nach draussen, und
+     * die WebView zaehlt hier als draussen.
+     */
+    private Uri pendingCaptureUri;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -379,12 +390,18 @@ public final class MainActivity extends Activity {
         }
 
         /**
-         * Das {@code <input type="file">} der unveraenderten Oberflaeche.
+         * Die beiden {@code <input type="file">} der unveraenderten Oberflaeche.
          *
          * <p>Ohne diese Methode tut ein Dateifeld in einer WebView schlicht nichts - kein
          * Dialog, keine Meldung. Die gewaehlte URI wird hier zusaetzlich gemerkt: die
          * Bruecke laedt das Bild daraus selbst, statt es als Base64 durch JavaScript
          * zurueckzubekommen.
+         *
+         * <p><b>{@code capture} entscheidet, welcher Dialog aufgeht.</b> Ein Browser auf dem
+         * Handy zeigt bei einem Bildfeld ein Blatt mit Kamera UND Galerie; hinter einer
+         * WebView gibt es das nicht, hier waehlt diese Methode. Ohne die Abfrage von
+         * {@link FileChooserParams#isCaptureEnabled()} liefe auch der Kamera-Knopf im
+         * Dateiwaehler - das Attribut stuende in der Seite und bewirkte nichts.
          */
         @Override
         public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
@@ -394,11 +411,17 @@ public final class MainActivity extends Activity {
             }
             pendingFileChooser = callback;
             try {
-                startActivityForResult(imagePickerIntent(), REQUEST_FILE_CHOOSER);
+                if (params.isCaptureEnabled()) {
+                    startActivityForResult(captureIntent(), REQUEST_CHOOSER_CAPTURE);
+                } else {
+                    startActivityForResult(imagePickerIntent(), REQUEST_FILE_CHOOSER);
+                }
                 return true;
             } catch (Exception failure) {
                 pendingFileChooser = null;
-                Log.w(TAG, "Kein Dateidialog verfuegbar", failure);
+                pendingCapture = null;
+                pendingCaptureUri = null;
+                Log.w(TAG, "Kein Dialog verfuegbar", failure);
                 return false;
             }
         }
@@ -422,22 +445,43 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Die Kamera-App bitten, in unseren Cache zu schreiben.
+     *
+     * <p>Merkt sich das Ziel in {@link #pendingCapture} und {@link #pendingCaptureUri} -
+     * {@code onActivityResult} bekommt bei {@code EXTRA_OUTPUT} kein {@code Intent} zurueck
+     * und muesste sonst raten, wohin geschrieben wurde.
+     *
+     * <p><b>Die URI steht zusaetzlich als ClipData.</b> {@code FLAG_GRANT_WRITE_URI_PERMISSION}
+     * wirkt auf das, was das System im Intent als URI FINDET - und das ist {@code getData()}
+     * und die ClipData, nicht ein Extra. Manche Kamera-App kommt ohne den Umweg trotzdem an
+     * die Datei, andere liefern ein leeres Bild; mit der ClipData ist die Erlaubnis
+     * eindeutig erteilt.
+     */
+    private Intent captureIntent() throws IOException {
+        File directory = new File(getCacheDir(), "captures");
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IOException("Cache-Verzeichnis nicht anlegbar");
+        }
+        pendingCapture = new File(directory, "capture.jpg");
+        pendingCaptureUri = FileProvider.getUriForFile(this, getPackageName() + ".files",
+                pendingCapture);
+
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCaptureUri);
+        intent.setClipData(ClipData.newRawUri("", pendingCaptureUri));
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        return intent;
+    }
+
     void takePhoto(long callId) {
         pendingCallId = callId;
         try {
-            File directory = new File(getCacheDir(), "captures");
-            if (!directory.exists() && !directory.mkdirs()) {
-                resolveError(callId, "Cache-Verzeichnis nicht anlegbar");
-                return;
-            }
-            pendingCapture = new File(directory, "capture.jpg");
-            Uri target = FileProvider.getUriForFile(this, getPackageName() + ".files",
-                    pendingCapture);
-            Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, target);
-            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            startActivityForResult(intent, REQUEST_TAKE_PHOTO);
+            startActivityForResult(captureIntent(), REQUEST_TAKE_PHOTO);
         } catch (Exception failure) {
+            pendingCapture = null;
+            pendingCaptureUri = null;
             resolveError(callId, "Keine Kamera-App gefunden: " + failure.getMessage());
         }
     }
@@ -646,6 +690,31 @@ public final class MainActivity extends Activity {
                 pendingFileChooser = null;
                 if (callback != null) {
                     callback.onReceiveValue(chosen == null ? null : new Uri[] {chosen});
+                }
+                return;
+            }
+            case REQUEST_CHOOSER_CAPTURE: {
+                // Der Gegenpart zu REQUEST_FILE_CHOOSER: die Antwort geht an die
+                // WebView und NICHT an eine callId - die Seite hat ein Dateifeld
+                // bedient und wartet auf dessen `change`, nicht auf die Bruecke.
+                File captured = pendingCapture;
+                Uri target = pendingCaptureUri;
+                pendingCapture = null;
+                pendingCaptureUri = null;
+
+                // Die Laenge und nicht nur RESULT_OK: bricht die Kamera-App nach dem
+                // Anlegen der Datei ab, bleibt eine leere zurueck, und die Oberflaeche
+                // meldete "Bild nicht lesbar" statt "abgebrochen".
+                boolean written = resultCode == RESULT_OK && captured != null
+                        && captured.length() > 0L;
+                if (written) {
+                    pickedPhotoUri = target;
+                }
+
+                ValueCallback<Uri[]> callback = pendingFileChooser;
+                pendingFileChooser = null;
+                if (callback != null) {
+                    callback.onReceiveValue(written ? new Uri[] {target} : null);
                 }
                 return;
             }

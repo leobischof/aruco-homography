@@ -118,25 +118,45 @@
       <span data-i18n="ui.steps.upload.title"></span></h2>
 
     <!--
+      ZWEI Dateifelder, dieselbe Verarbeitung - sie unterscheiden sich in genau
+      einem Attribut:
+
+        #file    ohne capture  -> Galerie und Dateien, also auch ein Foto, das
+                                  schon gemacht ist.
+        #camera  capture       -> die Kamera-App, ohne Umweg ueber ein Blatt.
+
+      Ein einzelnes Feld kann das nicht beides. MIT capture ist die Galerie
+      gesperrt, OHNE capture kommt in dieser App gar keine Kamera in Sicht:
+      MainActivity.onShowFileChooser oeffnet ACTION_OPEN_DOCUMENT, einen reinen
+      Dateiwaehler. Das Auswahlblatt mit Kamera UND Galerie, das ein Browser auf
+      dem Handy zeigt, gibt es hinter einer WebView nicht.
+
       Die Beschriftung eines <input type="file"> malt der BROWSER, in SEINER
       Sprache - "Datei auswaehlen" stand auch in der englischen Oberflaeche da,
-      und kein Attribut aendert daran etwas. Deshalb ist die Eingabe nur noch
+      und kein Attribut aendert daran etwas. Deshalb sind beide Eingaben nur noch
       fuer Tastatur und Hilfsmittel da (.sr-only, NICHT hidden: das naehme sie
-      aus der Tabulatorreihenfolge), und sichtbar ist das Label, dessen Text aus
+      aus der Tabulatorreihenfolge), und sichtbar sind die Labels, deren Text aus
       dem Katalog kommt. Den Wurf einer Datei nimmt js/file-picker.js entgegen.
 
-      Ohne capture-Attribut: das Auswahlblatt des Handys bietet dann Kamera UND
-      Galerie an. Mit capture="environment" waere die Galerie gesperrt, und ein
-      schon geschossenes Foto liesse sich nicht mehr hochladen.
+      Die Labels sind GESCHWISTER und nicht ineinander verschachtelt: ein Klick
+      auf ein Label in einem Label loeste beide aus, und es gingen zwei Dialoge
+      auf.
     -->
-    <input class="file-input sr-only" type="file" id="file" accept="image/*,.heic,.heif">
-    <label class="file-drop" id="file-drop" for="file">
-      <span class="btn btn-secondary" data-i18n="ui.steps.upload.choose"></span>
-      <!-- Ohne data-i18n: hier steht der Dateiname, den applyTranslations()
-           sonst beim naechsten Sprachwechsel ueberschriebe. -->
-      <span class="file-name" id="file-name"></span>
-      <span class="file-drop-hint" data-i18n="ui.steps.upload.drop_hint"></span>
-    </label>
+    <div class="file-choice">
+      <input class="file-input sr-only" type="file" id="file" accept="image/*,.heic,.heif">
+      <label class="file-drop" id="file-drop" for="file">
+        <span class="btn btn-secondary" data-i18n="ui.steps.upload.choose"></span>
+        <!-- Ohne data-i18n: hier steht der Dateiname, den applyTranslations()
+             sonst beim naechsten Sprachwechsel ueberschriebe. -->
+        <span class="file-name" id="file-name"></span>
+        <span class="file-drop-hint" data-i18n="ui.steps.upload.drop_hint"></span>
+      </label>
+
+      <input class="file-input sr-only" type="file" id="camera" accept="image/*"
+             capture="environment">
+      <label class="btn btn-secondary file-camera" id="file-camera" for="camera"
+             data-i18n="ui.steps.upload.camera"></label>
+    </div>
 
     <p class="hint" data-i18n="ui.steps.upload.hint"></p>
     <div class="info" id="upload-info" role="status" hidden></div>
