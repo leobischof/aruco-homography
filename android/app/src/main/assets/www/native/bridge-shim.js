@@ -5,7 +5,7 @@
  * (WebViewCompat.addDocumentStartJavaScript). Genau dadurch bleibt
  * app/static/index.html Byte fuer Byte unveraendert.
  *
- * **FUENF AUFGABEN, und keine sechste.**
+ * **SECHS AUFGABEN, und keine siebte.**
  *
  *  1. `window.ARUCO_TRANSPORT = "local"` setzen. Das ist die ganze Umschaltung:
  *     app/static/js/api.js kennt zwei Betriebsarten, und in der oertlichen holt
@@ -33,6 +33,12 @@
  *     die vier Zahlen landen als CSS-Variablen auf `:root`. Die Stilvorlagen
  *     rechnen damit - dieselben Variablen, die im Browser aus `env()` kommen.
  *     Rechnen tut auch hier niemand: die Zahlen kommen fertig aus Java.
+ *
+ *  6. Den Weg zur Geraeteseite freischalten. `/native/index.html` liegt allein
+ *     im APK - im Browser und in der .exe gibt es sie nicht. Der Knopf dafuer
+ *     steht deshalb verborgen in app/static/index.html, und nur diese Datei
+ *     macht ihn sichtbar. Sie ist die einzige, die weiss, auf welchem Ziel sie
+ *     laeuft; die Oberflaeche soll es weiterhin nicht wissen.
  *
  * **Was hier NICHT passiert: rechnen.** Kein Millimeter entsteht in dieser
  * Datei. Sie schaltet um, sie packt um, und sie reicht durch.
@@ -282,6 +288,39 @@
                     name, (Number.isFinite(value) && value > 0 ? value : 0) + "px");
             });
     };
+
+    // --- 6 · Der Weg zur Geraeteseite -----------------------------------------
+    //
+    // Die Oberflaeche bringt den Knopf verborgen mit (Fusszeile, id="device-page")
+    // und ruehrt ihn nicht an - sie weiss nicht, dass es Android gibt, und das
+    // soll so bleiben. Hier wird er sichtbar und bekommt sein Ziel.
+    //
+    // Warum nicht der Knopf selbst ein <a href="/native/index.html">? Weil den
+    // Ursprung der Java-Teil kennt (MainActivity.ORIGIN). Ein zweiter Ort, an dem
+    // die Adresse steht, ist ein Ort, an dem sie irgendwann abweicht.
+    //
+    // Der Beschriftungstext kommt aus dem gemeinsamen Katalog (data-i18n im
+    // Markup) - i18n.js uebersetzt ihn wie jedes andere Element, verborgen oder
+    // nicht. Hier steht deshalb kein einziges Wort Oberflaeche.
+    function wireDevicePage() {
+        // Auf der Geraeteseite selbst gibt es den Knopf nicht. Kein Sonderfall:
+        // die Abfrage geht ins Leere und es passiert nichts.
+        const button = document.getElementById("device-page");
+        if (!button) return;
+        button.hidden = false;
+        button.addEventListener("click", () => window.__aruco.navigate("/native/index.html"));
+    }
+
+    // Auf dem Geraet laeuft diese Datei VOR dem Dokument, also ist readyState
+    // hier immer "loading" und der Horcher der einzige Weg. Die zweite Haelfte
+    // ist trotzdem noetig: ein Prueflauf spielt den Shim in eine fertig geladene
+    // Seite ein, und dort kaeme DOMContentLoaded nie wieder. Ein Shim, den man
+    // nur auf dem Geraet erproben kann, wird nirgends erprobt.
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wireDevicePage);
+    } else {
+        wireDevicePage();
+    }
 
     /** Den Inhalt einer blob:-Adresse holen und dem System uebergeben. */
     function deliver(url, filename) {

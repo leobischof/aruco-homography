@@ -188,7 +188,22 @@ public final class MainActivity extends Activity {
 
         installBridgeShim();
         watchWindowInsets();
-        webView.loadUrl(ORIGIN + "/native/index.html");
+        // Die OBERFLAECHE, nicht die Geraeteseite.
+        //
+        // Bis 0.1.5-alpha stand hier "/native/index.html". Das war richtig,
+        // solange die Frage offen war, ob der native Kern auf einem Telefon
+        // ueberhaupt laeuft - dann ist die Werkbank die Startseite. Die Frage ist
+        // beantwortet, die App wird benutzt, und wer sie oeffnet, will das
+        // Werkstueck vermessen und nicht die Bibliotheksfassung lesen. Gemeldet
+        // wurde es genau so: "why is it that if I download the non debug version,
+        // that I'm nontheless greeted with this?" - und es lag nie am Debug-Bau,
+        // beide Fassungen luden diese Zeile.
+        //
+        // Die Geraeteseite bleibt: der Fussknopf der Oberflaeche fuehrt hin
+        // (native/bridge-shim.js schaltet ihn frei), die Zurueck-Taste fuehrt
+        // zurueck, und ihre Antworten braucht man genau dann, wenn etwas nicht
+        // stimmt.
+        webView.loadUrl(ORIGIN + "/index.html");
     }
 
     /**
