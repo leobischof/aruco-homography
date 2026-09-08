@@ -1,3 +1,11 @@
+---
+title: Umzug auf einen C++-Rechenkern — Fahrplan
+description: Warum C++, wie die Architektur aussieht, welche Stufen es gibt und wie das Ergebnis ausgeliefert wird.
+audience: developer
+status: current
+updated: 2026-09-08
+---
+
 # Umzug auf einen C++-Rechenkern — Fahrplan
 
 > **Stand:** 2026-09-07 · **Entschieden**, noch nicht begonnen.
@@ -137,20 +145,36 @@ Python herausbekommt. Sonst erbte C++ jede Schiefe von Python und niemand sähe 
 Jede Stufe liefert etwas, das für sich funktioniert und geprüft werden kann. Keine
 Stufe lässt den ausgelieferten Stand kaputt zurück.
 
-### Stufe 0 · Das größte Risiko zuerst anfassen — Tage
+### Stufe 0 · ✅ ERLEDIGT — ArUco mit Subpixel läuft im Browser
 
-**`opencv.js` mit `aruco` bauen und im Browser laufen sehen.**
+**Ergebnis: [`stage-0-opencv-js.md`](stage-0-opencv-js.md).** Der Browser findet
+dieselben Ecken wie Python, auf **ein Millionstel Pixel** genau (größter Unterschied
+1,2 · 10⁻⁴ px = ein `float32`-ULP). `CORNER_REFINE_SUBPIX` wird wirklich ausgeführt,
+belegt dadurch, dass es ohne den Schalter **4,3-mal** schlechter wird — im Browser wie
+in Python.
 
-Der Standardbau von `opencv.js` enthält **kein** `aruco` — das Modul steckt in
-`opencv_contrib`. Ein eigener Emscripten-Bau ist möglich und wird durchweg als
-fummelig beschrieben; der einzige fertige, den es gibt, steht auf OpenCV **4.5.3**
-und ist damit alt (dieser Code nutzt die `ArucoDetector`-API ab 4.7).
+**Die Annahme, auf der diese Stufe stand, war falsch, und zwar zugunsten des Projekts.**
+Hier stand, `aruco` stecke in `opencv_contrib` und brauche einen fummeligen eigenen
+Emscripten-Bau. Das galt bis OpenCV 4.6. **Seit 4.7 liegt ArUco im Hauptbaum, im Modul
+`objdetect`** — nachgeprüft an beiden Enden: das OpenCV 5.0.0 dieses Projekts baut
+`… objdetect …` und **kein einziges** contrib-Modul, hat aber ein vollständiges
+`cv2.aruco`.
 
-**Bis das läuft, ist das Web-Ziel eine Hoffnung und kein Plan.** Deshalb steht es
-vorn: scheitert es, ändert sich der Zuschnitt — und zwar in Woche 1 statt in Woche 8.
+Es war nie ein contrib-Problem, sondern ein **Bindungs**-Problem: der offizielle
+`opencv.js` baut den Code mit, exportiert die ArUco-Klassen aber nicht. Wer die
+Whitelist erweitert, bekommt sie — und das hat jemand bereits getan.
 
-*Fertig, wenn:* ein Browser eine der eingefrorenen Szenen lädt, vier Marker findet
-und dieselben Ecken meldet wie Python, innerhalb der Toleranz.
+Benutzt wurde **`@techstark/opencv-js@5.0.0-release.1`**: OpenCV **5.0.0**, dieselbe
+Hauptversion wie der Desktop. Kein Docker, kein emsdk, kein eigener Bau. **Die
+teuerste Stufe des Fahrplans war ein `npm pack`.**
+
+13,3 MB roh, 2,67 MB über Brotli, eine Datei ohne separate `.wasm`, in 111 ms
+einsatzbereit. Erkennung 3,8–5,7× langsamer als nativ (einkernig, ohne SIMD) — für ein
+Handyfoto **unter einer Sekunde**.
+
+**Was der Spike ausdrücklich nicht zeigt:** nur die *Erkennung* wurde geprüft, gegen
+eine *synthetische* Szene, in *einem* Browser. Homographie, Kamerazerlegung,
+Dickenkorrektur und `least_squares → cv::LevMarq` sind unberührt.
 
 ### Stufe 1 · `shared/` — eine Wahrheit, sprachneutral — Tage
 
@@ -167,17 +191,63 @@ lauffähig und liefert weiter aus.
 
 *Fertig, wenn:* die vorhandene Python-Suite gegen den C++-Kern grün ist.
 
-### Stufe 3 · PDF nach JavaScript — Wochen
+### Stufe 3 · ✅ PORTIERT — PDF nach JavaScript
 
-`app/pdf/` nach `web/pdf/`. Die Invarianten 1, 2 und 3 neu belegen.
+`app/pdf/` liegt als `web/pdf/` vor (`pdf-lib`, reines ESM). Alle **33** PDF-Prüfungen
+sind mit `ARUCO_PDF=js` grün — und die ganze Suite mit ihren 174 Prüfungen dazu.
+`.\dev.ps1 run-tests-pdf-js` fährt sie so.
 
-*Fertig, wenn:* ein in JS gebautes PDF Seite für Seite dieselben Maße hat wie das
-heutige, und der Markenstreifen auf jedem Blatt steht.
+Was damit belegt ist: die Invarianten 1, 3 und 7 gelten auch im neuen Bau, an
+denselben Prüfungen und mit denselben Toleranzen. Die aus beiden PDFs **gelesenen**
+Platzierungen stimmen auf 0,00005 mm überein, die Marke steht auf jedem Blatt, und
+ein aus JavaScript gebautes Markerblatt liefert durch den echten Detektor dieselben
+Kantenlängen und Mittelpunktabstände wie das bisherige (auf vier Nachkommastellen).
+`web/pdf/` wurde ausserdem in einem echten Browser ausgeführt.
+
+Was damit **nicht** belegt ist: die Umstellung. Ausgeliefert wird weiter der
+ReportLab-Bau (`ARUCO_PDF` steht auf `python`), und die eine gemessene Abweichung —
+ein halbes Gerätepixel beim **Rastern** gekachelter Seiten, weil der Renderer
+Bildkanten rundet — steht in `web/pdf/draw.js` mit ihrer Messreihe. Der Umbau der
+Oberfläche auf den eigenen PDF-Bau gehört zu Stufe 4.
 
 ### Stufe 4 · Die Hüllen — Wochen
 
 Desktop (webview), Android (WebView + NDK), Browser. Erst hier wird aus dem Kern
 ein Produkt auf drei Zielen.
+
+**Windows ist fertig und belegt:
+[`stage-4-windows-exe.md`](stage-4-windows-exe.md).** Die gebaute `.exe` misst mit
+dem C++-Kern — nicht behauptet, sondern gezeigt: nimmt man ihr die `aruco_core.pyd`
+weg, startet sie nicht mehr, und ihre Messung ist Zahl für Zahl dieselbe wie die des
+Quellbaums mit `ARUCO_CORE=cpp` (alle 32 Eckkoordinaten, rms 0,093 px). Der Preis
+steht dort ebenfalls: der ausgelieferte Ordner wächst von rund 308 MB auf 388 MB,
+weil `opencv_world500.dll` mit muss, solange `cv2` für alles außer dem Detektor
+gebraucht wird.
+
+**Die Werkzeugketten stehen bereits — vorgezogen und belegt:
+[`stage-4-cross-targets.md`](stage-4-cross-targets.md).** Derselbe `core/` übersetzt
+für alle drei Ziele, ohne ein einziges Ziel-`ifdef`; ausgeführt und Ecke für Ecke
+verglichen sind Windows und WASM (unter Node **und** in Chrome). Sie stimmen bis auf
+**5 von 64 Ecken zu je einem `float32`-ULP** überein — 0,000122 px, das ist
+0,000048 mm und 6100-mal unter der Toleranz. **Android bindet für alle vier ABIs, ist
+aber ungemessen:** auf dem Entwicklungsrechner gibt es weder Gerät noch Emulator.
+
+Vorgezogen wurde das, weil es die Frage ist, für die der ganze Umzug betrieben wird.
+Wäre sie erst hier gestellt worden, stünden die Stufen 2 und 3 auf einer Annahme.
+
+**Android rechnet die ganze Kette: [`stage-4-android.md`](stage-4-android.md).** Eine
+WebView liefert `app/static/` **unverändert** aus, eine JNI-Schicht bindet denselben
+`core/`, und `libaruco_core.so` ist für alle vier ABIs 16-KB-ausgerichtet. Foto,
+Marker, Ausgleich, Kamerapose, Entzerren, Schablonen-PDF — alles nativ, ohne Server
+und ohne Netzberechtigung. `web/vision/` hat dafür **drei neue Dateien** bekommen und
+**keine einzige geänderte**: eine Importkarte tauscht `core.js` gegen eine Fassung,
+die statt zu WebAssembly zu JNI greift. Die JNI-Schicht ist auf einer echten JVM
+**gemessen** — 18 Größen je Prüfszene, bitgenau gleich zu demselben Kern durch
+pybind11, die Rasterbilder per SHA-256. **Auf einem Telefon ist weiterhin nichts
+gelaufen**; die JavaScript-Hälfte fährt stattdessen aus dem gebauten APK in einem
+echten Chromium bis zum nachgemessenen PDF. Und ein Telefon kann den Prüfstand aus
+`shared/fixtures/` selbst fahren — damit lässt sich der Satz „Android ist ungemessen"
+in dreißig Sekunden streichen.
 
 ### Stufe 5 · Aufräumen — Tage
 
@@ -217,16 +287,43 @@ Was den Aufwand kleiner macht, als er klingt: der Python-Kern *ruft* im Wesentli
 nur OpenCV auf — 46 verschiedene `cv2.*`-Symbole. Die Portierung schreibt Aufrufe um,
 die es schon gibt; sie erfindet keinen Algorithmus. Die einzige Zahlenmethode
 außerhalb von OpenCV ist `scipy.optimize.least_squares` an genau zwei Stellen
-(`solve.py:179` und `:199`) — daraus wird `cv::LMSolver` oder Ceres.
+(`solve.py:179` und `:199`) — daraus wird `cv::LevMarq` (in OpenCV 5 im Modul
+`geometry`; die Klasse hieß bis OpenCV 4 `cv::LMSolver` und lag in `calib3d`) oder Ceres.
 
 ## 7 · Woran es scheitern könnte
 
-- **`opencv.js` mit `aruco` lässt sich nicht bauen** → Web-Ziel muss anders gelöst
-  werden. Deshalb Stufe 0.
+- ~~**`opencv.js` mit `aruco` lässt sich nicht bauen**~~ → **erledigt** (Stufe 0). An
+  seine Stelle traten zwei kleinere — ~~der benutzte Bau ist das Werk *einer* Person und
+  gehört für einen Auslieferungsstand eingefroren und mitgeliefert, nicht bei jedem
+  Bau frisch aus npm gezogen~~; ~~und 2,7 MB liegen vor der ersten Messung~~ —,
+  **und auch die sind erledigt** (Stufe 4), weil `@techstark/opencv-js`
+  **gar nicht mehr gebraucht wird**. Der C++-Kern wird *in* das wasm hineinübersetzt;
+  er ruft OpenCV direkt auf und braucht dessen JavaScript-Bindungen nicht. Nötig sind nur
+  statische Bibliotheken, und die baut man selbst — sechs Module, **sieben Minuten**,
+  ohne Docker. Damit hängt nichts mehr an einem fremden npm-Paket, und kleiner ist es
+  auch: das wasm des Prüfstands wiegt 2,38 MB roh und 603 KB über Brotli, gegen 13,3 MB
+  und 2,67 MB — und darin steckt sogar noch der Prüfstand selbst. Ein hineinübersetzter
+  Kern nimmt eben nur mit, was er aufruft.
+- **Zwei Befunde aus Stufe 0, die Stufe 2 jetzt schon binden:**
+  - **`imgcodecs` ist im WASM-Bau abgeschaltet** — kein `imread`, `imencode`,
+    `imwrite`. Der gemeinsame C++-Kern **darf sie nicht anfassen**: er nimmt einen
+    rohen Pixelpuffer plus Maße und gibt einen solchen zurück. Kodieren und Dekodieren
+    gehört auf jedes Ziel einzeln. Heute ist der Messkern schon sauber (`cv2.imread`
+    steht nur in `pipeline.py` und `session.py`, beides Vorschaudateien). **Das muss er
+    bleiben.**
+  - **EXIF gibt es im Browser nicht.** Brennweite und Bildlage liest heute PIL, nicht
+    OpenCV; der Canvas wirft die Metadaten weg. Das Web-Ziel braucht einen eigenen
+    JS-EXIF-Leser. `camera.py` fällt bereits sauber auf die manuelle Eingabe zurück,
+    aber die Arbeit stand im Fahrplan nirgends.
 - **Der C++-Kern besteht die Python-Suite nicht** innerhalb der Toleranz → nicht
   weitergehen, sondern die Abweichung finden. Eine Stufe 3 auf einem Kern, der um
   einen Zehntelmillimeter danebenliegt, ist verlorene Arbeit.
-- **Die PDF-Invarianten lassen sich in JS nicht sauber belegen** → dann bleibt PDF
-  vorerst in Python und Android bekommt später eine eigene Antwort.
+- ~~**Die PDF-Invarianten lassen sich in JS nicht sauber belegen**~~ → **erledigt**
+  (Stufe 3). Alle 33 PDF-Prüfungen sind mit `ARUCO_PDF=js` grün, mit denselben
+  Toleranzen. An seine Stelle tritt eine kleinere Frage: das **Rastern** gekachelter
+  Seiten weicht um bis zu ein halbes Gerätepixel ab, weil der Renderer Bildkanten auf
+  ganze Pixel legt und das gerundete Rechteck im neuen Bau das ganze Bild statt der
+  Kachel ist. Die Datei selbst stimmt auf 0,00005 mm; die Messreihe steht in
+  `web/pdf/draw.js`.
 - **Aufmerksamkeit.** Sechs bis zehn Wochen sind lang. Deshalb liefert jede Stufe
   etwas Brauchbares, statt erst am Ende.

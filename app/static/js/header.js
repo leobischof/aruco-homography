@@ -9,18 +9,19 @@
  *
  * Der Sonderfall, um den es hier eigentlich geht: das Markerblatt wird ueber
  * einen gewoehnlichen Anker geholt, und ein Anker kann keinen
- * Accept-Language-Kopf mitschicken. Deshalb hat /api/markersheet den
- * Fragezeichen-Parameter ?locale= - und deshalb muss dieser Parameter bei jedem
- * Sprachwechsel nachgezogen werden, sonst kommt das Blatt in der Sprache des
- * Browsers statt in der der Oberflaeche.
+ * Accept-Language-Kopf mitschicken. Deshalb nimmt api.js::markersheetUrl die
+ * Sprache als Parameter - und deshalb muss die Adresse bei jedem Sprachwechsel
+ * nachgezogen werden, sonst kommt das Blatt in der Sprache des Browsers statt
+ * in der der Oberflaeche.
  *
  * Der Sprachwaehler steht NICHT im Markup, sondern entsteht hier aus der Liste,
- * die i18n.js von /api/locales geholt hat. Vorher waren es zwei fest
+ * die i18n.js ueber api.js geholt hat. Vorher waren es zwei fest
  * hingeschriebene Knoepfe, DE und EN: eine dritte Sprache haette Markup,
  * Stylesheet und zwei Konstantenlisten angefasst. Jetzt genuegen die
  * Katalogdatei und ein Eintrag in config.SUPPORTED_LOCALES.
  */
 
+import { markersheetUrl } from "./api.js";
 import { getLocale, getLocales, onLocaleChange, setLocale, t } from "./i18n.js";
 import { effectiveTheme, onThemeChange, toggleTheme } from "./theme.js";
 
@@ -53,13 +54,19 @@ export function createHeader({ themeButton, langSelect, sheetLink, getSheetParam
         langSelect.value = getLocale();
     }
 
+    /**
+     * Die Adresse des Markerblatts nachziehen.
+     *
+     * Sie ist ein Versprechen und kein Wert: im Ortsbetrieb wird das Blatt erst
+     * gebaut, wenn jemand danach fragt. Bis es da ist, bleibt der alte Verweis
+     * stehen - besser ein Blatt in der vorigen Sprache als ein toter Knopf.
+     */
     function syncSheetLink() {
-        const parameters = new URLSearchParams();
-        for (const [key, value] of Object.entries(getSheetParams())) {
-            if (Number.isFinite(value)) parameters.set(key, String(value));
-        }
-        parameters.set("locale", getLocale());
-        sheetLink.href = `/api/markersheet?${parameters}`;
+        Promise.resolve(markersheetUrl(getSheetParams()))
+            .then((url) => {
+                sheetLink.href = url;
+            })
+            .catch((error) => console.error("Markerblatt nicht erreichbar", error));
     }
 
     themeButton.addEventListener("click", toggleTheme);

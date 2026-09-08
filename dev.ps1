@@ -15,6 +15,10 @@
     ./dev.ps1 install-deps       # venv anlegen und Abhaengigkeiten installieren
     ./dev.ps1 start-server       # Server starten (installiert bei Bedarf vorher)
     ./dev.ps1 run-tests          # Testsuite ausfuehren
+    ./dev.ps1 build-core         # C++-Rechenkern bauen
+    ./dev.ps1 run-tests-cpp      # dieselbe Testsuite gegen den C++-Kern
+    ./dev.ps1 build-core-wasm    # derselbe Kern fuer den Browser, danach unter Node gemessen
+    ./dev.ps1 build-core-android # derselbe Kern fuer Android (NDK)
     ./dev.ps1 build-markersheet  # Markerblatt-PDF nach out/ schreiben
     ./dev.ps1 build-exe          # Windows-.exe nach dist/ bauen
     ./dev.ps1 build-installer    # Windows-Installer (eine Datei) nach dist/ bauen
@@ -49,6 +53,8 @@ $ExeSpec      = Join-Path $RepoRoot 'aruco-homographie.spec'
 $DistDir      = Join-Path $RepoRoot 'dist'
 $ExeDist      = Join-Path $DistDir 'ArUco-Homographie'
 $IssScript    = Join-Path $RepoRoot 'installer\aruco-homographie.iss'
+$CoreDir      = Join-Path $RepoRoot 'core'
+$CoreBuildDir = Join-Path $CoreDir 'build'
 
 # Der Ordnername des Bundles IST der Name der .exe und der Name, unter dem der
 # Installer die Anwendung kennt. Festgelegt wird er in aruco-homographie.spec
@@ -152,6 +158,377 @@ function Invoke-RunTests {
     Invoke-Native -What 'run-tests' -Action { & $VenvPython -m pytest -q @Rest }
 }
 
+# Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node statt ReportLab. Kein
+# Auslieferungsweg, sondern ein Pruefstand: die vorhandenen PDF-Pruefungen lesen das
+# fertige PDF zurueck und messen es - sie interessiert nicht, wer es gebaut hat.
+# Siehe docs/cpp-migration/README.md und tools/pdf_js_bridge.py.
+function Invoke-RunTestsPdfJs {
+    Confirm-Deps
+    Confirm-NodeModules
+    Write-Step 'Running tests with the JavaScript PDF builder (ARUCO_PDF=js)'
+    $previous = $env:ARUCO_PDF
+    $env:ARUCO_PDF = 'js'
+    try {
+        Invoke-Native -What 'run-tests-pdf-js' -Action { & $VenvPython -m pytest -q @Rest }
+    } finally {
+        $env:ARUCO_PDF = $previous
+    }
+}
+
+# Die reine Rechnung von web/pdf/ (Seiten- und Kachelgeometrie, Textbreiten). Der
+# eigentliche Beweis bleibt run-tests-pdf-js; das hier laeuft ohne Python.
+function Invoke-RunTestsJs {
+    Confirm-NodeModules
+    Write-Step 'Running the JavaScript unit tests'
+    # web/**, nicht nur web/pdf/**: seit dem Android-Ziel steht unter
+    # web/vision/ eine zweite Fassung von core.js, und die einzige Stelle, an
+    # der ihr Umpacken gegen denselben Kern gehalten wird, ist ein Test dort.
+    Invoke-Native -What 'run-tests-js' -Action { node --test 'web/**/*.test.mjs' @Rest }
+}
+
+# Selbstheilend wie Confirm-Deps, nur fuer npm. Geprueft werden BEIDE Pakete:
+# pdf-lib baut das PDF, @techstark/opencv-js erzeugt im Pruefstand die Markermodule.
+# Ein "npm install --omit=dev" liesse das zweite fehlen, und das Markerblatt braucht es.
+function Confirm-NodeModules {
+    $needed = @('node_modules\pdf-lib', 'node_modules\@techstark\opencv-js')
+    if (-not ($needed | Where-Object { -not (Test-Path (Join-Path $RepoRoot $_)) })) { return }
+    Write-Warn 'node_modules fehlt oder ist unvollstaendig - npm install laeuft jetzt'
+
+    # npm.cmd und NICHT npm: unter Windows loest `npm` auf npm.ps1 auf, und dieser
+    # PowerShell-Aufsatz liest $MyInvocation.Statement - eine Eigenschaft, die es nicht
+    # gibt. Das Set-StrictMode -Version Latest weiter oben macht daraus einen Abbruch:
+    #
+    #   Die Eigenschaft "Statement" wurde fuer dieses Objekt nicht gefunden.
+    #
+    # Die Meldung nennt weder npm noch StrictMode und schickt einen auf die Suche nach
+    # einem Fehler in dev.ps1. Sie schlaegt nur zu, wenn node_modules FEHLT - also nie
+    # auf einem Rechner, auf dem schon einmal gebaut wurde, und immer beim frischen Klon.
+    $npm = Get-Command 'npm.cmd' -ErrorAction SilentlyContinue
+    if (-not $npm) { throw 'npm.cmd wurde nicht gefunden - Node.js installieren.' }
+
+    # Push-Location statt --prefix. Mit --prefix trug npm das Projekt beim ERSTEN
+    # Lauf als Abhaengigkeit von sich selbst ein ("aruco-homographie-web": "file:") und
+    # schrieb das in package.json UND package-lock.json. Auf einem Rechner mit
+    # node_modules passiert das nicht - der Schaden entsteht genau dort, wo die
+    # Selbstheilung greifen soll, und wandert von dort in einen Commit.
+    Push-Location $RepoRoot
+    try {
+        Invoke-Native -What 'npm install' -Action { & $npm.Source install }
+    } finally {
+        Pop-Location
+    }
+}
+
+# --- C++-Rechenkern -----------------------------------------------------------
+# Warum das hier so umstaendlich aussieht: weder MSVC noch CMake stehen auf dem
+# PATH, und vcvars64.bat ist eine BATCHdatei - sie setzt Dutzende Variablen im
+# eigenen Prozess, und PowerShell kann sie nicht einlesen. Deshalb wird der ganze
+# Bau in ein Wegwerf-.cmd geschrieben und einmal durch cmd.exe geschickt. Das ist
+# haesslicher als ein Aufruf, aber es ist EIN Aufruf, und man kann die Datei im
+# Fehlerfall ansehen.
+
+function Find-VcInstall {
+    if ($env:ARUCO_VS_INSTALL) {
+        if (-not (Test-Path (Join-Path $env:ARUCO_VS_INSTALL 'VC\Auxiliary\Build\vcvars64.bat'))) {
+            throw "ARUCO_VS_INSTALL zeigt auf keine Installation mit C++-Werkzeugen: $env:ARUCO_VS_INSTALL"
+        }
+        return $env:ARUCO_VS_INSTALL
+    }
+
+    # vswhere ist der offizielle Weg und liegt seit VS 2017 immer hier. Ein fest
+    # verdrahteter Pfad auf "18\BuildTools" funktionierte auf genau einem Rechner.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $found = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+        if ($found) { return ($found | Select-Object -First 1) }
+    }
+
+    throw (@(
+        'Keine Visual-Studio-Installation mit C++-Werkzeugen gefunden.',
+        '     Gebraucht werden die Build Tools (MSVC + CMake + Ninja).',
+        '     Eine bestimmte Installation waehlen:  $env:ARUCO_VS_INSTALL = "<pfad>"'
+    ) -join [Environment]::NewLine)
+}
+
+function Find-OpenCVDir {
+    # Das SDK gehoert NICHT ins Repo (rund 1 GB) und liegt deshalb daneben.
+    $candidates = @()
+    if ($env:OpenCV_DIR) { $candidates += $env:OpenCV_DIR }
+    $candidates += Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\opencv\build'
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path (Join-Path $candidate 'OpenCVConfig.cmake')) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+
+    throw (@(
+        'Das OpenCV-SDK wurde nicht gefunden (OpenCVConfig.cmake).',
+        '     Gesucht wurde in $env:OpenCV_DIR und unter:',
+        ("       {0}" -f (Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\opencv\build'))
+    ) -join [Environment]::NewLine)
+}
+
+function Invoke-BuildCore {
+    # Zusaetzliche CMake-Schalter fuer Aufrufer, die mehr wollen als den
+    # Vorgabebau - heute nur check-jni (-DARUCO_BUILD_JNI=ON). Vorgabe leer,
+    # damit sich fuer jeden bisherigen Aufrufer nichts aendert.
+    param([string[]]$ExtraOptions = @())
+
+    Confirm-Deps
+
+    $install = Find-VcInstall
+    $vcvars  = Join-Path $install 'VC\Auxiliary\Build\vcvars64.bat'
+    $cmake   = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+    $ninja   = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+    foreach ($tool in @($vcvars, $cmake, $ninja)) {
+        if (-not (Test-Path $tool)) { throw "Werkzeug fehlt in $install : $tool" }
+    }
+
+    $opencv = Find-OpenCVDir
+    # Erst einsammeln, dann die erste Zeile nehmen. NICHT ueber `Select-Object
+    # -First 1` in der Pipe: das bricht den Aufruf ab, und $LASTEXITCODE meldet
+    # danach einen Fehlschlag, den es nie gab.
+    $pybindOutput = & $VenvPython -m pybind11 --cmakedir
+    if ($LASTEXITCODE -ne 0 -or -not $pybindOutput) { throw 'pybind11 nicht im venv gefunden.' }
+    $pybind = ([string[]]$pybindOutput)[0].Trim()
+
+    Write-Step 'Building the C++ core (CMake + Ninja + MSVC)'
+    Write-Host ("     Werkzeugkette: {0}" -f $install)   -ForegroundColor DarkGray
+    Write-Host ("     OpenCV:        {0}" -f $opencv)    -ForegroundColor DarkGray
+
+    $script = Join-Path ([IO.Path]::GetTempPath()) ("aruco-build-core-{0}.cmd" -f [guid]::NewGuid())
+    # OEM und nicht ASCII: cmd.exe liest Batchdateien in der OEM-Codepage. Steht
+    # ein Sonderzeichen im Pfad - ein Benutzername mit Umlaut reicht -, machte
+    # ASCII daraus ein Fragezeichen und der Bau suchte an der falschen Stelle.
+    Set-Content -Path $script -Encoding OEM -Value @(
+        '@echo off',
+        ('call "{0}" >nul || exit /b 1' -f $vcvars),
+        ('"{0}" -S "{1}" -B "{2}" -G Ninja -DCMAKE_MAKE_PROGRAM="{3}" -DCMAKE_BUILD_TYPE=Release -DOpenCV_DIR="{4}" -Dpybind11_DIR="{5}" -DPython_EXECUTABLE="{6}" {7} || exit /b 1' -f
+            $cmake, $CoreDir, $CoreBuildDir, $ninja, $opencv, $pybind, $VenvPython,
+            ($ExtraOptions -join ' ')),
+        ('"{0}" --build "{1}" || exit /b 1' -f $cmake, $CoreBuildDir)
+    )
+    try {
+        Invoke-Native -What 'build-core' -Action { & cmd.exe /c $script }
+    } finally {
+        Remove-Item $script -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Ok "Fertig: $CoreBuildDir"
+}
+
+# Die Testsuite gegen den C++-Kern. Es gibt bewusst keine zweite Suite - zwei
+# Suiten driften genauso wie zwei Implementierungen, nur unbemerkt
+# (docs/cpp-migration/README.md). Davor laeuft der C++-Pruefstand gegen
+# shared/fixtures/: er misst gegen die Grundwahrheit, nicht gegen Python.
+function Invoke-RunTestsCpp {
+    Invoke-BuildCore
+
+    Write-Step 'Running the C++ conformance program against shared/fixtures/'
+    $conformance = Join-Path $CoreBuildDir 'aruco_conformance.exe'
+    $pack        = Join-Path $CoreBuildDir 'fixtures\fixtures.txt'
+    Invoke-Native -What 'conformance' -Action { & $conformance $pack }
+
+    Write-Step 'Running tests with ARUCO_CORE=cpp'
+    $previous = $env:ARUCO_CORE
+    $env:ARUCO_CORE = 'cpp'
+    try {
+        Invoke-Native -What 'run-tests-cpp' -Action { & $VenvPython -m pytest -q @Rest }
+    } finally {
+        if ($null -eq $previous) { Remove-Item Env:\ARUCO_CORE -ErrorAction SilentlyContinue }
+        else { $env:ARUCO_CORE = $previous }
+    }
+}
+
+# --- Kreuzbauten: derselbe core/ fuer Browser und Android ---------------------
+# Der Beleg dazu steht in docs/cpp-migration/stage-4-cross-targets.md. Beide
+# Kommandos brauchen kein vcvars: NDK und Emscripten bringen ihren Uebersetzer
+# mit, gesucht werden muessen nur CMake und Ninja - und die liegen bei den
+# VS-Build-Tools, die dieses Repo ohnehin voraussetzt.
+
+function Get-CMakeAndNinja {
+    $install = Find-VcInstall
+    $tools = [ordered]@{
+        CMake = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+        Ninja = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
+    }
+    foreach ($tool in $tools.Values) {
+        if (-not (Test-Path $tool)) { throw "Werkzeug fehlt in $install : $tool" }
+    }
+    return $tools
+}
+
+# Sucht eine Werkzeugkette neben dem Repo, wie Find-OpenCVDir es fuer das
+# Windows-SDK tut. Kein Herunterladen, kein Rateverfahren: entweder sie liegt da,
+# oder es gibt eine Fehlermeldung, die sagt, wo gesucht wurde.
+function Find-Toolchain {
+    param(
+        [Parameter(Mandatory)][string]$EnvVar,
+        [Parameter(Mandatory)][string]$RelativePath,
+        [Parameter(Mandatory)][string]$Marker,
+        [Parameter(Mandatory)][string]$What
+    )
+    $candidates = @()
+    $fromEnv = [Environment]::GetEnvironmentVariable($EnvVar)
+    if ($fromEnv) { $candidates += $fromEnv }
+    $candidates += Join-Path (Split-Path $RepoRoot -Parent) $RelativePath
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path (Join-Path $candidate $Marker)) { return (Resolve-Path $candidate).Path }
+    }
+    throw (@(
+        "$What wurde nicht gefunden (gesucht wurde nach $Marker).",
+        "     Gesucht wurde in `$env:$EnvVar und unter:",
+        ("       {0}" -f (Join-Path (Split-Path $RepoRoot -Parent) $RelativePath))
+    ) -join [Environment]::NewLine)
+}
+
+# Der Kreuzbau ohne Ziel-Python: core/CMakeLists.txt will trotzdem eines wissen,
+# weil die Konstanten und das Fixture-Paket auf DIESEM Rechner erzeugt werden -
+# und zwar mit demselben cv2, das auch die Testsuite liest.
+function Invoke-CrossCmake {
+    param(
+        [Parameter(Mandatory)][string]$What,
+        [Parameter(Mandatory)][string]$BuildDir,
+        [Parameter(Mandatory)][string[]]$Options
+    )
+    $tools = Get-CMakeAndNinja
+    $arguments = @(
+        '-S', $CoreDir, '-B', $BuildDir, '-G', 'Ninja',
+        ('-DCMAKE_MAKE_PROGRAM={0}' -f $tools.Ninja),
+        '-DCMAKE_BUILD_TYPE=Release',
+        ('-DARUCO_HOST_PYTHON={0}' -f $VenvPython)
+    ) + $Options
+
+    Invoke-Native -What "$What (configure)" -Action { & $tools.CMake @arguments }
+    Invoke-Native -What "$What (build)"     -Action { & $tools.CMake --build $BuildDir }
+}
+
+function Invoke-BuildCoreWasm {
+    Confirm-Deps
+
+    $emsdk  = Find-Toolchain -EnvVar 'ARUCO_EMSDK' -RelativePath '_toolchain\emsdk' `
+                             -Marker 'upstream\emscripten\emcc.py' -What 'Das Emscripten-SDK'
+    $opencv = Find-Toolchain -EnvVar 'ARUCO_OPENCV_WASM' -RelativePath '_toolchain\opencv-wasm' `
+                             -Marker 'lib\cmake\opencv5\OpenCVConfig.cmake' `
+                             -What 'Das fuer WASM gebaute OpenCV'
+    $buildDir = Join-Path $CoreDir 'build-wasm'
+
+    Write-Step 'Building the C++ core for WebAssembly (Emscripten)'
+    Write-Host ("     emsdk:  {0}" -f $emsdk)  -ForegroundColor DarkGray
+    Write-Host ("     OpenCV: {0}" -f $opencv) -ForegroundColor DarkGray
+
+    Invoke-CrossCmake -What 'build-core-wasm' -BuildDir $buildDir -Options @(
+        ('-DCMAKE_TOOLCHAIN_FILE={0}' -f (Join-Path $emsdk 'upstream\emscripten\cmake\Modules\Platform\Emscripten.cmake')),
+        ('-DOpenCV_DIR={0}' -f (Join-Path $opencv 'lib\cmake\opencv5'))
+    )
+
+    # Und sofort messen. Ein WASM-Bau, den niemand ausgefuehrt hat, belegt nur,
+    # dass er uebersetzt - und genau das ist die Frage NICHT (Stufe 4).
+    $node = Get-ChildItem (Join-Path $emsdk 'node') -Filter 'node.exe' -Recurse -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $node) { throw "Kein node.exe im emsdk unter $emsdk\node gefunden." }
+
+    Write-Step 'Running the WASM conformance program under Node'
+    # .cjs: sobald eine package.json mit "type": "module" im Wurzelverzeichnis
+    # liegt, faerbt sie jede .js-Datei darunter zum ES-Modul ein - Emscriptens
+    # Lader ist aber CommonJS. Warum die Endung das loest: core/CMakeLists.txt.
+    Invoke-Native -What 'conformance (wasm)' -Action {
+        & $node.FullName (Join-Path $buildDir 'aruco_conformance.cjs') `
+                         (Join-Path $buildDir 'fixtures\fixtures.txt') @Rest
+    }
+
+    Write-Ok "Fertig: $buildDir"
+    # Der Browser-Bau liegt daneben und laesst sich nicht von hier aus starten -
+    # er braucht einen HTTP-Ursprung. Also wenigstens sagen, wie.
+    Write-Host '     Im Browser nachmessen: dieses Verzeichnis ausliefern' -ForegroundColor DarkGray
+    Write-Host ("       {0} -m http.server 8013 --directory ""{1}""" -f $VenvPython, $buildDir) -ForegroundColor DarkGray
+    Write-Host '       und http://127.0.0.1:8013/conformance_web.html oeffnen' -ForegroundColor DarkGray
+}
+
+function Invoke-BuildCoreAndroid {
+    # -Abi ist der Weg fuer Aufrufer im Skript (build-android-libs baut mehrere
+    # nacheinander); von der Kommandozeile kommt das ABI weiterhin aus $Rest.
+    # param() MUSS die erste Anweisung sein - Kommentare davor sind erlaubt,
+    # Confirm-Deps waere es nicht.
+    param([string]$Abi = '')
+
+    Confirm-Deps
+
+    # Vorgabe arm64-v8a: das ist die ABI jedes Handys, das noch verkauft wird.
+    # Die anderen drei baut man mit  ./dev.ps1 build-core-android x86_64
+    if (-not $Abi) {
+        $Abi = if ($Rest.Count -gt 0) { $Rest[0] } else { 'arm64-v8a' }
+    }
+    $abi = $Abi
+
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'ndk' -What 'Das Android-SDK'
+    # Die NDK-Fassung nicht festschreiben - hier steht sonst in einem halben Jahr
+    # eine Zahl, die es auf keinem Rechner mehr gibt.
+    $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $ndk) { throw "Kein NDK mit android.toolchain.cmake unter $sdk\ndk gefunden." }
+
+    $opencv = Find-Toolchain -EnvVar 'ARUCO_OPENCV_ANDROID' -RelativePath '_toolchain\opencv-android' `
+                             -Marker 'OpenCV-android-sdk\sdk\native\jni\OpenCVConfig.cmake' `
+                             -What 'Das OpenCV-Android-SDK'
+    $buildDir = Join-Path $CoreDir "build-android-$abi"
+
+    Write-Step "Building the C++ core for Android ($abi, NDK $($ndk.Name))"
+    Write-Host ("     NDK:    {0}" -f $ndk.FullName) -ForegroundColor DarkGray
+    Write-Host ("     OpenCV: {0}" -f $opencv)       -ForegroundColor DarkGray
+
+    Invoke-CrossCmake -What 'build-core-android' -BuildDir $buildDir -Options @(
+        ('-DCMAKE_TOOLCHAIN_FILE={0}' -f (Join-Path $ndk.FullName 'build\cmake\android.toolchain.cmake')),
+        ('-DANDROID_ABI={0}' -f $abi),
+        # 24 und nicht 21: das OpenCV-Android-SDK setzt minSdk 21, aber 24 ist die
+        # unterste Fassung, die noch Sicherheitsaktualisierungen bekommt.
+        '-DANDROID_PLATFORM=android-24',
+        ('-DOpenCV_DIR={0}' -f (Join-Path $opencv 'OpenCV-android-sdk\sdk\native\jni'))
+    )
+
+    Write-Ok "Fertig: $buildDir"
+    Write-Warn 'Ungeprueft: auf diesem Rechner laeuft kein Android. Der Bau bindet, gemessen ist er nicht.'
+}
+
+# --- Browser-Bau -------------------------------------------------------------
+# Der dritte Auslieferungsweg: dieselbe Oberflaeche, aber ohne Server. Gerechnet
+# wird im Browser - der C++-Kern als WebAssembly, das PDF aus web/pdf/.
+#
+# Zwei Schritte, weil sie verschieden lange dauern: build-core-wasm baut das
+# wasm (rund eine Minute) und wird selten gebraucht; build-web stellt nur die
+# Seite zusammen (Sekunden) und wird bei jeder Aenderung an web/vision/ oder
+# app/static/ gebraucht.
+function Invoke-BuildWeb {
+    Confirm-Deps
+    Write-Step 'Assembling the browser build'
+    Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') --dist @Rest }
+    Write-Ok "Fertig: $(Join-Path $RepoRoot 'dist\web')"
+}
+
+# Ein reiner Dateiserver - KEINE Anwendung. Das ist der Punkt: der Browser-Bau
+# braucht nichts weiter als jemanden, der Dateien ausliefert, und genau das soll
+# man hier sehen koennen. Ausgeliefert wird der Quellbaum und nicht dist/web,
+# damit eine Aenderung an web/vision/ nach einem Neuladen wirkt.
+function Invoke-StartWeb {
+    Confirm-Deps
+    $port = if ($Rest.Count -gt 0) { $Rest[0] } else { 8020 }
+
+    Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') }
+
+    Write-Step "Serving the browser build on port $port (static files only)"
+    Write-Host "     http://127.0.0.1:$port/web/index.html" -ForegroundColor DarkGray
+    Write-Host '     Beenden mit Strg+C.' -ForegroundColor DarkGray
+    Invoke-Native -What 'start-web' -Action {
+        & $VenvPython -m http.server $port --bind 127.0.0.1 --directory $RepoRoot
+    }
+}
+
 function Invoke-BuildMarkersheet {
     Confirm-Deps
     Write-Step 'Building the A4 marker sheet PDF'
@@ -167,6 +544,12 @@ function Invoke-BuildExe {
     param([string[]]$ExtraArgs = $Rest)
 
     Confirm-Deps
+
+    # Der Kern zuerst: die ausgelieferte .exe misst mit C++ (app/vision/backend.py
+    # setzt ARUCO_CORE=cpp, sobald eingefroren wurde). Ohne ihn bricht schon die
+    # Bauvorschrift ab - lieber hier als beim ersten Start auf einem fremden Rechner.
+    Invoke-BuildCore
+
     Write-Step 'Building the Windows .exe (PyInstaller, one-folder)'
     Invoke-Native -What 'build-exe' -Action {
         & $VenvPython -m PyInstaller --noconfirm $ExeSpec @ExtraArgs
@@ -199,6 +582,14 @@ function Test-BundleFresh {
     $sources = @(Get-ChildItem -Path (Join-Path $RepoRoot 'app'), (Join-Path $RepoRoot 'shared') -Recurse -File |
         Where-Object { $_.FullName -notlike '*__pycache__*' })
     $sources += Get-Item $ExeSpec
+
+    # Der C++-Kern liegt mit im Bundle, also gehoert er in diese Frage. Ohne die
+    # naechsten Zeilen galte ein Bundle als frisch, in dem noch der Kern von
+    # vorgestern steckt - und gemessen wird mit genau diesem Kern.
+    if (Test-Path $CoreBuildDir) {
+        $sources += @(Get-ChildItem -Path $CoreBuildDir -File |
+            Where-Object { $_.Extension -in '.pyd', '.dll' })
+    }
     $newest = ($sources | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
 
     return ($newest -le $built)
@@ -290,7 +681,8 @@ function Invoke-KillServers {
         if (-not $cmd) { continue }
         $lower = $cmd.ToLowerInvariant()
         if (-not $lower.Contains($needle)) { continue }
-        if ($lower.Contains('app.main') -or $lower.Contains('aruco-homographie.exe')) {
+        if ($lower.Contains('app.main') -or $lower.Contains('aruco-homographie.exe') -or
+            $lower.Contains('http.server')) {
             Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
             $killed = $killed + 1
         }
@@ -300,7 +692,7 @@ function Invoke-KillServers {
 
 function Invoke-CleanAll {
     Write-Step 'Removing venv, outputs and caches'
-    foreach ($path in @('venv', 'out', 'build', 'dist', '.pytest_cache')) {
+    foreach ($path in @('venv', 'out', 'build', 'dist', '.pytest_cache', 'coreuild')) {
         $full = Join-Path $RepoRoot $path
         if (Test-Path $full) { Remove-Item -Recurse -Force $full }
     }
@@ -314,6 +706,471 @@ function Write-Cmd { param([string]$Name, [string]$Subtitle)
     Write-Host ("  {0}" -f $Name) -ForegroundColor White
     Write-Host ("      {0}" -f $Subtitle) -ForegroundColor DarkGray
 }
+# =============================================================================
+#  Android - die Huelle, die .so und die Belege dafuer
+#  (docs/cpp-migration/stage-4-android.md)
+# =============================================================================
+
+$AndroidDir    = Join-Path $RepoRoot 'android'
+$AndroidOutDir = Join-Path $AndroidDir 'out'
+$JniLibsDir    = Join-Path $AndroidDir 'app\src\main\jniLibs'
+# Die eine Java-Datei, die auch ohne Android uebersetzt und ausgefuehrt wird -
+# check-jni baut sie mit, check-android-so zaehlt ihre native-Zeilen.
+$NativeCoreJava = Join-Path $AndroidDir 'app\src\main\java\com\bischofsnowboards\aruco\NativeCore.java'
+
+# Alle vier ABIs, die das OpenCV-Android-SDK traegt. Gebaut wird per Vorgabe nur
+# das erste: jedes weitere kostet rund 6 MB im APK, und arm64 ist auf praktisch
+# jedem verkauften Telefon das laufende ABI.
+$AndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
+
+# Der Port der Oberflaechen-Probe. Nicht der des Servers (8000) und nicht der
+# des Browser-Baus (8020): alle drei duerfen nebeneinander laufen.
+$UiProbePort = 8030
+
+# Das ABI-Argument der Kommandozeile: "arm64-v8a,x86_64" oder nichts.
+function Get-AbiArgument {
+    if ($Rest.Count -gt 0) { return $Rest[0].Split(',') | ForEach-Object { $_.Trim() } }
+    return @('arm64-v8a')
+}
+
+function Find-Jdk {
+    # $env:JAVA_HOME zuerst, dann das JDK neben den anderen Werkzeugketten. Die
+    # Fassungsnummer steht NICHT im Code: hier staende sonst in einem halben Jahr
+    # eine Zahl, die es auf keinem Rechner mehr gibt.
+    if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) {
+        return (Resolve-Path $env:JAVA_HOME).Path
+    }
+    $toolchain = Join-Path (Split-Path $RepoRoot -Parent) '_toolchain'
+    $jdk = Get-ChildItem $toolchain -Directory -Filter 'jdk*' -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'bin\javac.exe') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $jdk) {
+        throw "Kein JDK gefunden (weder `$env:JAVA_HOME noch $toolchain\jdk*)."
+    }
+    return $jdk.FullName
+}
+
+function Find-NdkBinDir {
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'ndk' -What 'Das Android-SDK'
+    $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
+        Sort-Object Name -Descending | Select-Object -First 1
+    $bin = Join-Path $ndk.FullName 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+    if (-not (Test-Path $bin)) { throw "NDK-Werkzeuge nicht gefunden: $bin" }
+    return $bin
+}
+
+function Find-BuildToolsDir {
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'build-tools' -What 'Das Android-SDK'
+    $tools = Get-ChildItem (Join-Path $sdk 'build-tools') -Directory |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (-not $tools) { throw "Keine build-tools unter $sdk\build-tools gefunden." }
+    return $tools.FullName
+}
+
+# Die JNI-Schicht auf einer ECHTEN JVM ausfuehren - auf dem Bau-Rechner.
+#
+# Das ist der einzige Weg, den Marshalling-Code zwischen Java und C++ hier
+# wirklich laufen zu lassen: ein Android-Geraet gibt es nicht, einen Emulator
+# auch nicht. jni.h kommt aber aus dem JDK, also baut dieselbe jni.cpp gegen
+# dieselbe capi.cpp auch als Windows-DLL, und ein Java-Prozess ruft sie auf.
+# Was danach ungeprueft bleibt, ist Androids Linker - nicht mehr diese Schicht.
+function Invoke-CheckJni {
+    $jdk = Find-Jdk
+    Write-Step 'Building the core with the JNI binding (Windows DLL)'
+    Write-Host ("     JDK: {0}" -f $jdk) -ForegroundColor DarkGray
+    Invoke-BuildCore -ExtraOptions @('-DARUCO_BUILD_JNI=ON', ('-DARUCO_JAVA_HOME="{0}"' -f $jdk))
+
+    $classes = Join-Path ([IO.Path]::GetTempPath()) 'aruco-jnicheck-classes'
+    if (Test-Path $classes) { Remove-Item $classes -Recurse -Force }
+    New-Item -ItemType Directory -Path $classes -Force | Out-Null
+
+    # Die Sollwerte der ganzen Kette: derselbe C++-Kern durch pybind11, daneben
+    # die Python-Referenz. Ohne diese Datei koennte der Pruefstand nur die
+    # Erkennung messen - und genau die war schon vorher gemessen.
+    Write-Step 'Generating the chain reference (same core through pybind11, plus Python)'
+    $fixtures = Join-Path $CoreBuildDir 'fixtures\fixtures.txt'
+    $chain    = Join-Path $CoreBuildDir 'fixtures\chain.txt'
+    Invoke-Native -What 'make_chain_reference' -Action {
+        & $VenvPython (Join-Path $CoreDir 'tools\make_chain_reference.py') $fixtures $chain
+    }
+
+    Write-Step 'Compiling JniCheck against the app''s own NativeCore'
+    # NativeCore.java kommt aus dem Android-Baum und wird NICHT kopiert: die
+    # Klasse, die hier geprueft wird, muss dieselbe sein, die im APK steckt.
+    $nativeCore = $NativeCoreJava
+    $check      = Join-Path $CoreDir 'tools\JniCheck.java'
+    $chainCheck = Join-Path $CoreDir 'tools\ChainCheck.java'
+    Invoke-Native -What 'javac' -Action {
+        & (Join-Path $jdk 'bin\javac.exe') -d $classes -encoding UTF-8 -Xlint:all `
+            $nativeCore $check $chainCheck
+    }
+
+    Write-Step 'Running the JNI layer on a real JVM'
+    # core/build MUSS in den PATH: Windows sucht die Abhaengigkeiten einer DLL
+    # neben der ANWENDUNG (java.exe), nicht neben der ladenden DLL. Ohne das
+    # meldet die JVM "Can't find dependent libraries" und meint opencv_world500.
+    $previousPath = $env:PATH
+    $bitsFile = Join-Path ([IO.Path]::GetTempPath()) 'aruco-marker-bits.txt'
+    try {
+        $env:PATH = "$CoreBuildDir;$env:PATH"
+        # Die Ausgabe wird gebraucht (die bits-Zeilen), also NICHT durch
+        # Invoke-Native: dessen Scriptblock laeuft in einem eigenen Bereich, und
+        # ein dort gesetztes -Variable kommt hier nicht an. Der Rueckgabewert
+        # wird stattdessen von Hand geprueft - dasselbe, was Invoke-Native tut.
+        $jniOutput = & (Join-Path $jdk 'bin\java.exe') "-Djava.library.path=$CoreBuildDir" `
+            -cp $classes JniCheck $fixtures --bits --kette $chain @Rest
+        $exitCode = $LASTEXITCODE
+        $jniOutput | ForEach-Object { Write-Host $_ }
+        if ($exitCode -ne 0) { throw "JniCheck failed (exit $exitCode)." }
+        $jniOutput | Select-String '^bits ' | ForEach-Object { $_.ToString() } |
+            Set-Content $bitsFile -Encoding ascii
+    } finally {
+        $env:PATH = $previousPath
+    }
+    Write-Ok 'Die JNI-Schicht liefert die Ecken der Grundwahrheit.'
+
+    # Und das Muster der Modulbits gegen cv2. Der schwarze Rand, den JniCheck
+    # prueft, ist symmetrisch - eine Transposition kaeme dort glatt durch und
+    # ergaebe ein Markerblatt, das kein Detektor je findet.
+    Write-Step 'Comparing the marker bits against cv2'
+    Invoke-Native -What 'compare_marker_bits' -Action {
+        & $VenvPython (Join-Path $CoreDir 'tools\compare_marker_bits.py') $bitsFile
+    }
+}
+
+# Die .so je ABI bauen und dorthin legen, wo Gradle sie erwartet.
+#
+# Gradle baut sie NICHT selbst (kein externalNativeBuild): der Kern hat seine
+# eigene Werkzeugkettensuche in build-core-android, und zwei Wege zu einer
+# Bibliothek sind einer zu viel. Ausserdem waere der CMake-Bau unter Gradles
+# tiefen Zwischenpfaden der naechste MAX_PATH-Fall.
+function Invoke-BuildAndroidLibs {
+    param([string[]]$Abis = @('arm64-v8a'))
+
+    foreach ($abi in $Abis) {
+        if ($AndroidAbis -notcontains $abi) {
+            throw "Unbekanntes ABI '$abi'. Bekannt: $($AndroidAbis -join ', ')"
+        }
+        Invoke-BuildCoreAndroid -Abi $abi
+
+        $source = Join-Path $CoreDir "build-android-$abi\libaruco_core.so"
+        if (-not (Test-Path $source)) { throw "Der Bau lief, aber $source fehlt." }
+        $target = Join-Path $JniLibsDir $abi
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Copy-Item $source (Join-Path $target 'libaruco_core.so') -Force
+        Write-Ok ("{0}: {1:N2} MB" -f $abi, ((Get-Item $source).Length / 1MB))
+    }
+}
+
+# Was an der .so nachgemessen wird, statt es zu glauben.
+function Invoke-CheckAndroidSo {
+    param([string[]]$Abis = @('arm64-v8a'))
+
+    $bin = Find-NdkBinDir
+    foreach ($abi in $Abis) {
+        $so = Join-Path $JniLibsDir "$abi\libaruco_core.so"
+        if (-not (Test-Path $so)) { throw "Nicht gebaut: $so  (./dev.ps1 build-android-libs)" }
+
+        Write-Step "Inspecting $abi"
+        Write-Host ("     Groesse:  {0:N2} MB" -f ((Get-Item $so).Length / 1MB)) -ForegroundColor DarkGray
+
+        # Die Ausrichtung der LOAD-Segmente. 0x4000 = 16 KiB. Auf einem Geraet mit
+        # 16-KB-Seiten laedt eine nur auf 0x1000 ausgerichtete .so GAR NICHT.
+        $loads = & (Join-Path $bin 'llvm-readelf.exe') -l $so | Select-String '^\s+LOAD'
+        $misaligned = @($loads | Where-Object { $_ -notmatch '0x4000\s*$' })
+        foreach ($load in $loads) { Write-Host ("     {0}" -f $load.ToString().Trim()) -ForegroundColor DarkGray }
+        if ($misaligned.Count -gt 0) {
+            throw "$abi : nicht auf 16 KiB ausgerichtet - auf neuen Geraeten laedt das nicht."
+        }
+        Write-Ok "$abi : alle LOAD-Segmente auf 16 KiB ausgerichtet"
+
+        # Und die Einsprungpunkte. Fehlt einer, faellt das sonst erst auf dem
+        # Geraet auf - als UnsatisfiedLinkError mitten im Betrieb.
+        #
+        # Wie viele es sein muessen, wird NICHT abgetippt, sondern in
+        # NativeCore.java gezaehlt: jede `native`-Zeile dort braucht genau ein
+        # Symbol hier. Eine feste Zahl waere beim naechsten Zuwachs falsch, und
+        # zwar in die harmlose Richtung - der Test bliebe gruen.
+        $declared = @(Select-String -Path $NativeCoreJava -Pattern '^\s*public static native\b').Count
+        if ($declared -lt 1) { throw "In $NativeCoreJava steht keine native-Methode." }
+        $exported = & (Join-Path $bin 'llvm-nm.exe') -D --defined-only $so |
+            Select-String 'Java_com_bischofsnowboards_aruco_NativeCore_'
+        Write-Host ("     Exportiert: {0} JNI-Symbole (NativeCore.java erklaert {1})" -f `
+            $exported.Count, $declared) -ForegroundColor DarkGray
+        if ($exported.Count -lt $declared) {
+            throw "$abi : nur $($exported.Count) JNI-Symbole exportiert, erwartet werden $declared."
+        }
+        Write-Ok "$abi : alle $declared JNI-Einsprungpunkte exportiert"
+    }
+}
+
+function Invoke-Gradle {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+
+    $jdk = Find-Jdk
+    $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
+                          -Marker 'platforms' -What 'Das Android-SDK'
+    $wrapper = Join-Path $AndroidDir 'gradlew.bat'
+    if (-not (Test-Path $wrapper)) { throw "Der Gradle-Wrapper fehlt: $wrapper" }
+
+    # Die Fassung kommt aus app/config.py und wird nicht abgetippt (Invariante 4).
+    $version = Get-ConfigValue 'APP_VERSION'
+
+    $previous = @{ JAVA_HOME = $env:JAVA_HOME; ANDROID_SDK_ROOT = $env:ANDROID_SDK_ROOT
+                   ANDROID_HOME = $env:ANDROID_HOME }
+    try {
+        $env:JAVA_HOME = $jdk
+        $env:ANDROID_SDK_ROOT = $sdk
+        $env:ANDROID_HOME = $sdk
+        Push-Location $AndroidDir
+        Invoke-Native -What 'gradle' -Action {
+            & $wrapper --no-daemon ("-Paruco.versionName={0}" -f $version) @Arguments
+        }
+    } finally {
+        Pop-Location
+        $env:JAVA_HOME = $previous.JAVA_HOME
+        $env:ANDROID_SDK_ROOT = $previous.ANDROID_SDK_ROOT
+        $env:ANDROID_HOME = $previous.ANDROID_HOME
+    }
+}
+
+# Das APK bauen: .so je ABI, dann Gradle, dann nachmessen.
+#
+#   ./dev.ps1 build-apk                            # arm64-v8a, debug
+#   ./dev.ps1 build-apk arm64-v8a,armeabi-v7a      # zwei ABIs
+function Invoke-BuildApk {
+    Confirm-NodeModules   # web/pdf/ braucht pdf-lib, und das APK traegt es mit
+
+    $abis = Get-AbiArgument
+    Invoke-BuildAndroidLibs -Abis $abis
+    Invoke-CheckAndroidSo   -Abis $abis
+
+    Write-Step ("Building the APK ({0})" -f ($abis -join ', '))
+    Invoke-Gradle -Arguments @(('-Paruco.abis={0}' -f ($abis -join ',')), 'assembleDebug')
+
+    # Gradle baut neben dem Repo (MAX_PATH, siehe android/gradle.properties) -
+    # also das Erzeugnis zurueckholen, damit es dort liegt, wo man es sucht.
+    $buildRoot = (Get-Content (Join-Path $AndroidDir 'gradle.properties') |
+        Select-String '^aruco\.buildRoot=(.+)$').Matches.Groups[1].Value
+    $apk = Join-Path $buildRoot 'app\outputs\apk\debug\app-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Gradle lief durch, aber $apk fehlt." }
+
+    New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
+    $target = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    Copy-Item $apk $target -Force
+    Write-Ok ("Fertig: {0}  ({1:N2} MB)" -f $target, ((Get-Item $target).Length / 1MB))
+
+    Invoke-CheckApk
+}
+
+# Die Android-Rechenkette in einem echten Chromium - so weit sie sich ohne
+# Geraet ausfuehren laesst.
+#
+# WARUM ES DAS GIBT. `check-apk` misst das Erzeugnis (ABIs, Rechte, Signatur),
+# `check-jni` misst die native Schicht auf einer JVM. Dazwischen liegt alles,
+# was in der WebView passiert: die Importkarte, die beiden Android-Fassungen
+# unter web/vision/, und darueber die unveraenderte Kette bis zum PDF. Ohne
+# diesen Schritt waere genau das der Teil, den niemand je laufen sieht.
+#
+# WAS DABEI ERSATZ IST - und das gehoert in jeden Bericht darueber:
+#   * Die Java-Seite ist ein Nachbau (android/tools/bridge-stub.mjs).
+#   * Gerechnet wird im WASM-Bau desselben core/, nicht in libaruco_core.so.
+#   * Chromium auf Windows ist nicht die System-WebView eines Telefons.
+# Geladen wird dagegen GENAU DER BAUM AUS DEM APK: er wird ausgepackt, nicht
+# nachgebaut. Was hier laeuft, sind die Bytes, die ausgeliefert werden.
+function Invoke-CheckAndroidUi {
+    $apk = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Kein APK: $apk  (./dev.ps1 build-apk)" }
+
+    $wasm = Join-Path $RepoRoot 'web\vendor\core\aruco_core.mjs'
+    if (-not (Test-Path $wasm)) { throw "Der WASM-Kern fehlt: $wasm" }
+
+    $chrome = Find-Chrome
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("aruco-ui-probe-{0}" -f [guid]::NewGuid())
+    $server = $null
+    try {
+        Write-Step 'Unpacking the interface out of the APK'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($apk)
+        try {
+            foreach ($entry in $zip.Entries) {
+                if ($entry.FullName -notlike 'assets/www/*' -or -not $entry.Name) { continue }
+                $target = Join-Path $root ($entry.FullName -replace '^assets/www/', '')
+                New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+            }
+        } finally { $zip.Dispose() }
+        Write-Host ("     {0} Dateien" -f (Get-ChildItem $root -Recurse -File).Count) -ForegroundColor DarkGray
+
+        # Was der Ersatz braucht, liegt unter /probe/ und damit sichtbar NEBEN
+        # dem ausgelieferten Baum. Nichts davon steckt im APK, und das ist der
+        # Punkt: das wasm gehoert dort nicht hinein.
+        $probe = Join-Path $root 'probe'
+        New-Item -ItemType Directory -Path (Join-Path $probe 'core') -Force | Out-Null
+        Copy-Item (Join-Path $AndroidDir 'tools\bridge-stub.mjs') $probe -Force
+        Copy-Item (Join-Path $RepoRoot 'web\vendor\core\*') (Join-Path $probe 'core') -Force
+        Copy-Item (Join-Path $RepoRoot 'shared\fixtures\scenes\flat.png') $probe -Force
+        Copy-Item (Join-Path $AndroidDir 'tools\ui-probe.html') (Join-Path $root 'probe.html') -Force
+
+        Write-Step "Serving the unpacked tree on port $UiProbePort"
+        $server = Start-Process -FilePath $VenvPython `
+            -ArgumentList '-m', 'http.server', $UiProbePort, '--bind', '127.0.0.1', '--directory', $root `
+            -WindowStyle Hidden -PassThru
+
+        Write-Step 'Driving Chromium through the whole chain'
+        Write-Host ("     {0}" -f $chrome) -ForegroundColor DarkGray
+        $pdf = Join-Path $AndroidOutDir 'ui-probe-schablone.pdf'
+        New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
+        Invoke-Native -What 'ui-probe' -Action {
+            & node (Join-Path $AndroidDir 'tools\ui-probe.mjs') $chrome `
+                "http://127.0.0.1:$UiProbePort/probe.html" $pdf
+        }
+
+        # Dass ein PDF entstand, ist noch keine Aussage - eines entsteht auch mit
+        # falschen Zahlen. Also nachzaehlen, was auf dem Blatt steht.
+        Write-Step 'Measuring the template that came out'
+        Invoke-Native -What 'measure_template' -Action {
+            & $VenvPython (Join-Path $AndroidDir 'tools\measure_template.py') $pdf
+        }
+        Write-Ok ("Die Kette laeuft und das Blatt stimmt. PDF: {0}" -f $pdf)
+        Write-Warn 'Ersatz und kein Geraet: Java nachgebaut, Kern als WASM, Chromium statt WebView.'
+    } finally {
+        if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Chrome oder ein anderes Chromium. Gesucht wird NICHT im PATH: dort steht auf
+# diesem Rechner keines, und ein gefundenes "chrome" waere sonst womoeglich ein
+# Startskript ohne Debug-Anschluss.
+function Find-Chrome {
+    if ($env:ARUCO_CHROME -and (Test-Path $env:ARUCO_CHROME)) { return $env:ARUCO_CHROME }
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    throw ([string]::Join([Environment]::NewLine, @(
+        'Kein Chromium gefunden (Chrome oder Edge).',
+        '     Einen bestimmten waehlen:  $env:ARUCO_CHROME = "<pfad\zu\chrome.exe>"'
+    )))
+}
+
+# Was am fertigen APK nachgemessen wird. Alles hier ist eine Messung am
+# Erzeugnis - keine Zeile davon glaubt dem Bau.
+function Invoke-CheckApk {
+    $apk = Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
+    if (-not (Test-Path $apk)) { throw "Kein APK: $apk  (./dev.ps1 build-apk)" }
+
+    $tools = Find-BuildToolsDir
+    Write-Step 'Inspecting the APK'
+    Write-Host ("     {0}  {1:N2} MB" -f $apk, ((Get-Item $apk).Length / 1MB)) -ForegroundColor DarkGray
+
+    & (Join-Path $tools 'aapt.exe') dump badging $apk |
+        Select-String 'package:|sdkVersion|targetSdkVersion|native-code|uses-permission|application-label:' |
+        ForEach-Object { Write-Host ("     {0}" -f $_.ToString().Trim()) -ForegroundColor DarkGray }
+
+    # Ist die Oberflaeche ueberhaupt drin?
+    #
+    # Diese Pruefung gibt es, weil genau das einmal fehlschlug: der Assets-Schritt
+    # war falsch verdrahtet (android/app/build.gradle.kts), Gradle meldete Erfolg,
+    # und im APK lag von app/static/ nichts. Ein leeres APK ist von einem vollen
+    # nur an seiner Groesse zu unterscheiden - und die haette hier niemand
+    # nachgesehen. Erwartet werden Dateien, die aus vier verschiedenen Quellen
+    # stammen: Oberflaeche, PDF-Bau, sprachneutrale Konstanten, Pruefszenen.
+    Write-Step 'Checking the APK really carries the interface'
+    $expected = @(
+        'assets/www/index.html',                 # app/static/
+        'assets/www/js/main.js',
+        'assets/www/i18n/de.json',
+        'assets/www/native/index.html',          # die eigene Seite der Huelle
+        'assets/www/native/bridge-shim.js',
+        'assets/www/web/pdf/markersheet.js',     # web/pdf/
+        'assets/www/web/vision/local.js',        # web/vision/ - die Rechenkette
+        'assets/www/web/vision/pipeline.js',
+        'assets/www/web/vision/core-android.js', # der Kern ueber JNI ...
+        'assets/www/web/constants.js',
+        'assets/www/app/static/i18n/de.json',    # der Pfad, den web/pdf/i18n.js importiert
+        'assets/www/shared/constants.json',      # shared/
+        'assets/www/vendor/pdf-lib.esm.min.js',
+        'assets/fixtures/expected/flat.json',    # shared/fixtures/
+        'assets/fixtures/scenes/flat.png',
+        'lib/arm64-v8a/libaruco_core.so'
+    )
+    # ... und was NICHT drin sein darf. Der Browser-Kern (web/vision/core.js samt
+    # dem 3,6-MB-wasm daneben) hat auf diesem Ziel nichts zu suchen: hier rechnet
+    # die native Bibliothek ueber JNI. Ein mitgeliefertes wasm waere ein zweiter
+    # Rechenkern, den niemand mitmisst - und er faellt nur an der Groesse auf.
+    $forbidden = @(
+        'assets/www/web/vision/core.js',
+        'assets/www/web/vision/image.js',
+        'assets/www/web/vendor/core/aruco_core.wasm',
+        'assets/www/web/vendor/core/aruco_core.mjs'
+    )
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::OpenRead($apk)
+    try {
+        $inside = $zip.Entries | ForEach-Object { $_.FullName }
+        $missing = @($expected | Where-Object { $inside -notcontains $_ })
+        if ($missing.Count -gt 0) {
+            throw ("Im APK fehlen: {0}" -f ($missing -join ', '))
+        }
+        $smuggled = @($forbidden | Where-Object { $inside -contains $_ })
+        if ($smuggled.Count -gt 0) {
+            throw ("Im APK liegt, was nicht hineingehoert: {0}" -f ($smuggled -join ', '))
+        }
+        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden, keine der {2} verbotenen" -f
+            $zip.Entries.Count, $expected.Count, $forbidden.Count) -ForegroundColor DarkGray
+    } finally {
+        $zip.Dispose()
+    }
+    Write-Ok 'Die Oberflaeche, web/vision/, web/pdf/, shared/ und die Pruefszenen sind im APK'
+
+    # 16-KB-Ausrichtung der .so IM APK. Das ist eine andere Zusage als die im
+    # ELF: hier geht es darum, ob die Datei unkomprimiert und an einer
+    # 16-KiB-Grenze im Zip liegt, damit der Linker sie direkt abbilden kann.
+    Write-Step 'Checking 16 KB alignment inside the APK'
+    Invoke-Native -What 'zipalign -c -P 16' -Action {
+        & (Join-Path $tools 'zipalign.exe') -c -P 16 -v 4 $apk | Out-Null
+    }
+    Write-Ok 'zipalign: 16-KiB-ausgerichtet (-P 16)'
+
+    # Und dass es ueberhaupt unterschrieben ist - ohne Signatur installiert
+    # Android gar nichts, und der Debug-Schluessel ist eine echte Signatur.
+    #
+    # apksigner ist ein Java-Programm in einer .bat-Huelle: ohne JAVA_HOME
+    # bricht es mit Ruecklaufwert 1 ab und sagt kein Wort ueber den Grund. Das
+    # sieht dann nach einer ungueltigen Signatur aus und ist eine fehlende
+    # Werkzeugkette. (aapt und zipalign sind native Programme und brauchen es
+    # nicht - deshalb faellt es genau hier auf und nirgends sonst.)
+    $previousJavaHome = $env:JAVA_HOME
+    try {
+        $env:JAVA_HOME = Find-Jdk
+        $signature = & (Join-Path $tools 'apksigner.bat') verify --print-certs $apk
+        if ($LASTEXITCODE -ne 0) { throw "apksigner verify failed (exit $LASTEXITCODE)." }
+    } finally {
+        $env:JAVA_HOME = $previousJavaHome
+    }
+    $signature | Select-String 'Verified using|certificate DN' |
+        ForEach-Object { Write-Host ("     {0}" -f $_.ToString().Trim()) -ForegroundColor DarkGray }
+    Write-Ok 'apksigner: Signatur gueltig'
+
+    Write-Host ''
+    Write-Host '  Auf ein Telefon bringen (USB-Debugging einschalten):' -ForegroundColor White
+    Write-Host ("    adb install -r ""{0}""" -f $apk) -ForegroundColor DarkGray
+    Write-Host '    adb shell am start -n com.bischofsnowboards.aruco/.MainActivity' -ForegroundColor DarkGray
+    Write-Host '    adb logcat -s ArUco' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
 function Show-Help {
     Write-Host ''
     Write-Host 'dev.ps1 - ArUco-Homographie command dispatcher' -ForegroundColor White
@@ -322,8 +1179,23 @@ function Show-Help {
     Write-Cmd 'install-deps'      'venv anlegen und requirements.txt installieren'
     Write-Cmd 'start-server'      'Server starten, Oberflaeche im eigenen Fenster zeigen, LAN-URL + QR ausgeben (--browser | --no-browser)'
     Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest)'
+    Write-Cmd 'run-tests-pdf-js'  'Dieselbe Suite, aber das PDF baut web/pdf/ ueber Node (ARUCO_PDF=js)'
+    Write-Cmd 'run-tests-js'      'Die reine JavaScript-Rechnung pruefen (node --test)'
+    Write-Cmd 'run-tests'         'Testsuite ausfuehren (pytest, Python-Kern)'
+    Write-Cmd 'build-core'        'C++-Rechenkern nach core/build/ bauen (CMake + MSVC + OpenCV-SDK)'
+    Write-Cmd 'run-tests-cpp'     'C++-Pruefstand und DIESELBE Testsuite gegen den C++-Kern (ARUCO_CORE=cpp)'
+    Write-Cmd 'build-core-wasm'   'Denselben Kern fuer den Browser bauen (Emscripten) und unter Node messen'
+    Write-Cmd 'build-core-android' 'Denselben Kern fuer Android bauen (NDK; Vorgabe arm64-v8a) - baut nur, misst nicht'
+    Write-Cmd 'check-jni'         'Die JNI-Schicht auf einer echten JVM ausfuehren (Windows-DLL desselben Quelltextes)'
+    Write-Cmd 'build-android-libs' 'libaruco_core.so je ABI bauen und nach android/app/src/main/jniLibs/ legen'
+    Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und jedes JNI-Symbol aus NativeCore.java'
+    Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
+    Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
+    Write-Cmd 'check-android-ui'  'Die Kette aus dem APK in einem Chromium fahren (Java nachgebaut, Kern als WASM)'
+    Write-Cmd 'build-web'         'Browser-Bau zusammenstellen (web/index.html + dist/web/) - laeuft ohne Server'
+    Write-Cmd 'start-web'         'Den Browser-Bau ausliefern (reiner Dateiserver, Vorgabeport 8020)'
     Write-Cmd 'build-markersheet' 'A4-Markerblatt nach out/markerblatt_A4.pdf schreiben'
-    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (ohne Python lauffaehig)'
+    Write-Cmd 'build-exe'         'Windows-.exe nach dist/ArUco-Homographie/ bauen (baut den C++-Kern mit; ohne Python lauffaehig)'
     Write-Cmd 'build-installer'   'Windows-Installer nach dist/ bauen - eine Datei, ohne Adminrechte installierbar'
     Write-Cmd 'kill-servers'      'Aus diesem Repo gestartete Server beenden'
     Write-Cmd 'clean-all'         'venv, out/, build/, dist/ und Caches entfernen'
@@ -336,6 +1208,20 @@ switch ($Command.ToLowerInvariant()) {
     'install-deps'      { Invoke-InstallDeps }
     'start-server'      { Invoke-StartServer }
     'run-tests'         { Invoke-RunTests }
+    'run-tests-pdf-js'  { Invoke-RunTestsPdfJs }
+    'run-tests-js'      { Invoke-RunTestsJs }
+    'build-core'        { Invoke-BuildCore }
+    'run-tests-cpp'     { Invoke-RunTestsCpp }
+    'build-core-wasm'   { Invoke-BuildCoreWasm }
+    'build-core-android' { Invoke-BuildCoreAndroid }
+    'check-jni'         { Invoke-CheckJni }
+    'build-android-libs' { Invoke-BuildAndroidLibs -Abis (Get-AbiArgument) }
+    'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
+    'build-apk'         { Invoke-BuildApk }
+    'check-apk'         { Invoke-CheckApk }
+    'check-android-ui'  { Invoke-CheckAndroidUi }
+    'build-web'         { Invoke-BuildWeb }
+    'start-web'         { Invoke-StartWeb }
     'build-markersheet' { Invoke-BuildMarkersheet }
     'build-exe'         { Invoke-BuildExe }
     'build-installer'   { Invoke-BuildInstaller }

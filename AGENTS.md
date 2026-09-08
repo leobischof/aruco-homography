@@ -19,9 +19,13 @@ Tests aus `tests/` grün halten — sie sind der einzige Beweis, den dieses Proj
 
 ```powershell
 .\dev.ps1 start-server        # Server + Browser, LAN-URL und QR-Code fürs Handy
-.\dev.ps1 run-tests           # pytest
+.\dev.ps1 run-tests           # pytest, mit dem Python-Kern
+.\dev.ps1 build-core          # C++-Rechenkern nach core/build/ (CMake + MSVC + OpenCV-SDK)
+.\dev.ps1 run-tests-cpp       # C++-Prüfstand und DIESELBE Suite gegen den C++-Kern
+.\dev.ps1 check-jni           # die JNI-Schicht auf einer echten JVM ausführen (Windows-DLL)
+.\dev.ps1 build-apk           # Android-APK nach android/out/ (Vorgabe arm64-v8a), misst danach nach
 .\dev.ps1 build-markersheet   # Markerblatt nach out/
-.\dev.ps1 build-exe           # Windows-Bundle nach dist/ (läuft ohne Python)
+.\dev.ps1 build-exe           # Windows-Bundle nach dist/ (baut den C++-Kern mit)
 .\dev.ps1 build-installer     # Windows-Installer nach dist/ — eine Datei, ohne Adminrechte
 .\dev.ps1 kill-servers        # nur Server aus DIESEM Verzeichnis (auch die gebaute .exe)
 .\dev.ps1 clean-all
@@ -41,6 +45,12 @@ shared/              sprachneutral: constants.json (Produktkonstanten) und
                      teilen sich Python, C++ und JavaScript — siehe
                      docs/cpp-migration/README.md. Liegt außerhalb von app/ und
                      muss deshalb in aruco-homographie.spec stehen.
+core/                der C++-Rechenkern (Stufe 2, docs/cpp-migration/): eine Bibliothek,
+                     eine pybind11-Bindung, ein Prüfstand gegen shared/fixtures/. Er
+                     fasst `imgcodecs` NICHT an — im WASM-Bau gibt es das nicht, und
+                     derselbe Quelltext muss später für den Browser übersetzen. Seine
+                     Konstanten werden beim Bau aus shared/constants.json ERZEUGT und
+                     sind nicht eingecheckt.
 app/config.py        SSOT: jede Konstante, jede Markenfarbe, das Blattlayout —
                      die Produktwerte gelesen aus shared/constants.json, die
                      Programmwerte (Pfade, Port, Fassung) im Klartext. Auch
@@ -50,11 +60,38 @@ app/notices.py       Vokabular für Warnungen und Abbrüche: Code + Parameter, K
                      fertiger Satz. Der Text entsteht erst am Rand, aus dem Katalog.
 app/i18n.py          Katalog laden, übersetzen, Accept-Language aushandeln
 app/pipeline.py      Orchestrierung der Rechenkette; main.py bleibt reiner Transport
-app/vision/          geometry · detect · solve · camera · thickness · extent · rectify ·
-                     contour · enhance
+app/vision/          backend · geometry · detect · solve · camera · thickness · extent ·
+                     rectify · contour · enhance. `backend.py` entscheidet, welcher
+                     Rechenkern misst — Python oder C++ (Umgebungsvariable ARUCO_CORE).
+                     **Die Vorgabe hängt am Ort:** im Quellbaum Python (die Referenz,
+                     gegen die geprüft wird), in der gebauten `.exe` C++ (was
+                     ausgeliefert wird). Kein Rückfall — fehlt der Kern, bricht der
+                     Start ab. Beleg: docs/cpp-migration/stage-4-windows-exe.md
 app/pdf/             layout · overlays · branding · build · markersheet
 app/static/          Oberfläche: css/ (Tokens + Stylesheets), js/ (ES-Module, kein
                      Bundler), i18n/ (de.json · en.json), brand/ (Logo und Schrift)
+web/pdf/             derselbe PDF-Bau in JavaScript (pdf-lib), Modul für Modul das
+                     Spiegelbild von app/pdf/. Läuft im Browser, unter Node und
+                     später in der Android-Hülle. NOCH NICHT der Auslieferungsweg:
+                     die .exe baut weiter mit ReportLab. `ARUCO_PDF=js` lässt die
+                     vorhandene Testsuite gegen diesen Bau laufen (dev.ps1
+                     run-tests-pdf-js). Nichts hier darf `fs` oder `path` anfassen.
+web/vision/          dieselbe Rechenkette in JavaScript: solve · rectify · extent ·
+                     contour · camera · pipeline. Sie rechnet NICHT selbst — sie ruft
+                     den C++-Kern. **core.js ist die einzige Datei hier, die den Kern
+                     kennt**, und genau deshalb gibt es daneben core-android.js: im
+                     Browser WebAssembly, auf dem Telefon JNI. Wer einen dritten Weg
+                     braucht, schreibt ein drittes core.js und fasst nichts darüber an.
+android/             die Android-Hülle: eine WebView, die app/static/ UNVERÄNDERT
+                     ausliefert, und eine JNI-Schicht auf denselben core/. Sie
+                     kopiert nichts — der Gradle-Bau legt app/static/, web/pdf/
+                     und shared/ zur Bauzeit nebeneinander. Was die App heute
+                     wirklich kann (und was nicht), steht in
+                     docs/cpp-migration/stage-4-android.md. Die .so und das APK
+                     sind Erzeugnisse und stehen in .gitignore.
+tools/               Werkzeuge NEBEN der Anwendung, nie im Bundle: der Prüfstand
+                     pdf_js_bridge (Python ruft Node), die eingefrorenen Fixtures
+                     und der Backvorgang für das Logo als Pfaddaten.
 tests/               synthetische Szenen mit bekannter Grundwahrheit
 docs/                README.md ist der Index; docs/superpowers/specs/ die Spezifikation,
                      mit dem Code abgeglichen
@@ -141,6 +178,8 @@ und fiele sonst erst am realen Foto auf.
 | Unicode auf der Konsole | Der ASCII-QR-Code besteht aus Blockzeichen. Landet die Ausgabe in einer Pipe oder Datei statt in einer Windows-Konsole, gilt cp1252 und `print()` bricht ab. Verzierungen dürfen den Server nicht mitreißen — siehe `print_banner`. Dieselbe Falle beim Bauen: was `dev.ps1` per `Get-ConfigValue` aus `config.py` liest und an ISCC weitergibt, läuft durch zwei Codepage-Stationen. Werte, die diesen Weg nehmen, bleiben **reines ASCII** (siehe `BRAND_COPYRIGHT`); das Sonderzeichen entsteht erst am Ziel. |
 | Tiefer Ablageort des Bundles | Die längste Datei im Bundle hat 101 Zeichen relativen Pfad. Über etwa 157 Zeichen Zielordner reißt MAX_PATH, und die `.exe` stirbt beim Start mit „DLL load failed … Dateiname oder Erweiterung ist zu lang". Kein Codefehler, aber es sieht wie einer aus. Gilt nur noch für den **entpackten Ordner**: der Installer wählt den Zielpfad selbst (`%LOCALAPPDATA%\Programs\`) und kann gar nicht zu tief landen. |
 | CSS-Spezifität | `#id { display: flex }` schlägt `.hidden { display: none }`. `.hidden` trägt deshalb `!important`. |
+| `CV_8UC3` & Co. als Zahl | Die Werte der CV-Typkonstanten haben sich zwischen OpenCV 4 und 5 geändert — `CV_8UC3` ist 16 in 4.x und **64** in 5.0.0, `CV_32FC2` 13 gegen **37** (nachgemessen). Das Speicherbild blieb gleich, die Zahl nicht. Im C++-Kern deshalb immer das **Makro**, nie die Zahl, und nie `mat.type()` gegen ein Literal vergleichen: das verzweigt in einem Bau gegen ein anderes OpenCV lautlos falsch — und Stufe 4 übersetzt genau diesen Quelltext gegen NDK und Emscripten. |
+| Detektor-Parameter | Sie stehen als Zahlen in `app/vision/detect.py` **und** in `core/src/detect.cpp` — eine gemeinsame Quelle haben sie nicht, weil sie eine Aussage über den Detektor sind und nicht über das Produkt. Damit sind sie die einzige Stelle, an der die beiden Kerne auseinanderlaufen können, ohne dass ein Übersetzer es merkt. Wer dort etwas ändert, ändert es hier mit — `tests/test_backend.py` fällt sonst um. |
 | Rasterbild statt Vektor | Marker und Logo werden als Vektor gezeichnet. Ein eingebettetes Rasterbild kostet Kantenschärfe, und die braucht die Subpixel-Erkennung. |
 | Lange Heredocs | In dieser Shell brechen sehr lange Heredocs mitten im Dokument ab. Dateien mit dem Schreib-Werkzeug anlegen. |
 

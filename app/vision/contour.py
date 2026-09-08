@@ -14,9 +14,10 @@ import cv2
 import numpy as np
 
 from app import config
+from app.vision import backend
 
 
-def find_contour_mm(rectified_bgr: np.ndarray, px_per_mm: float) -> np.ndarray | None:
+def _find_contour_mm_python(rectified_bgr: np.ndarray, px_per_mm: float) -> np.ndarray | None:
     """Groesste plausible Aussenkontur als (N,2)-Polygon in mm, sonst None."""
     gray = cv2.cvtColor(rectified_bgr, cv2.COLOR_BGR2GRAY)
     gray = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
@@ -39,6 +40,9 @@ def find_contour_mm(rectified_bgr: np.ndarray, px_per_mm: float) -> np.ndarray |
 
     simplified = cv2.approxPolyDP(largest, config.CONTOUR_EPS_MM * px_per_mm, True)
     return simplified.reshape(-1, 2).astype(np.float64) / px_per_mm
+
+
+find_contour_mm = backend.implementation("find_contour_mm", _find_contour_mm_python)
 
 
 def bounding_box_mm(contour_mm: np.ndarray) -> tuple[float, float]:

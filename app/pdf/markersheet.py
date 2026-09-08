@@ -20,7 +20,7 @@ from reportlab.pdfgen.canvas import Canvas
 
 from app import config
 from app.i18n import translate
-from app.pdf import branding
+from app.pdf import branding, generator
 from app.pdf.layout import Rect
 
 # Ein 4x4-Marker hat mit einem Modul Rand 6 x 6 Module.
@@ -48,6 +48,13 @@ def build_markersheet(
 ) -> bytes:
     """Das komplette Markerblatt als PDF-Bytes."""
     spacing = spacing_mm or config.SHEET_SPACING_MM
+    if generator() == "js":
+        # Die Modulbits erzeugt dann opencv.js unter Node, nicht dieses cv2 hier -
+        # sonst pruefte tests/test_markersheet.py am Ende cv2 gegen cv2.
+        from tools.pdf_js_bridge import build_markersheet_via_node
+
+        return build_markersheet_via_node(marker_mm, spacing, locale)
+
     sheet_w, sheet_h = config.SHEET_MM
     buffer = io.BytesIO()
     canvas = Canvas(buffer, pagesize=(_pt(sheet_w), _pt(sheet_h)))

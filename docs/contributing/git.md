@@ -3,7 +3,7 @@ title: Git-Regeln
 description: Verbindliche Regeln für Identität, Commits, Pushes und den Aufbau der Commit-Nachricht.
 audience: developer
 status: current
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Git-Regeln
@@ -217,12 +217,32 @@ ersetzt.
 
 ---
 
-## 7 · `master` ist geschützt — es führt nur ein Weg hinein
+## 7 · Zwei geschützte Zweige: `develop` sammelt, `master` veröffentlicht
 
-Seit 2026-09-07 nimmt GitHub auf `master` **keinen direkten Push mehr an**, auch nicht vom
-Eigentümer (`enforce_admins`). Der einzige Weg ist ein **Pull Request, per Squash gemergt**.
+Seit 2026-09-08 gibt es **zwei** Stufen, und Arbeit geht nur in einer Richtung durch sie
+hindurch:
 
-Am Repository eingestellt:
+```
+feat/…, fix/…, docs/…  ──PR──►  develop  ──PR──►  master
+                                (Sammeln)        (Veröffentlichen)
+```
+
+- **`develop` ist das Ziel jedes Feature-PRs.** Was fertig **und geprüft** ist, wird
+  hierhin gemergt. `develop` ist auch der **Vorgabezweig** des Repositories — ein
+  `gh pr create` ohne `--base` zielt von selbst hierher, damit man `master` nicht aus
+  Versehen trifft.
+- **`master` bekommt nur `develop`**, und zwar dann, wenn ein Stand ausgeliefert werden
+  soll. Kein Feature-Branch zielt je direkt auf `master`.
+
+**Wozu die zweite Stufe.** `master` soll den ausgelieferten Stand zeigen und nicht jeden
+Zwischenschritt dorthin. Ein Umzug wie der auf den C++-Kern besteht aus einem Dutzend
+Schritten, von denen einzeln keiner eine Fassung wert ist — zusammen sind sie eine. Auf
+`master` steht danach **ein** Eintrag je Fassung, nicht zwölf.
+
+Beide Zweige sind gleich hart geschützt: **kein direkter Push**, auch nicht vom Eigentümer
+(`enforce_admins`), und der einzige Weg hinein ist ein **Pull Request, per Squash gemergt**.
+
+Am Repository eingestellt (gilt für `develop` **und** `master`):
 
 | Einstellung | Wert | Wozu |
 |---|---|---|
@@ -249,17 +269,71 @@ das Warum.
 
 ### Der Ablauf
 
+**Ein Feature, von `develop` nach `develop`:**
+
 ```powershell
-git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname develop
 # arbeiten, committen, Tests grün halten
 git push -u origin feat/kurzname          # nur auf Ansage
-gh pr create --base master --title "feat: kurzer betreff" --body "..."
+gh pr create --title "feat: kurzer betreff" --body "..."   # zielt von selbst auf develop
 gh pr merge --squash --delete-branch      # nur auf Ansage
 ```
 
-Danach das Worktree entfernen (Abschnitt 6). `master` örtlich wieder einholen mit
+Danach das Worktree entfernen (Abschnitt 6). `develop` örtlich wieder einholen mit
 `git pull --ff-only` — der Squash-Commit ist ein **anderer** Commit als die eigenen, der
 lokale Branch ist danach Geschichte und wird nicht weiterverwendet.
+
+**Eine Fassung, von `develop` nach `master`:**
+
+```powershell
+gh pr create --base master --head develop --title "release: 0.1.0-alpha — …"
+gh pr merge --squash                      # OHNE --delete-branch!
+```
+
+`--delete-branch` wäre hier ein Fehler: `develop` ist kein Feature-Branch, sondern bleibt
+stehen.
+
+**Danach passiert nichts mehr.** `develop` wird *nicht* auf `master` eingeholt — und das
+ist der Punkt, an dem eine frühere Fassung dieses Abschnitts falsch lag. Sie schrieb
+`git checkout develop; git merge master; git push` vor. Das geht nicht, und es ist
+überflüssig:
+
+**Es geht nicht.** `required_linear_history` gilt auch für `develop` (Tabelle oben) und
+weist einen Merge-Commit ab. Am 08.09.2026 auf einem Wegwerf-Zweig mit derselben
+Einstellung nachgestellt: ein gewöhnlicher Commit ging durch, der Merge-Commit nicht.
+
+```
+remote:   Found 1 violation:
+ ! [remote rejected] HEAD -> tmp/linear-probe (protected branch hook declined)
+```
+
+**Es ist überflüssig.** Der Squash-Commit auf `master` trägt genau den Baum, den
+`develop` in diesem Augenblick hat. Nach dem Merge sind die beiden Zweige inhaltlich
+deckungsgleich; verschieden ist nur, wie sie dorthin gekommen sind. Genau das war der
+Zweck der zweiten Stufe.
+
+### Der Preis dafür: der Release-PR zeigt zu viel
+
+Weil der Squash-Commit auf `master` kein Vorfahr von `develop` ist, bleibt der
+gemeinsame Vorfahr der beiden Zweige stehen, wo er war. **Der zweite Release-PR listet
+deshalb wieder alles seit dem Abzweigpunkt** — auch, was längst ausgeliefert ist.
+
+Ebenfalls am 08.09.2026 durchgespielt, zwei Fassungen auf Wegwerf-Zweigen:
+
+| | Fassung 1 | Fassung 2 |
+|---|---|---|
+| tatsächlich neu | `A`, `B` | `C` |
+| was der PR listete | `A`, `B` | `A`, `B`, **`C`** |
+| Baum nach dem Merge | stimmt | stimmt |
+
+**Der Inhalt stimmt immer.** Was eine Fassung *enthält*, sagt `CHANGELOG.md` — nicht die
+Commit-Liste des Release-PRs. Wer sie für eine Inhaltsangabe hält, kündigt beim zweiten
+Mal Dinge an, die seit Wochen ausgeliefert sind.
+
+Der Ausweg wäre, `required_linear_history` für `develop` abzuschalten; dann ginge der
+Merge zurück, und der gemeinsame Vorfahr wanderte mit. Das ist **nicht** getan: eine
+Schutzeinstellung wird nicht wegen einer Anzeige gelockert, und der Ersatz kostet nichts
+als das Wissen aus diesem Abschnitt.
 
 ### Wenn der Schutz einmal im Weg steht
 

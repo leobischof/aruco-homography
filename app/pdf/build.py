@@ -19,7 +19,7 @@ from reportlab.pdfgen.canvas import Canvas
 
 from app import config
 from app.i18n import translate
-from app.pdf import branding, overlays
+from app.pdf import branding, generator, overlays
 from app.pdf.layout import Rect, TileLayout, single_page, strip_height, tile_layout
 
 
@@ -71,9 +71,45 @@ def build_pdf(
     contour_mm: np.ndarray | None = None,
 ) -> BuildResult:
     """Einstiegspunkt: baut je nach Option eine Seite oder eine Kachelung."""
+    if generator() == "js":
+        return _build_via_javascript(
+            rectified_bgr, crop_w_mm, crop_h_mm, options, footer_lines, contour_mm
+        )
     if options.layout == "tiles":
         return _build_tiles(rectified_bgr, crop_w_mm, crop_h_mm, options, footer_lines, contour_mm)
     return _build_single(rectified_bgr, crop_w_mm, crop_h_mm, options, footer_lines, contour_mm)
+
+
+def _build_via_javascript(
+    image_bgr: np.ndarray,
+    crop_w: float,
+    crop_h: float,
+    options: ExportOptions,
+    footer_lines: list[str],
+    contour_mm: np.ndarray | None,
+) -> BuildResult:
+    """Den Bau nach web/pdf/ geben und das Ergebnis unveraendert durchreichen.
+
+    Die Geometrie im BuildResult kommt aus dem JavaScript-Ergebnis und NICHT aus
+    einer zweiten Rechnung hier. Sonst pruefte die Suite am Ende die Python-Zahlen
+    gegen sich selbst, und genau das soll sie nicht.
+
+    Der Import steht in der Funktion: tools/ gehoert dem Pruefstand und darf im
+    ausgelieferten Bundle fehlen. Oben im Modul wuerde sein Fehlen den Start der
+    Anwendung kosten - fuer etwas, das im Betrieb nie aufgerufen wird.
+    """
+    from tools.pdf_js_bridge import build_pdf_via_node
+
+    answer = build_pdf_via_node(
+        image_bgr, crop_w, crop_h, options, footer_lines, contour_mm
+    )
+    return BuildResult(
+        data=answer["data"],
+        page_size_mm=tuple(answer["page_size_mm"]),
+        image_rect_mm=tuple(answer["image_rect_mm"]),
+        page_count=answer["page_count"],
+        meta=answer["meta"],
+    )
 
 
 def _build_single(

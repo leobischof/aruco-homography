@@ -68,3 +68,54 @@ Desktop.ini
 *.bak
 *.orig
 *.rej
+
+# --- Spike Stufe 0: rohe Graustufen, 16 MB, aus spike/make_scene.py herstellbar ----
+spike/*.raw
+
+# --- Browser-Bau ---------------------------------------------------------------
+# web/index.html entsteht bei jedem `./dev.ps1 build-web` aus app/static/index.html
+# (tools/build_web.py). Eingecheckt waere es eine zweite Fassung derselben
+# Oberflaeche - 352 Zeilen Markup, die auseinanderlaufen, ohne dass es jemand
+# merkt. Derselbe Grund wie beim erzeugten Konstanten-Header des C++-Kerns.
+/web/index.html
+# pdf-lib wird beim Bauen aus node_modules kopiert (tools/build_web.py). Es ist
+# in package-lock.json auf die Ziffer festgenagelt und mit `npm ci` jederzeit
+# wieder da - eine eingecheckte Kopie waere eine zweite Fassung derselben
+# Abhaengigkeit. Das wasm daneben IST eingecheckt, und zwar mit Absicht: es ist
+# das Ergebnis einer Werkzeugkette, die niemand nebenbei nachbaut, und ein
+# Auslieferungsstand, dessen Rechenkern beim Bauen frisch entsteht, ist keiner
+# (docs/cpp-migration/README.md, Abschnitt 5a).
+/web/vendor/pdf-lib.esm.min.js
+
+# --- JavaScript ----------------------------------------------------------------
+# npm-Abhaengigkeiten des PDF-Baus (web/pdf/). Gebaut, nicht geschrieben -
+# package.json und package-lock.json dagegen schon.
+/node_modules/
+# --- C++-Kern -----------------------------------------------------------------
+# Das Bauverzeichnis. Darin liegen auch der erzeugte Konstanten-Header, das
+# Fixture-Paket (26 MB rohe Pixel) und die kopierte opencv_world500.dll.
+/core/build/
+# Die Kreuzbauten (Stufe 4). Je Ziel ein eigenes Verzeichnis, weil CMake pro
+# Werkzeugkette einen eigenen Cache braucht - zusammen gut 230 MB, alles davon
+# mit ./dev.ps1 build-core-wasm bzw. build-core-android wiederherstellbar.
+/core/build-wasm/
+/core/build-android-*/
+# gen_constants.py schreibt normalerweise ins Bauverzeichnis. Wird es von Hand
+# mit einem anderen Ziel aufgerufen, landet der Header hier - und eingecheckt
+# waere er eine zweite Definition derselben Millimeter (AGENTS.md, Invariante 4).
+/core/include/aruco/constants.hpp
+
+# --- Android-Huelle (Stufe 4) --------------------------------------------------
+# Die .so je ABI. Sie ist ein ERZEUGNIS von ./dev.ps1 build-android-libs (rund
+# 6 MB je ABI) und gehoert damit nicht ins Repo - der Quelltext dafuer steht
+# vollstaendig in core/.
+/android/app/src/main/jniLibs/
+# Das fertige APK. Sein Weg steht in docs/cpp-migration/stage-4-android.md;
+# eine eingecheckte Binaerdatei waere bei jedem Bau ein neuer Blob.
+/android/out/
+# Gradles eigener Kram. Das Bauverzeichnis liegt ohnehin neben dem Repo
+# (android/gradle.properties, aruco.buildRoot) - der Rest entsteht hier.
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties

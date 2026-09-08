@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Ein Vollbild-Thema ohne ActionBar: die Oberflaeche bringt ihre eigene
+      Kopfzeile mit (app/static/index.html), und eine zweite darueber waere
+      doppelt. Kein Material-Thema, weil nichts aus Material benutzt wird - die
+      ganze Anzeige ist die WebView.
+    -->
+    <style name="Theme.Aruco" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_light</item>
+        <item name="android:statusBarColor">@color/brand_primary</item>
+    </style>
+</resources>

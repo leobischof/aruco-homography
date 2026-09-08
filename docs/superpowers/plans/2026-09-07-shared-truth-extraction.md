@@ -1,3 +1,11 @@
+---
+title: Stufe 1: `shared/` — eine Wahrheit, sprachneutral
+description: Der Plan, mit dem Konstanten und Prüfszenen aus Python herausgelöst wurden, damit drei Sprachen dieselben Zahlen lesen.
+audience: developer
+status: current
+updated: 2026-09-07
+---
+
 # Stufe 1: `shared/` — eine Wahrheit, sprachneutral
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development

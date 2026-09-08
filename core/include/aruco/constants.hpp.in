@@ -1,0 +1,37 @@
+// VORLAGE fuer core/include/aruco/constants.hpp.
+//
+// Die Kopfdatei daneben ist ERZEUGT und ist NICHT eingecheckt. Sie entsteht bei
+// jedem CMake-Lauf aus shared/constants.json (core/tools/gen_constants.py).
+//
+// Warum der Umweg: eine Konstante hat genau eine Stelle (AGENTS.md, Invariante
+// 4). Abgetippte Zahlen in C++ waeren eine zweite Definition derselben
+// Millimeter - und zwei Definitionen driften. Sie driften still, und sie driften
+// in Millimetern. Eine eingecheckte constants.hpp waere dasselbe Problem mit
+// einem Zwischenschritt: sie sagt die Wahrheit genau bis zur naechsten Aenderung
+// an der JSON-Datei.
+//
+// Was NICHT hierher kommt: die OpenCV-Kennung des Woerterbuchs. In der
+// sprachneutralen Datei steht der NAME ("DICT_4X4_50"); die Zahl dahinter leitet
+// jede Sprache selbst ab - Python mit getattr (app/config.py), C++ mit einer
+// Tabelle (core/src/detect.cpp). Eine OpenCV-Zahl in shared/constants.json waere
+// keine sprachneutrale Angabe, sondern eine Wette darauf, dass jede Bindung
+// dieselbe Nummerierung benutzt.
+
+#ifndef ARUCO_CONSTANTS_HPP
+#define ARUCO_CONSTANTS_HPP
+
+#include <array>
+#include <string_view>
+#include <utility>
+
+namespace aruco {
+
+/// Die Produktkonstanten, erzeugt aus @ARUCO_CONSTANTS_SOURCE@.
+namespace constants {
+
+@ARUCO_GENERATED_CONSTANTS@
+
+}  // namespace constants
+}  // namespace aruco
+
+#endif  // ARUCO_CONSTANTS_HPP
