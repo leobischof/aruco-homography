@@ -313,15 +313,28 @@ Schönheitsfehler.
 
 ## 5 · Was **nicht** belegt ist
 
-**Android ist ungemessen. Punktschluss.** Der Bau bindet für alle vier ABIs, das
-Erzeugnis ist eine echte Android-`PIE`-Datei —
+**Der ULP-Vergleich fehlt für Android — und nur der.** Seit dem 08.09.2026 gibt es eine
+Zahl von einem echten Gerät: der App-Prüfstand ist auf einem Xiaomi 2312DRA50G
+(Android 15, `arm64-v8a`) gelaufen und hat **bestanden**, beide Szenen mit demselben
+größten Eckfehler von **0,2337 px** wie Windows und WASM, und beide SHA-256 der
+Prüfszenen identisch.
+
+**Das ist eine andere Messung als die in diesem Dokument, und der Unterschied ist der
+ganze Punkt.** Hier werden die Ziele **gegeneinander** verglichen, Ecke für Ecke, auf
+`float32`-ULP genau. Das Telefon hat gegen die **Grundwahrheit** gemessen und auf vier
+Nachkommastellen ausgegeben — genug, um einen Rechenfehler zu sehen, zu wenig, um zu
+sagen, ob Android auf demselben Bit landet wie Windows. Wer beides in einen Topf wirft,
+macht aus einer bestandenen Prüfung eine, die gar nicht stattgefunden hat.
+
+Der Bau bindet für alle vier ABIs, das Erzeugnis ist eine echte Android-`PIE`-Datei —
 
 ```
 ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked,
 interpreter /system/bin/linker64, for Android 24, built by NDK r27c (12479018)
 ```
 
-— aber **keine einzige Zahl davon ist gemessen.** Auf diesem Rechner:
+— aber **auf diesem Rechner ist davon nichts ausgeführt**, und der Quervergleich braucht
+beide Seiten gleichzeitig:
 
 | Weg | Befund |
 |---|---|
@@ -343,6 +356,11 @@ wie Windows** und nicht auf der von WASM. Nach der Erklärung aus §2 wäre also
 Ergebnis nahe an Windows plausibler als eines nahe an WASM, und die Spanne über alle drei
 Ziele bliebe bei wenigen `float32`-ULP. Vier ULP wären 0,0005 px und immer noch 1500-mal
 unter der Toleranz. **Eine Erklärung ist keine Messung — nachzuprüfen bleibt es.**
+
+Der Gerätelauf vom 08.09.2026 spricht dafür, beweist es aber nicht: 0,2337 px auf vier
+Nachkommastellen schließt eine Abweichung von vier ULP (0,0005 px) gar nicht aus — sie
+läge zwei Stellen unter der letzten ausgegebenen. Was er ausschließt, ist ein *Fehler*;
+was er offenlässt, ist das letzte Bit.
 
 **So geht es, sobald ein Gerät da ist** — der Prüfstand liest nur Dateien, es braucht
 keine App:
@@ -370,9 +388,12 @@ Windows-Ausgabe, und die Erwartung ist „wenige ULP".
   Ecke-für-Ecke-Gegenüberstellung Windows gegen WASM in diesem Dokument deckt nur
   `detect_markers` ab. Für die JNI-Seite holt das `stage-4-android.md` nach (18 Größen je
   Szene, bitgenau); zwischen Windows und WASM steht es aus.
-- **Kein Speicherbedarf gemessen.** Das WASM läuft mit `ALLOW_MEMORY_GROWTH` und
-  8 MB Stapel gegen 2400×1800; ob ein Handy mit wenig RAM ein 12-MP-Foto verträgt, steht
-  nicht fest.
+- **Kein Speicherbedarf gemessen** — mit einer Ausnahme, und die fiel gegen uns aus. Das
+  WASM läuft mit `ALLOW_MEMORY_GROWTH` und 8 MB Stapel gegen 2400×1800. Auf dem Telefon
+  hat ein 12-MP-Foto den Weg bis zum Zuschnitt überstanden, der **Export** aber nicht:
+  169 Megapixel Ausgaberaster gaben einen `OutOfMemoryError`. Behoben in `0.1.1-alpha`
+  (die Grenze richtet sich jetzt nach dem Gerät), aber als Zahl heißt das: **auf einem
+  Telefon ist die Obergrenze erreichbar, und zwar mit den Vorgabewerten.**
 - **Die 24 MB `_toolchain\opencv-wasm\` sind ein Bau von diesem Rechner.** Für eine
   Auslieferung gehört er eingefroren oder reproduzierbar nachgebaut.
 
