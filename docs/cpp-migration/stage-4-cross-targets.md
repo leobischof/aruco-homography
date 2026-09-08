@@ -9,9 +9,12 @@ updated: 2026-09-08
 # Stufe 4 · Ein Quelltext, drei Ziele — Ergebnis
 
 > **Ja. Derselbe `core/` übersetzt für Windows, Android und WebAssembly und misst auf
-> allen Zielen, die man ausführen kann, dasselbe.** Zuversicht: **hoch für Windows und
-> WASM** (beide gelaufen, Ecke für Ecke verglichen), **niedrig für Android** — dort ist
-> nur belegt, dass es bindet. Auf diesem Rechner gibt es kein Gerät und keinen Emulator.
+> allen dreien dasselbe.** Zuversicht: **hoch für alle drei.** Windows und WASM sind hier
+> gelaufen, Ecke für Ecke verglichen; für Android galt das lange nicht — dort war nur
+> belegt, dass es bindet. Am **08.09.2026** ist der Prüfstand auf einem Xiaomi 2312DRA50G
+> (Android 15) gelaufen und hat **bestanden**, mit demselben größten Eckfehler von
+> **0,2337 px** je Szene. Auf diesem Rechner gibt es weiterhin kein Gerät und keinen
+> Emulator; die Zahl kommt aus dem Telefon selbst.
 
 > **Stand:** 2026-09-08 · Zweig `feat/cross-compile` · Belege in `core/`, `dev.ps1`
 

@@ -37,6 +37,32 @@ export const SHEET_MARKER_IDS = Object.freeze([...shared.SHEET_MARKER_IDS]);
 // Alles, was app/vision/ aus config.py holt. Erst gebraucht, seit derselbe
 // Rechenweg auch im Browser laeuft (web/vision/).
 export const MAX_OUTPUT_MPX = shared.MAX_OUTPUT_MPX;
+
+/**
+ * Wieviele Ausgabepixel HIER moeglich sind - Produktgrenze und Geraetegrenze,
+ * die kleinere gewinnt.
+ *
+ * `MAX_OUTPUT_MPX` steht in shared/constants.json und sagt, was das FORMAT
+ * hergibt: 300 Megapixel, auf jedem Ziel dieselbe Zahl. Was die MASCHINE
+ * hergibt, ist eine andere Frage und gehoert deshalb nicht dorthin -
+ * 300 MPx sind beim Export 900 MB Raster, und ein Telefon hat sie nicht.
+ *
+ * Die Android-Huelle setzt `globalThis.ARUCO_MAX_OUTPUT_MPX` aus dem wirklich
+ * verfuegbaren Speicher (bridge-shim.js <- NativeImages.budgetMegapixels).
+ * Fehlt der Wert - Browser, Node, Schreibtisch -, gilt die Produktgrenze.
+ *
+ * Ohne das brach der Export auf dem Telefon mit einem OutOfMemoryError ab,
+ * den die WebView verschluckte: "Java exception was raised during method
+ * invocation", ohne ein Wort darueber, was zu tun waere. Mit der Grenze faellt
+ * derselbe Fall in `output_too_large` - eine uebersetzte Meldung, die eine
+ * kleinere Aufloesung oder einen kleineren Ausschnitt vorschlaegt.
+ */
+export function outputBudgetMpx() {
+    const device = globalThis.ARUCO_MAX_OUTPUT_MPX;
+    return Number.isFinite(device) && device > 0
+        ? Math.min(MAX_OUTPUT_MPX, device)
+        : MAX_OUTPUT_MPX;
+}
 export const MAX_UPLOAD_MB = shared.MAX_UPLOAD_MB;
 export const PREVIEW_MAX_PX = shared.PREVIEW_MAX_PX;
 export const DEFAULT_CROP_MAX_MM = shared.DEFAULT_CROP_MAX_MM;
