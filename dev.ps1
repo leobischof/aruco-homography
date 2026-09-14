@@ -741,6 +741,7 @@ $UiProbePort = 8030
 #
 # UND DESHALB WIRD ER NIE UEBERSCHRIEBEN: "gibt es schon" ist hier kein
 # Fehler, sondern der Normalfall. Ein zweiter Schluessel waere eine zweite App.
+#
 # Der Ablageort darf aus der Umgebung kommen. Die Werkbank hat kein
 # _toolchain/ neben dem Repo - sie packt den Schluessel aus einem Geheimnis in
 # ihren Arbeitsbereich aus und zeigt mit ARUCO_SIGNING_DIR hierhin.
@@ -976,8 +977,6 @@ function Get-AndroidVersionCode {
 # Befehlszeile eines laufenden Vorgangs kann auf diesem Rechner jeder lesen,
 # und ein Kennwort, das in einer Prozessliste steht, ist keins mehr.
 function Enable-ReleaseSigning {
-    New-Item -ItemType Directory -Path $AndroidSigningDir -Force | Out-Null
-
     # ANLEGEN VERBOTEN - der Riegel fuer die Werkbank.
     #
     # Ohne ihn waere ein fehlendes Geheimnis kein Fehler, sondern ein NEUER
@@ -987,26 +986,48 @@ function Enable-ReleaseSigning {
     # gruener Bau, der die App unaktualisierbar macht, ist der teuerste Fehler,
     # den dieses Projekt haben kann.
     #
+    # DER ABLAGEORT RIEGELT MIT. Ein von aussen vorgegebener Ort ist per
+    # Definition nicht der Ort, an dem der Schluessel einmal angelegt wurde -
+    # dort einen zu erfinden ist nie die richtige Antwort. Haenge der Riegel
+    # allein an ARUCO_REQUIRE_EXISTING_KEY, genuegte eine vergessene Zeile
+    # YAML, und niemandem fiele es auf: ein hier erfundener Schluessel traegt
+    # dasselbe CN=Bischof Snowboards wie der echte und kaeme an jeder Pruefung
+    # vorbei, die nur den Debug-Schluessel ausschliesst.
+    #
     # Das Kennwort kommt in diesem Fall aus der UMGEBUNG und nicht von der
-    # Platte: in einer Werkbank hat eine Kennwortdatei nichts zu suchen.
-    if ($env:ARUCO_REQUIRE_EXISTING_KEY -eq '1') {
+    # Platte: in einer Werkbank hat eine Kennwortdatei nichts zu suchen. Es
+    # wird getrimmt wie das von der Platte - ein eingefuegtes oder aus einer
+    # Datei entschluesseltes Geheimnis traegt haeufig einen Zeilenumbruch mit,
+    # und Gradle meldete den als falsches Kennwort.
+    #
+    # Der Riegel steht VOR dem Anlegen des Verzeichnisses: hier ist nichts
+    # anzulegen, und ein unbrauchbarer Ablageort soll an dieser Meldung
+    # scheitern statt an einer nichtssagenden von New-Item.
+    if ($env:ARUCO_REQUIRE_EXISTING_KEY -eq '1' -or $env:ARUCO_SIGNING_DIR) {
         if (-not (Test-Path $AndroidKeystore)) {
             throw (@(
                 "Kein Release-Schluessel unter $AndroidKeystore.",
-                '     ARUCO_REQUIRE_EXISTING_KEY=1 verbietet, einen neuen anzulegen -',
+                '     An einem vorgegebenen Ablageort wird keiner angelegt -',
                 '     ein zweiter Schluessel waere eine zweite App.',
-                '     In der Werkbank heisst das: das Geheimnis fehlt oder wurde nicht ausgepackt.'
+                '     In der Werkbank heisst das: das Geheimnis fehlt oder wurde nicht ausgepackt.',
+                '     Auf der Werkbank: ARUCO_SIGNING_DIR und ARUCO_REQUIRE_EXISTING_KEY leeren,',
+                '     dann legt der erste Bau den einen Schluessel an.'
             ) -join [Environment]::NewLine)
         }
-        if (-not $env:ARUCO_KEYSTORE_PASSWORD) {
+        if ([string]::IsNullOrWhiteSpace($env:ARUCO_KEYSTORE_PASSWORD)) {
             throw (@(
-                'ARUCO_REQUIRE_EXISTING_KEY=1, aber ARUCO_KEYSTORE_PASSWORD ist leer.',
-                '     Ohne Kennwort kommt Gradle nicht an den Schluessel heran.'
+                "Der Schluessel liegt da ($AndroidKeystore), aber ARUCO_KEYSTORE_PASSWORD ist leer.",
+                '     Ohne Kennwort kommt Gradle nicht an den Schluessel heran.',
+                '     In der Werkbank heisst das: das Geheimnis fehlt, ist leer oder besteht',
+                '     nur aus Leerraum - es wird nicht erraten und nicht ersetzt.'
             ) -join [Environment]::NewLine)
         }
+        $env:ARUCO_KEYSTORE_PASSWORD = $env:ARUCO_KEYSTORE_PASSWORD.Trim()
         Write-Ok ("Release-Schluessel: {0}" -f $AndroidKeystore)
         return
     }
+
+    New-Item -ItemType Directory -Path $AndroidSigningDir -Force | Out-Null
 
     if (-not (Test-Path $AndroidKeyPass)) {
         $bytes = New-Object byte[] 24
