@@ -1,0 +1,72 @@
+name: Windows-Werkzeugkette
+description: >
+  Python, Node, das OpenCV-Windows-SDK und auf Wunsch Inno Setup herrichten -
+  alles, was dev.ps1 auf einem Windows-Laeufer vorfinden muss.
+
+inputs:
+  opencv-version:
+    description: Fassung des OpenCV-Windows-SDK
+    required: false
+    default: '5.0.0'
+  inno-setup:
+    description: Inno Setup mitinstallieren (nur build-installer braucht es)
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+
+    # Das venv ins Zwischenlager. Confirm-Deps in dev.ps1 legt es sonst bei
+    # jedem Lauf neu an, und opencv-python-headless allein sind rund 90 MB.
+    # Der Schluessel haengt an requirements.txt: aendert die sich, entsteht ein
+    # neues Lager, und ein veraltetes kann gar nicht benutzt werden.
+    - name: venv aus dem Zwischenlager
+      uses: actions/cache@v4
+      with:
+        path: venv
+        key: venv-${{ runner.os }}-py313-${{ hashFiles('requirements.txt') }}
+
+    - name: OpenCV-SDK aus dem Zwischenlager
+      id: opencv
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}\opencv
+        key: opencv-windows-${{ inputs.opencv-version }}
+
+    # Das ist ein selbstentpackendes 7z-Archiv und KEIN Installer: -o<Ziel> -y
+    # packt es aus, ohne irgendetwas in die Registrierung zu schreiben. Darin
+    # liegt opencv/build/, und genau dort sucht Find-OpenCVDir die
+    # OpenCVConfig.cmake.
+    - name: OpenCV-SDK holen
+      if: steps.opencv.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $version = '${{ inputs.opencv-version }}'
+        $url = "https://github.com/opencv/opencv/releases/download/$version/opencv-$version-windows.exe"
+        $exe = Join-Path $env:RUNNER_TEMP 'opencv-sfx.exe'
+        Write-Host "==> $url"
+        Invoke-WebRequest -Uri $url -OutFile $exe
+        & $exe -o"$env:RUNNER_TEMP" -y
+        Remove-Item $exe
+
+    - name: OpenCV_DIR bekanntgeben
+      shell: pwsh
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'opencv\build'
+        $marker = Join-Path $dir 'OpenCVConfig.cmake'
+        if (-not (Test-Path $marker)) { throw "OpenCV liegt nicht, wo erwartet: $marker" }
+        "OpenCV_DIR=$dir" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+    - name: Inno Setup
+      if: inputs.inno-setup == 'true'
+      shell: pwsh
+      run: choco install innosetup --no-progress -y
