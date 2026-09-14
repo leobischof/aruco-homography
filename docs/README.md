@@ -25,6 +25,12 @@ Lesen wissen, welche Datei er aufmachen muss — und keine zweite Suchrunde brau
 | [`design/README.md`](design/README.md) | Einstieg ins Designsystem: die drei Dinge, die man vorher wissen muss | developer | current |
 | [`design/design-system.md`](design/design-system.md) | Farbe, Typografie, Form, Komponenten, Themen, Sprachen, Bewegung, Mobil — und was aus dem Webprojekt **nicht** zu übernehmen ist | developer | current |
 | [`contributing/git.md`](contributing/git.md) | Verbindliche Git-Regeln: Identität, wann committet und wann gepusht wird, Aufbau der Commit-Nachricht | developer | current |
+| [`licensing/README.md`](licensing/README.md) | Unter welcher Lizenz das Projekt steht (GPL-3.0-or-later), was das für Beiträge heißt | developer | current |
+| [`licensing/third-party.md`](licensing/third-party.md) | Jede fremde Bibliothek mit Lizenz, getrennt nach **ausgeliefert** und **nur hier** | developer | current |
+| [`publishing/README.md`](publishing/README.md) | Die zwei Sperren zwischen dem heutigen APK und einem Ladeneintrag, und die Reihenfolge | developer | draft |
+| [`publishing/f-droid.md`](publishing/f-droid.md) | Der Weg zu F-Droid: die OpenCV-Sperre, zwei Auswege mit gemessenen Kosten, die Metadatendatei | developer | draft |
+| [`publishing/google-play.md`](publishing/google-play.md) | Der Weg zu Google Play: die abgelaufene API-Frist, die Kontofrage, das AAB | developer | draft |
+| [`publishing/privacy-policy.md`](publishing/privacy-policy.md) | Die Datenschutzerklärung der App, zweisprachig — sie erhebt nichts, und Android erzwingt es | operator | draft |
 | [`superpowers/specs/2026-09-06-aruco-homographie-design.md`](superpowers/specs/2026-09-06-aruco-homographie-design.md) | Die Spezifikation dessen, was **existiert**, mit dem Code abgeglichen | developer | current |
 | [`cpp-migration/README.md`](cpp-migration/README.md) | Der Fahrplan des Umzugs auf einen C++-Rechenkern: warum, wie, in welchen Stufen, und wie ausgeliefert wird | developer | current |
 | [`cpp-migration/stage-0-opencv-js.md`](cpp-migration/stage-0-opencv-js.md) | Stufe 0: der Vorabversuch, der über den ganzen Umzug entschieden hat — läuft die Markererkennung im Browser? | developer | current |
@@ -48,6 +54,9 @@ sucht. Deshalb tragen sie **kein** Frontmatter (siehe [§3](#3--frontmatter)).
 | [`../CHANGELOG.md`](../CHANGELOG.md) | Was sich wann geändert hat, nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/) | developer |
 | [`../AGENTS.md`](../AGENTS.md) | Arbeitsanweisung für KI-Agenten: die **Invarianten**, die nicht gebrochen werden dürfen | agent |
 | [`../CLAUDE.md`](../CLAUDE.md) | Was speziell für Claude Code in diesem Repo gilt; verweist auf `AGENTS.md` | agent |
+| [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Wie man mitarbeitet: Aufsetzen, der Maßstab für eine Änderung, Commits, Lizenz des Beitrags | developer |
+| [`../LICENSE`](../LICENSE) | Der Wortlaut der GNU GPL v3, dahinter die Zusatzbedingung nach §7(e). Keine Markdown-Datei, deshalb ohne Frontmatter | — |
+| [`../TRADEMARKS.md`](../TRADEMARKS.md) | Name und Zeichen: was die GPL daran **nicht** vergibt, und warum die Logodateien trotzdem frei sind | developer |
 
 ---
 
@@ -61,6 +70,8 @@ einzelnes Dokument, das zu keiner Gruppe gehört, liegt direkt unter `docs/`.
 |---|---|---|
 | `design/` | Wie das Werkzeug aussehen soll und warum | Gegenstand. Wächst um Komponenten- und Layoutseiten, ohne den Namen zu sprengen. |
 | `contributing/` | Regeln für alle, die hier schreiben — Mensch wie Agent | Leserschaft. Nimmt später Test- und Release-Regeln auf. |
+| `licensing/` | Unter welcher Lizenz das Projekt steht und wessen Code sonst noch drin liegt | Gegenstand. Die Marke steht bewusst NICHT hier, sondern als `TRADEMARKS.md` an der Wurzel: sie ist Lizenztext und muss mit ausgeliefert werden, nicht Dokumentation. |
+| `publishing/` | Was zwischen dem gebauten APK und einem Eintrag bei F-Droid oder Google Play liegt | Gegenstand. Ein abgegrenztes Vorhaben mit eigener Beweislast, wie `cpp-migration/` — und es endet, wenn die App in den Läden steht. |
 | `superpowers/specs/` | Die Spezifikation dessen, was existiert | Herkunft: der Name kommt vom Werkzeug, das diese Specs erzeugt und wiederfindet. Er bleibt deshalb, wie er ist. |
 | `superpowers/plans/` | Die Pläne, nach denen gebaut wurde — einer je Stufe | Dieselbe Herkunft. Ein Plan ist keine Spezifikation: er sagt, wie etwas entstehen **soll**, und bleibt danach als Begründung liegen. |
 | `cpp-migration/` | Fahrplan, Stufenergebnisse und Protokoll des Umzugs auf einen C++-Rechenkern | Gegenstand. Der Umzug ist ein abgegrenztes Vorhaben mit eigener Beweislast; er läuft über Wochen und Ziele hinweg und passt in keine der anderen Gruppen. |

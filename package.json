@@ -4,7 +4,7 @@
   "private": true,
   "description": "PDF-Bau in JavaScript (web/pdf/) - laeuft im Browser, unter Node und spaeter in der Android-Huelle. Siehe docs/cpp-migration/README.md.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "test": "node --test \"web/**/*.test.mjs\""
   },

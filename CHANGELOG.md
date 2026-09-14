@@ -4,6 +4,39 @@ Bemerkenswerte Änderungen an diesem Projekt. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
 [SemVer](https://semver.org/lang/de/).
 
+## [Unveröffentlicht]
+
+**Das Projekt hat eine Lizenz.** Bis hierher lag es öffentlich auf GitHub und war damit
+rechtlich unbenutzbar: ohne Lizenz behält der Urheber alle Rechte, und niemand durfte es
+abzweigen, bauen oder weitergeben. F-Droid hätte es gar nicht erst ansehen können.
+
+### Hinzugefügt
+
+- **`LICENSE` — GNU GPL, Version 3 oder später**, Copyright © 2026 Leo Bischof. Die
+  Begründung für Copyleft statt einer erlaubenden Lizenz steht in
+  `docs/licensing/README.md`: dieses Projekt behauptet Millimeter, und der einzige Beleg
+  dafür ist der Quelltext samt seinen Tests. Eine geschlossene Abzweigung könnte an der
+  Geometrie drehen, weiter „maßhaltig" sagen, und niemand könnte nachsehen.
+- **`TRADEMARKS.md` — der Name und das Zeichen, als Zusatzbedingung nach GPLv3 §7(e).**
+  Die GPL ist eine Urheberrechtslizenz und sagt über Marken nichts; §7(e) erlaubt
+  ausdrücklich, Markenrechte gerade *nicht* mitzuvergeben, und genau das steht dort.
+  Der Kern in einem Satz: die Logodateien stehen wie alles andere unter der GPL, aber
+  „Bischof Snowboards" und das Logo dürfen nicht **als Kennzeichen** für eine fremde
+  Fassung benutzt werden. Eine Kurzfassung steht hinter dem GPL-Wortlaut in `LICENSE`
+  selbst — der Wortlaut davor ist unverändert, damit Lizenzwerkzeuge ihn weiter erkennen.
+- **`docs/licensing/`** — unter welcher Lizenz das Projekt steht, und wessen Code sonst
+  noch mitgeliefert wird (`third-party.md`, getrennt nach *wird ausgeliefert* und *läuft
+  nur hier*). Alle Lizenzangaben sind aus den Paketmetadaten ausgelesen, nicht zitiert.
+- **Der Lizenztext der Schrift liegt jetzt neben der Schrift.** Montserrat steht unter der
+  SIL OFL 1.1, und die OFL verlangt genau eine Sache: dass ihr Text mitgeht. Er fehlte.
+  Jetzt liegt er als `app/static/brand/fonts/OFL.txt` neben der `.woff2` — und geht damit
+  auch ins APK, weil der Gradle-Bau den ganzen Ordner mitnimmt.
+
+### Geändert
+
+- **`package.json` sagte `"license": "UNLICENSED"`** — die Vorgabe von `npm init`, und
+  seit heute schlicht falsch. Jetzt `GPL-3.0-or-later`.
+
 ## [0.1.7-alpha] – 2026-09-09
 
 **Der Sucher hört auf, eine Ebene zu zeigen, die er nicht glaubt — und die Griffe sind

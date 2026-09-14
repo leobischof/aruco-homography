@@ -694,8 +694,40 @@ that the pipeline recovers the numbers that went in:
 - [AGENTS.md](AGENTS.md) — for anyone working here with an AI agent: the invariants that must
   not be broken.
 - [CHANGELOG.md](CHANGELOG.md) — what changed, and when.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to set up, what the bar for a change is, and what
+  this project will probably say no to.
 
 ---
+
+## Licence
+
+**GNU General Public License, version 3 or later.** Copyright © 2026 Leo Bischof.
+The full text is in [LICENSE](LICENSE).
+
+```
+SPDX-License-Identifier: GPL-3.0-or-later
+```
+
+Use it, pass it on, change it — for any purpose, commercial included. If you distribute a
+changed version, you pass on the source under the same licence. There is **no warranty**,
+and on a tool whose output gets sawn that is not a formality: the responsibility for the
+measurement belongs to whoever cuts. Measure the finished piece.
+
+The licence covers the code. It does **not** grant the name "Bischof Snowboards" or its
+logo — a fork needs its own name and its own mark. Why the logo files are nevertheless
+under the GPL like everything else is explained in
+[TRADEMARKS.md](TRADEMARKS.md); the licences of every
+third-party library, split by what actually ships, are in
+[docs/licensing/third-party.md](docs/licensing/third-party.md).
+
+**Contributing** is welcome — start at [CONTRIBUTING.md](CONTRIBUTING.md). Inbound equals
+outbound, there is no CLA, and you keep your copyright.
+
+## Getting the app
+
+Not in any store yet. The Android APK is built with `.\dev.ps1 build-apk-release` and
+what still stands between it and F-Droid or Google Play — two blockers, one each, both
+solvable — is written down honestly in [docs/publishing/](docs/publishing/README.md).
 
 ## Kurzfassung (Deutsch)
 
