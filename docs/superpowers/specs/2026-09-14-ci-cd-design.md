@@ -9,7 +9,17 @@ updated: 2026-09-14
 # CI/CD und Auslieferung — Design / Spezifikation
 
 **Datum:** 2026-09-14
-**Status:** entworfen, noch nicht umgesetzt
+**Status:** entworfen, in Umsetzung
+
+> **Fortgeschrieben am 14.09.2026, noch am Tag der Niederschrift.** Zwischen Entwurf und
+> Umsetzung ist `669424c` auf `develop` gelandet (GPL-3.0-or-later, `docs/publishing/`,
+> `docs/licensing/`, `fastlane/metadata/`), und die Umsetzung von §5.1 hat eine Lücke im
+> eigenen Entwurf gezeigt. Geändert haben sich dadurch **§2.1(c)**, **§5.1**, **§5.2**,
+> **§5.3**, **§7**, **§8** und **§9**.
+>
+> Die überholten Absätze sind **durchgestrichen stehengeblieben, nicht gelöscht**. Ein
+> Entwurf, aus dem der Irrtum entfernt wurde, liest sich, als sei er nie einer gewesen —
+> und die nächste Person trifft dieselbe Entscheidung noch einmal.
 **Betrifft:** `.github/`, `dev.ps1`, `docs/contributing/`, `README.md`
 
 ---
@@ -71,7 +81,7 @@ läuft. Ein Unterschied zwischen dem, was die Werkbank baut, und dem, was der En
 baut, fällt genau dann auf, wenn es teuer ist.
 
 **(b) `Enable-ReleaseSigning` legt stillschweigend einen neuen Schlüssel an.**
-`dev.ps1:972` — fehlt der Schlüsselspeicher, wird einer **erzeugt**. Auf dem Entwickler-
+Fehlt der Schlüsselspeicher, wird einer **erzeugt**. Auf dem Entwickler-
 rechner ist das die richtige Entscheidung (einmal anlegen, nie wieder). In der Werkbank ist
 es eine Falle: Wäre das Geheimnis nicht gesetzt oder landete es am falschen Ort, würde jede
 Fassung mit einem **anderen** Schlüssel signiert. Android verweigert dann jede
@@ -80,11 +90,21 @@ Protokoll stünde eine Zeile „Angelegt:" und sonst nichts.
 
 → Das ist der gefährlichste Einzelbefund dieses Entwurfs und wird zuerst behoben (§5.1).
 
-**(c) Es gibt keine `LICENSE`.** `package.json` sagt `UNLICENSED`. Für einen **eigenen**
-F-Droid-Bestand ist das gleichgültig — genau deshalb ist er der richtige Weg. Für den
-offiziellen f-droid.org-Bestand ist es ein harter Ausschluss, neben dem vorgebauten
-OpenCV-SDK. Beides ist **nicht** Gegenstand dieses Entwurfs, aber §8 hält fest, was dafür
-nachzuholen wäre.
+**(c) ~~Es gibt keine `LICENSE`.~~ — überholt am 14.09.2026, noch am selben Tag.**
+
+Dieser Absatz stand hier: es gebe keine Lizenz, `package.json` sage `UNLICENSED`, und das
+schließe den offiziellen f-droid.org-Bestand hart aus. **Beides stimmt nicht mehr.** Commit
+`669424c` hat das Projekt unter **GPL-3.0-or-later** gestellt, und `docs/licensing/`
+weist nach, dass alle fünf Fremdbestandteile damit verträglich sind — die Montserrat unter
+der SIL OFL eingeschlossen.
+
+Er bleibt sichtbar statt gelöscht, weil er sonst nur einen halben Tag lang wahr war und
+niemand mehr wüsste, warum §7 sich für den *eigenen* Bestand entschieden hat. Der Grund
+war damals die Lizenz **und** das vorgebaute OpenCV-SDK; heute ist es nur noch das SDK.
+Was der offizielle Weg jetzt wirklich kostet, hat der Eigentümer in
+[`docs/publishing/f-droid.md`](../../publishing/f-droid.md) nachgerechnet — die Entscheidung
+für den eigenen Bestand bleibt davon unberührt, denn sie hängt nicht mehr an einer Sperre,
+sondern daran, dass Android-Benutzer *jetzt* Aktualisierungen bekommen sollen.
 
 ---
 
@@ -104,7 +124,9 @@ nachzuholen wäre.
   dependabot.yml    pip · npm · gradle · github-actions
 fdroid/
   config.yml        Vorlage; der Schlüssel kommt aus dem Geheimnis
-  metadata/com.bischofsnowboards.aruco.yml
+  index.html        Landeseite mit Bestandsadresse und QR-Code
+
+fastlane/metadata/android/    liegt schon da (669424c) -- NICHT verdoppeln
 ```
 
 **`build.yml` ist der Grund für den Zuschnitt.** Drei Anlässe wollen dasselbe bauen
@@ -124,7 +146,7 @@ eine Ebene tiefer: das Herrichten der Werkzeugkette ist in `ci.yml`, `build.yml`
 | `test-cpp` | `windows-latest` | `dev.ps1 build-core`, `dev.ps1 run-tests-cpp`, `dev.ps1 check-jni` |
 | `test-js` | `windows-latest` | `dev.ps1 run-tests-js`, `dev.ps1 run-tests-pdf-js` |
 | `build-windows` | `windows-latest` | `dev.ps1 build-exe`, `build-installer`, `build-web` |
-| `build-android` | `windows-latest` | `dev.ps1 build-android-libs`, `build-apk-release`, `check-apk-release`, `build-aab-release` |
+| `build-android` | `windows-latest` | `dev.ps1 build-android-libs`, `build-apk-release`, `check-apk-release` |
 | `release` | `ubuntu-latest` | `gh release create` |
 | `fdroid` | `ubuntu-latest` | `fdroid update`, `actions/deploy-pages` |
 
@@ -192,26 +214,49 @@ nach `dev.ps1` — und steht damit auch dem Entwicklerrechner zur Verfügung.
 | `ARUCO_SIGNING_DIR` | Wo der Schlüssel liegt. Vorgabe bleibt `../_toolchain/aruco-signing/`. Die Werkbank legt ihn in den Arbeitsbereich und zeigt hierhin. |
 | `ARUCO_REQUIRE_EXISTING_KEY=1` | **Anlegen verboten.** Fehlt der Schlüssel, wird abgebrochen statt erzeugt. |
 
-Die Werkbank setzt beide. Damit ist der stille Schlüsselwechsel aus §2.1(b) unmöglich: ohne
-Geheimnis bricht der Bau ab, mit falschem Geheimnis fällt es in Schritt 5.2 auf.
+**Die beiden sind gekoppelt, und zwar nachträglich.** Dieser Abschnitt beschrieb sie zuerst
+als unabhängig; die Umsetzung hat gezeigt, dass das die Falle nur verschiebt. Wer
+`ARUCO_SIGNING_DIR` setzt und den zweiten Schalter vergisst — eine Zeile in einer Datei, die
+beim Schreiben dieses Satzes noch niemand geschrieben hatte —, bekommt genau den stillen
+Schlüsselwechsel aus §2.1(b), nur an einem anderen Ort.
 
-### 5.2 `check-release-key` — nachsehen, womit signiert wurde
+Dass ihn niemand bemerkt hätte, ist der eigentliche Punkt: ein erfundener Schlüssel entsteht
+mit `CN=Bischof Snowboards, O=Bischof Snowboards, C=DE` — **Zeichen für Zeichen die DN des
+echten Zertifikats** —, und die einzige Signaturprüfung, die es damals gab, sucht nach
+`CN=Android Debug`. Sie hätte ihn durchgewinkt.
 
-Neuer Befehl. Liest den Fingerabdruck des Zertifikats aus dem **fertigen APK** (`apksigner
-verify --print-certs`) und vergleicht ihn mit einem erwarteten SHA-256, der als
-Repository-Variable steht. Stimmt er nicht, Abbruch.
+Deshalb greift der Riegel jetzt, sobald **einer von beiden** gesetzt ist: ein Ablageort, der
+nicht der vorgegebene ist, ist per Definition nicht der Ort, an dem einmalig ein Schlüssel
+entsteht. Der Entwicklerrechner merkt davon nichts — dort ist keiner der beiden gesetzt.
+
+### 5.2 Der Fingerabdruck — nachsehen, WOMIT signiert wurde
+
+**Kein eigener Befehl.** Eine frühere Fassung dieses Abschnitts verlangte ein
+`check-release-key`; die Prüfung gehört aber dorthin, wo `apksigner verify --print-certs`
+ohnehin schon läuft und wo schon eine Aussage über den Schlüssel getroffen wird — in
+`Invoke-CheckApk`. Ein zweiter Befehl wäre eine zweite Art, dasselbe zu tun.
+
+`check-apk-release` vergleicht den Fingerabdruck aus dem **fertigen APK** mit
+`ARUCO_EXPECTED_CERT_SHA256`. Ist die Erwartung nicht gesetzt, wird nur gemeldet: auf dem
+Entwicklerrechner gibt es genau einen Schlüssel, und eine von Hand gepflegte Zahl wäre dort
+eine Fehlerquelle ohne Gegenwert. Die Werkbank setzt sie.
 
 Der Grund: §5.1 verhindert, dass *kein* Schlüssel da ist. Diese Prüfung verhindert, dass der
 *falsche* da ist — und sie prüft das Erzeugnis, nicht die Absicht. Genau die Unterscheidung,
 auf der `check-apk` schon besteht.
 
-### 5.3 `build-aab-release`
+### 5.3 ~~`build-aab-release`~~ — entfällt
 
-`bundleRelease` mit demselben Schlüssel und derselben abgeleiteten Fassung wie
-`build-apk-release`. Die Werkbank baut das Bündel als **Prüfung** — es wird der Fassung
-**nicht** angehängt, weil eine `.aab` sich nicht installieren lässt und auf einer
-Fassungsseite nur danebenläge. Am Tag, an dem eine Play Console existiert, ist es eine Zeile
-(§8).
+Hier stand, die Werkbank solle ein Play-Bündel als Probe bauen, „für den Tag, an dem eine
+Play Console existiert". **Dieser Tag ist abgesagt.** `docs/publishing/README.md` §4
+begründet, warum Google Play nicht verfolgt wird — die API-Frist vom 31.08.2026 ist
+abgelaufen, GPLv3 und die Play-Bedingungen reiben sich, und ein AAB wäre ein zweites
+Erzeugnis, das niemand mitmisst. `build-aab` hat es kurz gegeben und ist in `c635af5`
+wieder entfernt worden.
+
+Ein Entwurf, der einen Befehl wieder einbaut, den der Eigentümer begründet entfernt hat,
+ist kein Entwurf, sondern ein Rückschritt mit Datum. Der Abschnitt bleibt als Grabstein
+stehen, damit niemand ihn in einem halben Jahr aus der Historie „wiederherstellt".
 
 ### 5.4 `aruco.buildRoot`
 
@@ -257,8 +302,20 @@ nie wieder her.
 **letzten fünf** GitHub-Fassungen herunter, ruft `fdroid update` und liefert das Ergebnis als
 Pages-Artefakt aus. Die GitHub-Fassungen **sind** schon die Antwort auf „welche Fassungen
 gibt es" — eine zweite Ablage derselben Aussage wäre genau die zweite Fassung, die
-auseinanderläuft. Versioniert ist nur, was Quelle ist: `fdroid/config.yml` und die
-Metadaten.
+auseinanderläuft. Versioniert ist nur, was Quelle ist: `fdroid/config.yml`.
+
+**Die Metadaten liegen schon da und werden nicht zweimal geschrieben.** `669424c` hat
+`fastlane/metadata/android/{de-DE,en-US}/` angelegt — Titel, Kurz- und Langbeschreibung,
+und `changelogs/107.txt` für den `versionCode` 107, den `Get-AndroidVersionCode` aus
+`0.1.7` ableitet. `fdroid update` liest dieses Format von sich aus. Ein eigener
+`fdroid/metadata/…yml` wäre dieselbe Aussage ein zweites Mal, in einer zweiten Sprache,
+an einer zweiten Stelle — und die beiden liefen auseinander, sobald jemand nur eine
+davon anfasst.
+
+Als Lizenz steht dort **`GPL-3.0-or-later`**, und `AntiFeatures` bleibt **leer**:
+`docs/licensing/third-party.md` weist für alle fünf Fremdbestandteile die Verträglichkeit
+nach, die Montserrat unter der SIL OFL eingeschlossen. `NonFreeAssets` wäre eine falsche
+Angabe in einem Laden — und die ist schlechter als gar keine.
 
 Fünf und nicht alle: F-Droid braucht ältere Stände nur, damit ein Telefon, das lange nicht
 nachgesehen hat, überhaupt etwas findet — und dafür genügt die jeweils neueste. Die vier
@@ -276,16 +333,22 @@ Dazu ein QR-Code und eine kurze Anleitung in der `README.md`.
 
 ## 8 · Was bewusst nicht gelöst ist
 
-**Play Store.** Nicht verdrahtet. Die erste Einreichung einer App muss von Hand in der Play
-Console geschehen; eine Werkbank kann erst ab der zweiten übernehmen. Vorbereitet ist alles:
-`build-aab-release` erzeugt das Bündel, und es fehlt nur eine Aufgabe mit
-`r0adkll/upload-google-play` und einem Dienstkonto-Geheimnis. Zu bedenken, bevor das ansteht:
-Google verlangt ab September 2026 verifizierte Entwickler.
+**Play Store.** Nicht „noch nicht" — **gar nicht**. Die Begründung steht nicht hier, sondern
+in [`docs/publishing/README.md`](../../publishing/README.md) §4, und sie ist die
+verbindliche: abgelaufene API-Frist, Reibung zwischen GPLv3 und den Play-Bedingungen, und
+ein AAB als zweites Erzeugnis ohne eigene Messung. Dieser Entwurf hat in einer früheren
+Fassung das Gegenteil vorbereitet; dass er es nicht mehr tut, ist keine Auslassung.
 
-**Offizielles F-Droid.** Braucht drei Dinge, die es heute nicht gibt: eine OSI-Lizenz (es
-gibt keine `LICENSE`), einen Bau ohne vorgebaute Binärdateien (das OpenCV-Android-SDK müsste
-in ihrer Bauvorschrift aus dem Quelltext entstehen), und eine Prüfung durch F-Droid, die
-Wochen dauert. Der eigene Bestand aus §7 bleibt davon unberührt und liefe weiter.
+**Offizielles F-Droid.** Seit dem 14.09.2026 fehlt dafür nur noch **eine** Sache, nicht
+mehr drei: die Lizenz ist da (GPL-3.0-or-later), die Fastlane-Metadaten sind da, jede
+Fassung trägt ein Git-Tag. Übrig bleibt das vorgebaute **OpenCV-Android-SDK** — F-Droid
+baut selbst und nimmt vorgefertigte Binärdateien nur aus Quellen, denen es traut.
+
+Der Eigentümer hat die zwei Auswege in
+[`docs/publishing/f-droid.md`](../../publishing/f-droid.md) nachgerechnet; Weg A
+(`org.opencv:opencv:5.0.0.1` von Maven Central über `prefab`) kostet rund 25 MB im Paket.
+**Das ist ein Umbau am Bau, keine CI-Frage**, und deshalb nicht Gegenstand dieses Entwurfs.
+Der eigene Bestand aus §7 bleibt davon unberührt und liefe danach weiter.
 
 **Signatur der Windows-`.exe`.** Unverändert ungelöst. `AGENTS.md` hält schon fest, dass
 ausgefüllte Dateieigenschaften keine Signatur sind und SmartScreen weiterhin keinen
@@ -306,17 +369,22 @@ nichts** und darf nicht so gelesen werden.
 Jeder Schritt ist für sich lauffähig und wird für sich committet
 (`docs/contributing/git.md` §3).
 
-1. **`dev.ps1`:** `ARUCO_SIGNING_DIR`, `ARUCO_REQUIRE_EXISTING_KEY`, `check-release-key`,
-   `build-aab-release`. Örtlich geprüft. — *Behebt zuerst die Falle aus §2.1(b).*
-2. **`.github/actions/`:** die beiden Werkzeugketten-Aktionen.
-3. **`ci.yml`:** die drei Prüfaufgaben. Erst wenn sie grün sind, werden sie als Schranke
+1. **`dev.ps1`:** `ARUCO_SIGNING_DIR` und `ARUCO_REQUIRE_EXISTING_KEY` (gekoppelt, §5.1),
+   dann der Fingerabdruck in `check-apk-release` (§5.2), dann die Werkzeugketten-Schalter
+   `ARUCO_CMAKE` · `ARUCO_NINJA` · `ARUCO_NDK_VERSION` (§5.4). Örtlich geprüft.
+   — *Behebt zuerst die Falle aus §2.1(b).*
+2. **`tools/release_notes.py`:** Fassung und Changelog-Abschnitt lesen, mit Tests.
+3. **`.github/actions/`:** die beiden Werkzeugketten-Aktionen.
+4. **`ci.yml`:** die drei Prüfaufgaben. Erst wenn sie grün sind, werden sie als Schranke
    eingetragen (§6).
-4. **`build.yml`:** die gemeinsame Baubeschreibung, von Hand auslösbar.
-5. **`release.yml`:** Marke, Fassung, Changelog-Beschreibung.
-6. **F-Droid:** `fdroid/`-Metadaten, Bestandsschlüssel, Pages.
-7. **`nightly.yml`**, **`codeql.yml`**, **`dependabot.yml`**.
-8. **Dokumentation:** `docs/contributing/releasing.md`, Abschnitt in der `README.md`,
-   Verweis aus `AGENTS.md`.
+5. **`build.yml`:** die gemeinsame Baubeschreibung, von Hand auslösbar.
+6. **`release.yml`:** Marke, Fassung, Changelog-Beschreibung.
+7. **F-Droid:** `fdroid/config.yml`, Bestandsschlüssel, Pages — die Metadaten liegen
+   schon unter `fastlane/metadata/` und werden **nicht** zweimal geschrieben (§7).
+8. **`nightly.yml`**, **`codeql.yml`**, **`dependabot.yml`**.
+9. **Dokumentation:** `docs/publishing/releasing.md` — dort, wo die Auslieferung schon
+   beschrieben ist, nicht daneben —, ein Abschnitt in der `README.md`, Verweis aus
+   `AGENTS.md`.
 
 Geheimnisse, die dafür am Repository hinterlegt werden müssen:
 
