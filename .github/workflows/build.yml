@@ -4,8 +4,6 @@ name: Build
 # Nachtbau, Handstart), und die Bauschritte stehen deshalb EINMAL hier statt
 # dreimal nebeneinander - dieselbe Regel, die im Repo fuer dev.ps1 gilt.
 on:
-  push:
-    branches: [feat/ci-cd]
   workflow_call:
     inputs:
       sign:
