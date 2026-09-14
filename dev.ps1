@@ -350,13 +350,42 @@ function Invoke-RunTestsCpp {
 # VS-Build-Tools, die dieses Repo ohnehin voraussetzt.
 
 function Get-CMakeAndNinja {
+    # Aus der Umgebung zuerst. Die VS-Installation eines Laeufers muss die
+    # CMake-Komponente nicht mitbringen, und dann liegt beides schlicht im Pfad -
+    # ein Abbruch waere hier eine Aussage ueber VS und nicht ueber das Projekt.
+
+    # Nur eine der beiden Variablen zu setzen ist immer ein Versehen - die zwei
+    # gehoeren zusammen. Eine Warnung ginge im langen Build-Log unter; still
+    # andere Werkzeuge zu benutzen als angefordert ist genau der Fehler, den
+    # dieser Override verhindern soll.
+    if (($env:ARUCO_CMAKE -and -not $env:ARUCO_NINJA) -or ($env:ARUCO_NINJA -and -not $env:ARUCO_CMAKE)) {
+        $missing = if ($env:ARUCO_CMAKE) { 'ARUCO_NINJA' } else { 'ARUCO_CMAKE' }
+        throw (@(
+            "$missing ist nicht gesetzt, das Gegenstueck schon.",
+            '     ARUCO_CMAKE und ARUCO_NINJA gehoeren zusammen: beide setzen oder keine.'
+        ) -join [Environment]::NewLine)
+    }
+
+    if ($env:ARUCO_CMAKE -and $env:ARUCO_NINJA) {
+        $fromEnv = [ordered]@{ CMake = $env:ARUCO_CMAKE; Ninja = $env:ARUCO_NINJA }
+        foreach ($tool in $fromEnv.Values) {
+            if (-not (Test-Path $tool)) { throw "Werkzeug aus der Umgebung fehlt: $tool" }
+        }
+        return $fromEnv
+    }
+
     $install = Find-VcInstall
     $tools = [ordered]@{
         CMake = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
         Ninja = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
     }
     foreach ($tool in $tools.Values) {
-        if (-not (Test-Path $tool)) { throw "Werkzeug fehlt in $install : $tool" }
+        if (-not (Test-Path $tool)) {
+            throw (@(
+                "Werkzeug fehlt in $install : $tool",
+                '     Liegen cmake und ninja woanders:  $env:ARUCO_CMAKE / $env:ARUCO_NINJA'
+            ) -join [Environment]::NewLine)
+        }
     }
     return $tools
 }
@@ -467,11 +496,24 @@ function Invoke-BuildCoreAndroid {
 
     $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
                           -Marker 'ndk' -What 'Das Android-SDK'
-    # Die NDK-Fassung nicht festschreiben - hier steht sonst in einem halben Jahr
-    # eine Zahl, die es auf keinem Rechner mehr gibt.
-    $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
-        Where-Object { Test-Path (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') } |
-        Sort-Object Name -Descending | Select-Object -First 1
+    # Die NDK-Fassung steht nicht im Code - hier staende sonst in einem halben
+    # Jahr eine Zahl, die es auf keinem Rechner mehr gibt. Wer sie braucht,
+    # nennt sie in der Umgebung: eine Werkbank MUSS sie festnageln, sonst baut
+    # sie mit einem anderen Uebersetzer als der Entwicklerrechner, und der
+    # Unterschied faellt erst auf einem Telefon auf.
+    $ndkDirs = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') }
+    if ($env:ARUCO_NDK_VERSION) {
+        $ndk = $ndkDirs | Where-Object { $_.Name -eq $env:ARUCO_NDK_VERSION } | Select-Object -First 1
+        if (-not $ndk) {
+            throw (@(
+                "ARUCO_NDK_VERSION verlangt $env:ARUCO_NDK_VERSION, das liegt aber nicht unter $sdk\ndk.",
+                ("     Vorhanden: {0}" -f (($ndkDirs | ForEach-Object { $_.Name }) -join ', '))
+            ) -join [Environment]::NewLine)
+        }
+    } else {
+        $ndk = $ndkDirs | Sort-Object Name -Descending | Select-Object -First 1
+    }
     if (-not $ndk) { throw "Kein NDK mit android.toolchain.cmake unter $sdk\ndk gefunden." }
 
     $opencv = Find-Toolchain -EnvVar 'ARUCO_OPENCV_ANDROID' -RelativePath '_toolchain\opencv-android' `
@@ -506,6 +548,7 @@ function Invoke-BuildCoreAndroid {
 # app/static/ gebraucht.
 function Invoke-BuildWeb {
     Confirm-Deps
+    Confirm-NodeModules   # build_web.py kopiert pdf-lib aus node_modules nach web/vendor/
     Write-Step 'Assembling the browser build'
     Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') --dist @Rest }
     Write-Ok "Fertig: $(Join-Path $RepoRoot 'dist\web')"
@@ -517,6 +560,7 @@ function Invoke-BuildWeb {
 # damit eine Aenderung an web/vision/ nach einem Neuladen wirkt.
 function Invoke-StartWeb {
     Confirm-Deps
+    Confirm-NodeModules   # build_web.py kopiert pdf-lib unbedingt - auch ohne --dist
     $port = if ($Rest.Count -gt 0) { $Rest[0] } else { 8020 }
 
     Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') }
@@ -741,7 +785,15 @@ $UiProbePort = 8030
 #
 # UND DESHALB WIRD ER NIE UEBERSCHRIEBEN: "gibt es schon" ist hier kein
 # Fehler, sondern der Normalfall. Ein zweiter Schluessel waere eine zweite App.
-$AndroidSigningDir = Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\aruco-signing'
+#
+# Der Ablageort darf aus der Umgebung kommen. Die Werkbank hat kein
+# _toolchain/ neben dem Repo - sie packt den Schluessel aus einem Geheimnis in
+# ihren Arbeitsbereich aus und zeigt mit ARUCO_SIGNING_DIR hierhin.
+$AndroidSigningDir = if ($env:ARUCO_SIGNING_DIR) {
+    $env:ARUCO_SIGNING_DIR
+} else {
+    Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\aruco-signing'
+}
 $AndroidKeystore   = Join-Path $AndroidSigningDir 'aruco-release.p12'
 $AndroidKeyPass    = Join-Path $AndroidSigningDir 'aruco-release.pass'
 $AndroidKeyAlias   = 'aruco'
@@ -969,6 +1021,60 @@ function Get-AndroidVersionCode {
 # Befehlszeile eines laufenden Vorgangs kann auf diesem Rechner jeder lesen,
 # und ein Kennwort, das in einer Prozessliste steht, ist keins mehr.
 function Enable-ReleaseSigning {
+    # ANLEGEN VERBOTEN - der Riegel fuer die Werkbank.
+    #
+    # Ohne ihn waere ein fehlendes Geheimnis kein Fehler, sondern ein NEUER
+    # Schluessel: jede Fassung traege eine andere Signatur, kein Geraet naehme
+    # die naechste als Aktualisierung an (INSTALL_FAILED_UPDATE_INCOMPATIBLE),
+    # und im Protokoll staende eine Zeile "Angelegt:" und sonst nichts. Ein
+    # gruener Bau, der die App unaktualisierbar macht, ist der teuerste Fehler,
+    # den dieses Projekt haben kann.
+    #
+    # DER ABLAGEORT RIEGELT MIT. Ein von aussen vorgegebener Ort ist per
+    # Definition nicht der Ort, an dem der Schluessel einmal angelegt wurde -
+    # dort einen zu erfinden ist nie die richtige Antwort. Haenge der Riegel
+    # allein an ARUCO_REQUIRE_EXISTING_KEY, genuegte eine vergessene Zeile
+    # YAML, und niemandem fiele es auf: ein hier erfundener Schluessel traegt
+    # dasselbe CN=Bischof Snowboards wie der echte und kaeme an jeder Pruefung
+    # vorbei, die nur den Debug-Schluessel ausschliesst.
+    #
+    # Das Kennwort kommt in diesem Fall aus der UMGEBUNG und nicht von der
+    # Platte: in einer Werkbank hat eine Kennwortdatei nichts zu suchen. Es
+    # wird getrimmt wie das von der Platte - ein eingefuegtes oder aus einer
+    # Datei entschluesseltes Geheimnis traegt haeufig einen Zeilenumbruch mit,
+    # und Gradle meldete den als falsches Kennwort.
+    #
+    # Der Riegel steht VOR dem Anlegen des Verzeichnisses: hier ist nichts
+    # anzulegen, und ein unbrauchbarer Ablageort soll an dieser Meldung
+    # scheitern statt an einer nichtssagenden von New-Item.
+    # ARUCO_REQUIRE_EXISTING_KEY riegelt bei jedem Wert ausser leer und '0' -
+    # nicht nur bei '1'. YAML schreibt sein Wahr von Natur aus als "true", und
+    # ein Sicherheitsschalter, der nur eine Schreibweise versteht, ist einer,
+    # den die naechste Person mit "true" stillschweigend abschaltet.
+    if (($env:ARUCO_REQUIRE_EXISTING_KEY -and $env:ARUCO_REQUIRE_EXISTING_KEY -ne '0') -or $env:ARUCO_SIGNING_DIR) {
+        if (-not (Test-Path $AndroidKeystore)) {
+            throw (@(
+                "Kein Release-Schluessel unter $AndroidKeystore.",
+                '     Hier ist ein Release-Schluessel verlangt, und keiner ist da -',
+                '     erfinden ist keine Option: ein zweiter Schluessel waere eine zweite App.',
+                '     In der Werkbank heisst das: das Geheimnis fehlt oder wurde nicht ausgepackt.',
+                '     Auf dem Entwicklerrechner: ARUCO_SIGNING_DIR und ARUCO_REQUIRE_EXISTING_KEY leeren,',
+                '     dann legt der erste Bau den einen Schluessel an.'
+            ) -join [Environment]::NewLine)
+        }
+        if ([string]::IsNullOrWhiteSpace($env:ARUCO_KEYSTORE_PASSWORD)) {
+            throw (@(
+                "Der Schluessel liegt da ($AndroidKeystore), aber ARUCO_KEYSTORE_PASSWORD ist leer.",
+                '     Ohne Kennwort kommt Gradle nicht an den Schluessel heran.',
+                '     In der Werkbank heisst das: das Geheimnis fehlt, ist leer oder besteht',
+                '     nur aus Leerraum - es wird nicht erraten und nicht ersetzt.'
+            ) -join [Environment]::NewLine)
+        }
+        $env:ARUCO_KEYSTORE_PASSWORD = $env:ARUCO_KEYSTORE_PASSWORD.Trim()
+        Write-Ok ("Release-Schluessel: {0}" -f $AndroidKeystore)
+        return
+    }
+
     New-Item -ItemType Directory -Path $AndroidSigningDir -Force | Out-Null
 
     if (-not (Test-Path $AndroidKeyPass)) {
@@ -1331,6 +1437,38 @@ function Invoke-CheckApk {
     if ((-not $Release) -and (-not $debugSigned)) {
         Write-Warn "Dieses Debug-APK traegt NICHT den Debug-Schluessel - unerwartet."
     }
+
+    # WELCHER Schluessel - und nicht nur "nicht der Debug-Schluessel".
+    #
+    # Die Zeilen darueber schliessen den einen falschen Schluessel aus, den das
+    # SDK jedem Rechner mitgibt. Irgendein ANDERER faellt ihnen nicht auf, und
+    # ein APK mit fremdem Schluessel installiert sich tadellos - es laesst sich
+    # nur nie wieder aktualisieren. Deshalb der Fingerabdruck, und deshalb am
+    # ERZEUGNIS: "assembleRelease lief durch" ist eine Aussage ueber den Bauweg.
+    #
+    # Ohne gesetzte Erwartung wird nichts verglichen. Auf diesem Rechner gibt es
+    # genau einen Schluessel, und eine Zahl, die man von Hand pflegen muesste,
+    # waere hier eine Fehlerquelle ohne Gegenwert. Die Werkbank setzt sie.
+    if ($Release -and $env:ARUCO_EXPECTED_CERT_SHA256) {
+        # keytool schreibt Grossbuchstaben mit Doppelpunkten, apksigner
+        # Kleinbuchstaben ohne. Beide Formen auf dieselbe reduzieren, sonst
+        # scheitert der Vergleich an der Schreibweise statt am Schluessel.
+        $normalise = { param($text) ($text -replace '[^0-9A-Fa-f]', '').ToLowerInvariant() }
+        $expectedCert = & $normalise $env:ARUCO_EXPECTED_CERT_SHA256
+        $digestLine = $signature | Select-String 'certificate SHA-256 digest:' | Select-Object -First 1
+        if (-not $digestLine) { throw 'apksigner nannte keinen SHA-256-Fingerabdruck.' }
+        $actualCert = & $normalise ($digestLine.ToString() -replace '^.*digest:\s*', '')
+        if ($actualCert -ne $expectedCert) {
+            throw (@(
+                'Das Release-APK traegt den FALSCHEN Schluessel.',
+                "     erwartet: $expectedCert",
+                "     gefunden: $actualCert",
+                '     Ein anderer Schluessel heisst: kein Geraet nimmt diese Fassung als Aktualisierung an.'
+            ) -join [Environment]::NewLine)
+        }
+        Write-Ok 'apksigner: Fingerabdruck stimmt mit der Erwartung ueberein'
+    }
+
     if ($Release) {
         Write-Ok 'apksigner: gueltig, und nicht mit dem Debug-Schluessel signiert'
     } else {

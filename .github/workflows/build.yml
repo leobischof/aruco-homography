@@ -1,0 +1,201 @@
+name: Build
+
+# NUR ueber workflow_call. Drei Anlaesse wollen dasselbe bauen (Fassung,
+# Nachtbau, Handstart), und die Bauschritte stehen deshalb EINMAL hier statt
+# dreimal nebeneinander - dieselbe Regel, die im Repo fuer dev.ps1 gilt.
+on:
+  workflow_call:
+    inputs:
+      sign:
+        description: Das APK mit dem echten Schluessel signieren
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      ANDROID_KEYSTORE_P12_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: build-windows
+    runs-on: windows-latest
+    # Belegt sind 3:22 kalt. Die Vorgabe waere 360 Minuten, und auf
+    # windows-latest wird doppelt abgerechnet: haengt der Gradle-Wrapper an
+    # seinen ~130 MB, statt zu scheitern, laeuft der Nachtbau bis zum Morgen.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-windows-toolchain
+        with:
+          inno-setup: 'true'
+
+      # Ohne cv2 - deshalb liest release_notes.py mit ast (tools/release_notes.py).
+      - name: Die Fassung lesen
+        id: version
+        shell: pwsh
+        run: |
+          $version = & python tools\release_notes.py --version
+          if ($LASTEXITCODE -ne 0) { throw 'Die Fassung liess sich nicht lesen.' }
+          # Die Gestalt nachpruefen, bevor die Zahl weiterwandert. GITHUB_OUTPUT
+          # ist zeilenweise: stuende ein Umbruch in der Fassung, definierte die
+          # naechste Zeile eine WEITERE Schrittausgabe. Heute geht das nicht -
+          # aber nur aus Versehen: PowerShell flacht die Array-Ausgabe von
+          # & python beim Einsetzen in "value=$version" mit Leerzeichen ab, ein
+          # Umbruch ueberlebt also nicht. Auf ein Versehen baut man keine
+          # Vertrauensgrenze. Dieselbe Zahl benennt weiter unten die Zip-Datei,
+          # und app/config.py aendert jeder mit Schreibrecht auf den Zweig.
+          if ($version -notmatch '^[0-9A-Za-z][0-9A-Za-z.+-]*$') {
+              throw "APP_VERSION hat eine unerwartete Gestalt: '$version'"
+          }
+          "value=$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          Write-Host "==> $version"
+
+      - name: Die .exe bauen
+        shell: pwsh
+        run: .\dev.ps1 build-exe
+
+      - name: Den Installer bauen
+        shell: pwsh
+        run: .\dev.ps1 build-installer
+
+      - name: Den Browser-Bau zusammenstellen
+        shell: pwsh
+        run: .\dev.ps1 build-web
+
+      # dist/web/ ist ein Baum; eine Fassungsseite haelt eine Datei. Also hier
+      # packen und nicht erst beim Veroeffentlichen - dann traegt schon das
+      # Artefakt den Namen, unter dem die Datei spaeter erscheint.
+      - name: Den Browser-Bau packen
+        shell: pwsh
+        # Der Wert kommt UEBER env: herein und steht nicht als ${{ }} im
+        # Rumpf. Ein Ausdruck im Rumpf ist Textersetzung VOR dem Start der
+        # Shell: er schreibt den Wert ins Skript hinein, statt ihn zu
+        # uebergeben. Die Fassung stammt aus app/config.py, das jeder mit
+        # Schreibrecht auf den gebauten Zweig aendern kann - ein Einzelquote
+        # darin schloesse den String, und der Rest der Zeile liefe als
+        # Befehl. Als Umgebungsvariable bleibt sie ein Wert.
+        env:
+          ARUCO_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $version = $env:ARUCO_VERSION
+          Compress-Archive -Path dist\web\* -DestinationPath "dist\aruco-homographie-web-$version.zip" -Force
+
+          # Jedes Muster EINZELN nachzaehlen. upload-artifact bricht bei
+          # if-no-files-found: error nur ab, wenn die SUMME aller Muster
+          # null Dateien ergibt - trifft eines der beiden nichts, bleibt der
+          # Auftrag gruen. Genau so faellt der Browser-Bau lautlos aus dem
+          # Artefakt (etwa wenn dist/web woanders landet und Compress-Archive
+          # trotzdem eine Datei anlegt), und bemerkt wird es erst von dem,
+          # der auf der Fassungsseite darauf klickt.
+          $expected = @(
+            'dist\ArUco-Homographie-Setup-*.exe'
+            'dist\aruco-homographie-web-*.zip'
+          )
+          foreach ($pattern in $expected) {
+            $hits = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
+            if ($hits.Count -ne 1) {
+              throw "Erwartet: genau eine Datei fuer '$pattern'. Gefunden: $($hits.Count). Das Artefakt waere unvollstaendig."
+            }
+            Write-Host "==> $($hits[0].Name)"
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-artifacts
+          if-no-files-found: error
+          path: |
+            dist/ArUco-Homographie-Setup-*.exe
+            dist/aruco-homographie-web-*.zip
+
+  android:
+    name: build-android
+    runs-on: windows-latest
+    # Belegt sind 3:12 kalt - siehe die Begruendung beim Windows-Auftrag.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-windows-toolchain
+      - uses: ./.github/actions/setup-android-toolchain
+        with:
+          keystore-base64: ${{ inputs.sign && secrets.ANDROID_KEYSTORE_P12_BASE64 || '' }}
+          keystore-password: ${{ inputs.sign && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          expected-cert-sha256: ${{ vars.ANDROID_CERT_SHA256 }}
+
+      # Ohne Geheimnis darf hier KEIN unsigniertes Erzeugnis entstehen, das
+      # spaeter wie ein Release aussieht. Also frueh und ausdruecklich abbrechen.
+      - name: Nachsehen, dass der Schluessel da ist
+        if: inputs.sign
+        shell: pwsh
+        run: |
+          if (-not $env:ARUCO_SIGNING_DIR) {
+            throw 'sign=true, aber ANDROID_KEYSTORE_P12_BASE64 ist leer oder fehlt.'
+          }
+          # UND die Erwartung an den Fingerabdruck. Die faengt die Aktion
+          # bereits ab: setup-android-toolchain bricht ab, sobald ein
+          # Schluessel geliefert wird und expected-cert-sha256 leer ist, und
+          # setzt ARUCO_EXPECTED_CERT_SHA256 erst danach - im selben
+          # GITHUB_ENV-Block wie ARUCO_SIGNING_DIR. Beide sind also gesetzt
+          # oder keines; die Zeile darunter kann heute gar nicht zuschlagen.
+          #
+          # Sie steht als zweite Reihe trotzdem da. Was sie deckt, ist der
+          # Umbau: sollte ARUCO_SIGNING_DIR je auf einem anderen Weg gesetzt
+          # werden, wird hier geprueft und nicht gehofft. Und was ein Durch-
+          # rutschen kostete, bliebe still: check-apk-release vergleicht
+          # ohne gesetzte Erwartung nichts (dev.ps1 prueft dort auf
+          # $Release -and $env:ARUCO_EXPECTED_CERT_SHA256) und meldete GRUEN
+          # auf einem Release-APK, dessen Schluessel nie verglichen wurde.
+          if (-not $env:ARUCO_EXPECTED_CERT_SHA256) {
+            throw 'sign=true, aber die Variable ANDROID_CERT_SHA256 ist leer oder fehlt.'
+          }
+
+      - name: Das signierte APK bauen
+        if: inputs.sign
+        shell: pwsh
+        run: .\dev.ps1 build-apk-release
+
+      - name: Das Debug-APK bauen
+        if: ${{ !inputs.sign }}
+        shell: pwsh
+        run: .\dev.ps1 build-apk
+
+      # Unter dem Namen, unter dem die Datei auf der Fassungsseite erscheint -
+      # und in ein EIGENES Verzeichnis.
+      #
+      # Nicht in android/out/ liegen lassen: dort liegt daneben weiter
+      # aruco-homographie-release.apk, und ein Muster wie
+      # "aruco-homographie-*.apk" naehme beide mit. Auf der Fassungsseite
+      # stuenden dann zwei APKs derselben Fassung unter verschiedenen Namen -
+      # genau der Zustand, den das Weglassen des Debug-APK beseitigen soll.
+      - name: Nach der Fassung benennen
+        shell: pwsh
+        # Wie beim Packen des Browser-Baus: UEBER env: und nicht als ${{ }}
+        # im Rumpf. Ein Ausdruck im Rumpf ist Textersetzung VOR dem Start der
+        # Shell - was da eingesetzt wird, steht danach als Skript da und
+        # nicht als Wert. Nur if:-Bedingungen und with:-Eingaben oben sind
+        # etwas anderes: die liest die Werkbank selbst, keine Shell.
+        env:
+          ARUCO_SIGN: ${{ inputs.sign }}
+        run: |
+          $version = & python tools\release_notes.py --version
+          if ($LASTEXITCODE -ne 0) { throw 'Die Fassung liess sich nicht lesen.' }
+          $signed = $env:ARUCO_SIGN -eq 'true'
+          $source = if ($signed) {
+            'android\out\aruco-homographie-release.apk'
+          } else {
+            'android\out\aruco-homographie-debug.apk'
+          }
+          $suffix = if ($signed) { '' } else { '-debug' }
+          New-Item -ItemType Directory -Path 'publish' -Force | Out-Null
+          Copy-Item $source "publish\aruco-homographie-$version$suffix.apk"
+          Get-ChildItem publish | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-artifacts
+          if-no-files-found: error
+          path: publish/*.apk
