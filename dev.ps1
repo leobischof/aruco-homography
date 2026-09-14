@@ -1393,6 +1393,38 @@ function Invoke-CheckApk {
     if ((-not $Release) -and (-not $debugSigned)) {
         Write-Warn "Dieses Debug-APK traegt NICHT den Debug-Schluessel - unerwartet."
     }
+
+    # WELCHER Schluessel - und nicht nur "nicht der Debug-Schluessel".
+    #
+    # Die Zeilen darueber schliessen den einen falschen Schluessel aus, den das
+    # SDK jedem Rechner mitgibt. Irgendein ANDERER faellt ihnen nicht auf, und
+    # ein APK mit fremdem Schluessel installiert sich tadellos - es laesst sich
+    # nur nie wieder aktualisieren. Deshalb der Fingerabdruck, und deshalb am
+    # ERZEUGNIS: "assembleRelease lief durch" ist eine Aussage ueber den Bauweg.
+    #
+    # Ohne gesetzte Erwartung wird nichts verglichen. Auf diesem Rechner gibt es
+    # genau einen Schluessel, und eine Zahl, die man von Hand pflegen muesste,
+    # waere hier eine Fehlerquelle ohne Gegenwert. Die Werkbank setzt sie.
+    if ($Release -and $env:ARUCO_EXPECTED_CERT_SHA256) {
+        # keytool schreibt Grossbuchstaben mit Doppelpunkten, apksigner
+        # Kleinbuchstaben ohne. Beide Formen auf dieselbe reduzieren, sonst
+        # scheitert der Vergleich an der Schreibweise statt am Schluessel.
+        $normalise = { param($text) ($text -replace '[^0-9A-Fa-f]', '').ToLowerInvariant() }
+        $expectedCert = & $normalise $env:ARUCO_EXPECTED_CERT_SHA256
+        $digestLine = $signature | Select-String 'certificate SHA-256 digest:' | Select-Object -First 1
+        if (-not $digestLine) { throw 'apksigner nannte keinen SHA-256-Fingerabdruck.' }
+        $actualCert = & $normalise ($digestLine.ToString() -replace '^.*digest:\s*', '')
+        if ($actualCert -ne $expectedCert) {
+            throw (@(
+                'Das Release-APK traegt den FALSCHEN Schluessel.',
+                "     erwartet: $expectedCert",
+                "     gefunden: $actualCert",
+                '     Ein anderer Schluessel heisst: kein Geraet nimmt diese Fassung als Aktualisierung an.'
+            ) -join [Environment]::NewLine)
+        }
+        Write-Ok 'apksigner: Fingerabdruck stimmt mit der Erwartung ueberein'
+    }
+
     if ($Release) {
         Write-Ok 'apksigner: gueltig, und nicht mit dem Debug-Schluessel signiert'
     } else {
