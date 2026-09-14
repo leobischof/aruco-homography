@@ -48,7 +48,20 @@ runs:
         $sdk = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { $env:ANDROID_HOME }
         if (-not $sdk) { throw 'Weder ANDROID_SDK_ROOT noch ANDROID_HOME sind gesetzt.' }
         if (-not (Test-Path $sdk)) { throw "Das Android-SDK liegt nicht unter $sdk." }
-        "ANDROID_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+        # utf8NoBOM statt utf8: eine Byte-Order-Mark vor dem ersten Namen
+        # macht die Variable fuer GITHUB_ENV unlesbar (aus ANDROID_SDK_ROOT
+        # wird <BOM>ANDROID_SDK_ROOT), spaetere Schritte sehen sie schlicht
+        # nicht, und dev.ps1 faellt auf einen Pfad neben dem Repo zurueck,
+        # den es auf einem Laeufer gar nicht gibt - und meldet ein fehlendes
+        # SDK, obwohl der Fehler hier lag. Ob ein explizites -Encoding utf8
+        # in pwsh (was diese Aktion nutzt) ueberhaupt eine BOM schriebe, ist
+        # hier nicht geklaert; utf8NoBOM ist in pwsh so oder so eindeutig
+        # BOM-frei. utf8NoBOM gibt es in Windows PowerShell 5.1 nicht -
+        # wechselt jemand spaeter zu shell: powershell, bricht das laut mit
+        # einem Parameterfehler statt still wieder eine BOM zu schreiben.
+        # Kein -Encoding waere schlimmer: 5.1s Default fuer Out-File ist
+        # UTF-16LE, was die Datei still verderben wuerde.
+        "ANDROID_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8NoBOM
 
     # Genau diese NDK-Fassung. Auf dem Laeufer liegen mehrere, und dev.ps1
     # naehme sonst die hoechste - einen anderen Uebersetzer als den, mit dem auf
@@ -103,7 +116,7 @@ runs:
         @(
           "ARUCO_OPENCV_ANDROID=$opencv"
           "ARUCO_NDK_VERSION=${{ inputs.ndk-version }}"
-        ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+        ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8NoBOM
 
     # Der Schluessel kommt aus dem Geheimnis in den Arbeitsbereich, und
     # ARUCO_REQUIRE_EXISTING_KEY verbietet dev.ps1, bei einem Fehlschlag einen
@@ -135,8 +148,14 @@ runs:
           "ARUCO_SIGNING_DIR=$dir"
           'ARUCO_REQUIRE_EXISTING_KEY=1'
           "ARUCO_EXPECTED_CERT_SHA256=$env:EXPECTED_CERT"
-        ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-        # Das Kennwort geht NICHT ueber GITHUB_ENV in eine Datei, sondern
-        # ueber den Maskierungsweg in die Umgebung der folgenden Schritte.
+        ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8NoBOM
+        # Das Kennwort landet doch in einer Datei: GITHUB_ENV ist eine Datei
+        # auf dem Laeufer. Der Unterschied zu der .pass-Datei, die dev.ps1
+        # lokal neben den Schluessel legt, ist nicht "keine Datei", sondern
+        # welche: GITHUB_ENV ist die einzige Vorrichtung, die einen Wert an
+        # spaetere Schritte weiterreicht, sie liegt nicht im Repo oder
+        # Arbeitsbereich, sondern in der ephemeren Umgebungsdatei des
+        # Laeufers - und die Maskierung davor sorgt dafuer, dass der Wert in
+        # keinem Log auftaucht, bevor er dort landet.
         "::add-mask::$env:KEYSTORE_PASSWORD"
-        "ARUCO_KEYSTORE_PASSWORD=$env:KEYSTORE_PASSWORD" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+        "ARUCO_KEYSTORE_PASSWORD=$env:KEYSTORE_PASSWORD" | Out-File $env:GITHUB_ENV -Append -Encoding utf8NoBOM
