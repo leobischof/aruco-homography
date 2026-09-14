@@ -16,12 +16,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       id: python
       with:
         python-version: '3.13'
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: '22'
         cache: npm
@@ -43,14 +43,14 @@ runs:
     # einen Stempel im wiederhergestellten venv, installiert also auch dann
     # nichts nach.
     - name: venv aus dem Zwischenlager
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: venv
         key: venv-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
 
     - name: OpenCV-SDK aus dem Zwischenlager
       id: opencv
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ runner.temp }}\opencv
         key: opencv-windows-${{ inputs.opencv-version }}

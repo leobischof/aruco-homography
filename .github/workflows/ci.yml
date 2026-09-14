@@ -22,7 +22,7 @@ jobs:
     name: test-python
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-windows-toolchain
       - name: pytest
         shell: pwsh
@@ -32,11 +32,11 @@ jobs:
     name: test-cpp
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-windows-toolchain
       # check-jni ruft apksigner-nahe Java-Werkzeuge nicht, aber eine echte JVM -
       # ohne JDK bricht es mit Ruecklaufwert 1 ab und sagt nicht, warum.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -54,7 +54,7 @@ jobs:
     name: test-js
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-windows-toolchain
       - name: Die reine JavaScript-Rechnung
         shell: pwsh
