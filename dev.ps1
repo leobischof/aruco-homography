@@ -353,6 +353,19 @@ function Get-CMakeAndNinja {
     # Aus der Umgebung zuerst. Die VS-Installation eines Laeufers muss die
     # CMake-Komponente nicht mitbringen, und dann liegt beides schlicht im Pfad -
     # ein Abbruch waere hier eine Aussage ueber VS und nicht ueber das Projekt.
+
+    # Nur eine der beiden Variablen zu setzen ist immer ein Versehen - die zwei
+    # gehoeren zusammen. Eine Warnung ginge im langen Build-Log unter; still
+    # andere Werkzeuge zu benutzen als angefordert ist genau der Fehler, den
+    # dieser Override verhindern soll.
+    if (($env:ARUCO_CMAKE -and -not $env:ARUCO_NINJA) -or ($env:ARUCO_NINJA -and -not $env:ARUCO_CMAKE)) {
+        $missing = if ($env:ARUCO_CMAKE) { 'ARUCO_NINJA' } else { 'ARUCO_CMAKE' }
+        throw (@(
+            "$missing ist nicht gesetzt, das Gegenstueck schon.",
+            '     ARUCO_CMAKE und ARUCO_NINJA gehoeren zusammen: beide setzen oder keine.'
+        ) -join [Environment]::NewLine)
+    }
+
     if ($env:ARUCO_CMAKE -and $env:ARUCO_NINJA) {
         $fromEnv = [ordered]@{ CMake = $env:ARUCO_CMAKE; Ninja = $env:ARUCO_NINJA }
         foreach ($tool in $fromEnv.Values) {
