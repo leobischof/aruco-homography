@@ -725,9 +725,11 @@ outbound, there is no CLA, and you keep your copyright.
 
 ## Getting the app
 
-Not in any store yet. The Android APK is built with `.\dev.ps1 build-apk-release` and
-what still stands between it and F-Droid or Google Play — two blockers, one each, both
-solvable — is written down honestly in [docs/publishing/](docs/publishing/README.md).
+Not in any store yet. The Android APK is built with `.\dev.ps1 build-apk-release`.
+**F-Droid** is the intended route, and the one thing still in the way — OpenCV comes from
+a downloaded SDK, which F-Droid will not build against — is written down honestly, with
+both ways out costed, in [docs/publishing/](docs/publishing/README.md). Google Play is
+deliberately not being pursued; the reasons are in the same place.
 
 ## Kurzfassung (Deutsch)
 

@@ -117,9 +117,12 @@ Source code: https://github.com/leobischof/aruco-homography
 
 ---
 
-> **Für Entwickler:** Google Play verlangt diese Erklärung unter einer **öffentlichen,
-> direkt erreichbaren Adresse**. Diese Datei auf GitHub genügt dafür:
+> **Für Entwickler:** F-Droid zeigt eine Datenschutzerklärung an, wenn die Metadatendatei
+> eine Adresse dafür nennt. Diese Datei auf GitHub genügt:
 > `https://github.com/leobischof/aruco-homography/blob/master/docs/publishing/privacy-policy.md`
+>
+> Verpflichtend ist sie dort nicht — sie steht hier trotzdem, weil sie etwas Wahres über
+> die App sagt, das sonst nirgends in einem Satz steht.
 >
 > Jede Änderung an den Berechtigungen im `AndroidManifest.xml` macht diesen Text
 > **falsch**, bis er nachgezogen ist. Das ist der einzige Grund, warum er im Repo liegt

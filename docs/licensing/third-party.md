@@ -23,7 +23,7 @@ ausgelesen, nicht aus dem Gedächtnis zitiert. Nachzusehen mit:
 
 ## 1 · Im Android-APK
 
-Das ist die Liste, die für [F-Droid und Google Play](../publishing/README.md) gilt.
+Das ist die Liste, die für [F-Droid](../publishing/README.md) gilt.
 
 | Bibliothek | Fassung | Lizenz | Wo im Paket |
 |---|---|---|---|

@@ -1,77 +1,86 @@
 ---
-title: Auslieferung an die App-Läden
-description: Was zwischen dem heutigen APK und einem Eintrag bei F-Droid oder Google Play noch liegt, mit den beiden Sperren zuerst.
+title: Auslieferung an F-Droid
+description: Was zwischen dem heutigen APK und einem Eintrag bei F-Droid noch liegt — und warum Google Play bewusst nicht verfolgt wird.
 audience: developer
 status: draft
 updated: 2026-09-14
 ---
 
-# Auslieferung an die App-Läden
+# Auslieferung an F-Droid
 
-> **Stand 14.09.2026: das APK ist fertig und beide Wege sind versperrt** — jeder durch
-> genau eine Sache, und es ist nicht dieselbe. Beide sind lösbar. Keine ist gelöst.
+> **Stand 14.09.2026: das APK ist fertig, der Weg ist durch genau eine Sache versperrt.**
+> OpenCV kommt aus einem heruntergeladenen SDK, und F-Droid baut nur aus Quellen oder aus
+> Paketquellen, denen es traut. Lösbar, nicht gelöst.
 
-| Weg | Sperre | Datei |
-|---|---|---|
-| **F-Droid** | OpenCV kommt aus einem **heruntergeladenen SDK**. F-Droid baut nur aus Quellen oder aus Paketquellen, denen es traut. | [`f-droid.md`](f-droid.md) |
-| **Google Play** | `targetSdk = 35`. Play verlangt seit dem **31.08.2026** für neue Apps **API 36**. Die Frist ist vorbei. | [`google-play.md`](google-play.md) |
+| | Datei |
+|---|---|
+| Die Sperre, die zwei Auswege mit ihren gemessenen Kosten, die Metadatendatei | [`f-droid.md`](f-droid.md) |
+| Die Datenschutzerklärung, zweisprachig | [`privacy-policy.md`](privacy-policy.md) |
 
-Dazu, für beide: [`privacy-policy.md`](privacy-policy.md) — Play verlangt eine
-Datenschutzerklärung unter einer öffentlichen Adresse, F-Droid zeigt gerne eine an. Sie
-ist in diesem Fall angenehm kurz, und zwar nicht aus Nachlässigkeit: die App hat **keine
-Netzberechtigung**.
+**Google Play wird nicht verfolgt** — die Begründung steht in [§4](#4--google-play-liegt-bewusst-daneben),
+damit die Entscheidung nicht in einem Jahr als Versäumnis gelesen wird.
 
 ---
 
 ## 1 · Was heute schon steht
 
-Nichts davon muss für die Läden neu gemacht werden.
+Nichts davon muss für F-Droid neu gemacht werden.
 
 | | Stand |
 |---|---|
 | Release-APK mit eigenem Schlüssel | **fertig** — `./dev.ps1 build-apk-release`, `CN=Bischof Snowboards`, 9,87 MB, arm64-v8a |
 | Schlüssel liegt außerhalb des Repos | **ja** — `../_toolchain/aruco-signing/`, Kennwort über die Umgebung |
-| Anwendungskennung | `com.bischofsnowboards.aruco` — frei, eindeutig, für beide Läden brauchbar |
+| Anwendungskennung | `com.bischofsnowboards.aruco` — frei und eindeutig |
 | Fassung kommt aus einer Quelle | **ja** — `app/config.py` → `dev.ps1` → Gradle. Nichts abgetippt |
-| Freie Lizenz | **ja**, seit heute — GPL-3.0-or-later, siehe [`../licensing/README.md`](../licensing/README.md) |
+| Freie Lizenz | **ja**, seit dem 14.09.2026 — GPL-3.0-or-later, siehe [`../licensing/README.md`](../licensing/README.md) |
 | Keine Netzberechtigung, keine Tracker, keine Werbung | **ja** — steht im `AndroidManifest.xml` und ist dort auch begründet |
+| Git-Tag je Veröffentlichung | **ja** — elf, von `v0.0.1-alpha` bis `v0.1.7-alpha`. F-Droid baut aus einem Tag, nicht aus `master` |
 | Prüfstand läuft auf dem Gerät | **ja** — auf einem Xiaomi 2312DRA50G am 08.09.2026 bestanden |
 
 Der letzte Punkt ist der, der bei F-Droid ungewöhnlich gut aussieht: die App bringt ihren
-eigenen Nachweis mit und ein Prüfer kann ihn drücken.
+eigenen Nachweis mit, und ein Prüfer kann ihn drücken.
 
-## 2 · Was beide Läden zusätzlich wollen
+## 2 · Was noch fehlt
 
-Für keinen der beiden Wege vorhanden, für beide gebraucht:
+- **Der Bau ohne heruntergeladenes OpenCV-SDK.** Die eigentliche Arbeit; zwei Wege stehen
+  in [`f-droid.md`](f-droid.md) §2, beide durchgerechnet.
+- **Bilder.** Symbol 512 × 512 und vier Bildschirmfotos vom Telefon. Nur von Hand zu
+  machen, und das Telefon hat die App ohnehin schon gefahren.
+- **Eine Entscheidung über die Fassungsnummer.** `0.1.7-alpha` ist ehrlich und in einem
+  Laden trotzdem heikel: „alpha" neben einem Werkzeug, mit dem Leute sägen, liest sich als
+  Warnung. Das ist sie auch — die Frage ist nur, ob sie in der Fassungsnummer stehen soll
+  oder im Beschreibungstext, wo Platz für den ganzen Satz ist.
 
-- **Store-Texte und Bilder.** Kurzbeschreibung, Langbeschreibung, Symbol, Bildschirmfotos.
-  F-Droid liest sie **aus diesem Repo** (`fastlane/metadata/android/…`), Play will sie in
-  der Konsole. Einmal schreiben, zweimal benutzen — deshalb liegen sie im Repo.
-- **Eine Entscheidung über die Fassungsnummer.** `0.1.7-alpha` ist ehrlich und für einen
-  Laden ein Problem: Play zeigt den `versionName` an, und „alpha" neben einem Werkzeug,
-  mit dem Leute sägen, liest sich als Warnung. Das ist sie auch — die Frage ist, ob sie
-  im Ladennamen stehen soll oder im Beschreibungstext, wo Platz für den ganzen Satz ist.
+Die Store-Texte sind da: `fastlane/metadata/android/` auf Deutsch und Englisch, dort, wo
+F-Droid sie aus diesem Repo selbst liest.
 
-**Git-Tags gibt es schon** — elf, von `v0.0.1-alpha` bis `v0.1.7-alpha`. F-Droid baut aus
-einem Tag und nicht aus `master`; der Weg ist also offen, und die Zeile in der
-Metadatendatei kann `v0.1.7-alpha` heißen, ohne dass vorher etwas nachgeholt werden muss.
+## 3 · Reihenfolge
 
-## 3 · Die Reihenfolge, die ich empfehlen würde
+1. OpenCV-Frage entscheiden (Maven-AAR oder Quellbau) und den Bau umstellen.
+2. **Auf dem Gerät nachmessen.** Jeder Umbau an `libaruco_core.so` macht den
+   Prüfstandslauf vom 08.09.2026 neu fällig — der Knopf dafür ist in der App.
+3. Bilder machen.
+4. `fdroid build` in F-Droids eigener Bauumgebung, **bevor** der Antrag rausgeht.
+5. Merge Request bei fdroiddata.
 
-**F-Droid zuerst, Play danach**, und nicht aus Ideologie:
+## 4 · Google Play liegt bewusst daneben
 
-1. F-Droid passt zu diesem Projekt (frei, kein Netz, keine Tracker, nachprüfbarer Bau).
-   Die Aufnahme ist kostenlos und dauert Wochen, nicht Tage — je früher angefangen, desto
-   besser.
-2. Der OpenCV-Umbau, den F-Droid erzwingt, ist **ohnehin die bessere Bauweise**: eine
-   Abhängigkeit aus Maven statt eines 15-GB-SDK neben dem Repo. Wer ihn für F-Droid macht,
-   macht ihn für alle Ziele.
-3. Play kostet 25 USD einmalig, verlangt eine Identitätsprüfung und für ein **privates**
-   Konto zusätzlich einen geschlossenen Test mit 12 Testern über 14 zusammenhängende
-   Tage, bevor überhaupt veröffentlicht werden darf. Ein **Organisationskonto** auf
-   Bischof Snowboards umgeht das — dafür braucht es eine D-U-N-S-Nummer. Die Entscheidung
-   steht in [`google-play.md`](google-play.md) und sie ist die erste, die fällt, weil sie
-   Wochen kostet oder spart.
+**Nicht vergessen, sondern entschieden** — am 14.09.2026, mit diesen Gründen:
 
-**Nicht warten** muss man mit: Store-Texte schreiben und `targetSdk` auf 36 heben. Beides
-blockiert nichts und beides ist schnell.
+- **Die API-Frist ist bereits abgelaufen.** Seit dem 31.08.2026 nimmt Play neue Apps nur
+  noch mit `targetSdk = 36`; diese App steht auf 35. Das Anheben ist nicht die Arbeit —
+  das Nachmessen auf einem Gerät ist es, weil `targetSdk` Verhaltensänderungen scharf
+  schaltet und dieses Projekt genau daran schon einmal gelitten hat (Rand-zu-Rand,
+  08.09.2026).
+- **Der Vorlauf ist lang.** 25 USD, Identitätsprüfung, und für ein privates Konto ein
+  geschlossener Test mit 12 Testern über 14 ununterbrochene Tage. Für ein
+  Werkstattwerkzeug ist das die unangenehmste Auflage von allen.
+- **GPLv3 und die Play-Bedingungen reiben sich.** Play untersagt Nutzern das
+  Weiterverteilen, die GPL gibt jedem Empfänger genau dieses Recht. In der Praxis stehen
+  GPLv3-Apps zu Tausenden bei Play und Google entfernt sie nicht deswegen — aber es ist
+  eine Reibung, die es bei F-Droid schlicht nicht gibt.
+- **Play will ein AAB, kein APK.** Also ein zweites Erzeugnis, das niemand mitmisst.
+  `build-aab` gab es kurz und ist wieder draußen (Commit `c635af5`).
+
+Wenn Play später doch kommt, ist der Weg nicht verloren: er steht in der Historie, und
+die Punkte oben sind die Liste, die dann abzuarbeiten wäre.
