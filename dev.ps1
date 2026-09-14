@@ -1003,14 +1003,18 @@ function Enable-ReleaseSigning {
     # Der Riegel steht VOR dem Anlegen des Verzeichnisses: hier ist nichts
     # anzulegen, und ein unbrauchbarer Ablageort soll an dieser Meldung
     # scheitern statt an einer nichtssagenden von New-Item.
-    if ($env:ARUCO_REQUIRE_EXISTING_KEY -eq '1' -or $env:ARUCO_SIGNING_DIR) {
+    # ARUCO_REQUIRE_EXISTING_KEY riegelt bei jedem Wert ausser leer und '0' -
+    # nicht nur bei '1'. YAML schreibt sein Wahr von Natur aus als "true", und
+    # ein Sicherheitsschalter, der nur eine Schreibweise versteht, ist einer,
+    # den die naechste Person mit "true" stillschweigend abschaltet.
+    if (($env:ARUCO_REQUIRE_EXISTING_KEY -and $env:ARUCO_REQUIRE_EXISTING_KEY -ne '0') -or $env:ARUCO_SIGNING_DIR) {
         if (-not (Test-Path $AndroidKeystore)) {
             throw (@(
                 "Kein Release-Schluessel unter $AndroidKeystore.",
-                '     An einem vorgegebenen Ablageort wird keiner angelegt -',
-                '     ein zweiter Schluessel waere eine zweite App.',
+                '     Hier ist ein Release-Schluessel verlangt, und keiner ist da -',
+                '     erfinden ist keine Option: ein zweiter Schluessel waere eine zweite App.',
                 '     In der Werkbank heisst das: das Geheimnis fehlt oder wurde nicht ausgepackt.',
-                '     Auf der Werkbank: ARUCO_SIGNING_DIR und ARUCO_REQUIRE_EXISTING_KEY leeren,',
+                '     Auf dem Entwicklerrechner: ARUCO_SIGNING_DIR und ARUCO_REQUIRE_EXISTING_KEY leeren,',
                 '     dann legt der erste Bau den einen Schluessel an.'
             ) -join [Environment]::NewLine)
         }
