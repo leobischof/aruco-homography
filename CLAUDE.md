@@ -54,6 +54,10 @@ Messschieber geprüft" allein liest sich als das Doppelte dessen, was geprüft i
 **Die Regeln stehen in [docs/contributing/git.md](docs/contributing/git.md)** — dort steht
 die verbindliche Fassung, hier nur das, was man ohnehin auswendig können muss:
 
+- **Nie auf `master`, nie auf `develop`.** Jede Änderung — auch eine einzeilige, auch
+  eine reine Doku-Änderung — entsteht auf einem eigenen Branch, abgezweigt von
+  `origin/develop`, und kommt nur über einen Pull Request hinein. Es gibt keine
+  Ausnahme und keine Größe, unter der es sich nicht lohnt.
 - **Committen ohne Rückfrage, pushen nur auf Ansage.** Örtlich mutig, nach außen nicht.
   Eine Push-Erlaubnis gilt für genau einen Push, nicht für die nächsten.
 - **Ein Feature, ein Commit.** Braucht die Beschreibung ein „und", sind es zwei.

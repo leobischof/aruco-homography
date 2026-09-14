@@ -90,6 +90,13 @@ A few specifics that catch people out:
 **The binding rules are in [`docs/contributing/git.md`](docs/contributing/git.md)** (German).
 The parts you need before your first commit:
 
+- **Never commit on `master` or `develop`.** Every change — a one-liner and a
+  documentation typo included — goes on its own branch off `origin/develop` and comes in
+  through a pull request. Both branches reject direct pushes, so this is enforced, not
+  merely asked. Branch names: `feat/…`, `fix/…`, `docs/…`, `chore/…`.
+- **One feature, one branch, one pull request.** PRs are squash-merged, so the PR — not
+  the individual commit — is the unit of history on the trunk. Commit as finely as you
+  like inside the branch; the PR title is what lands.
 - **One feature, one commit.** If the description needs an "and", it is two commits.
 - **English subject line** with a conventional prefix (`fix:`, `feat:`, `docs:`, `build:`),
   then a **blank line**, then a body that explains the **why**. The what is in the diff.
