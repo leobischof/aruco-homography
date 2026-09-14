@@ -741,7 +741,14 @@ $UiProbePort = 8030
 #
 # UND DESHALB WIRD ER NIE UEBERSCHRIEBEN: "gibt es schon" ist hier kein
 # Fehler, sondern der Normalfall. Ein zweiter Schluessel waere eine zweite App.
-$AndroidSigningDir = Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\aruco-signing'
+# Der Ablageort darf aus der Umgebung kommen. Die Werkbank hat kein
+# _toolchain/ neben dem Repo - sie packt den Schluessel aus einem Geheimnis in
+# ihren Arbeitsbereich aus und zeigt mit ARUCO_SIGNING_DIR hierhin.
+$AndroidSigningDir = if ($env:ARUCO_SIGNING_DIR) {
+    $env:ARUCO_SIGNING_DIR
+} else {
+    Join-Path (Split-Path $RepoRoot -Parent) '_toolchain\aruco-signing'
+}
 $AndroidKeystore   = Join-Path $AndroidSigningDir 'aruco-release.p12'
 $AndroidKeyPass    = Join-Path $AndroidSigningDir 'aruco-release.pass'
 $AndroidKeyAlias   = 'aruco'
@@ -970,6 +977,36 @@ function Get-AndroidVersionCode {
 # und ein Kennwort, das in einer Prozessliste steht, ist keins mehr.
 function Enable-ReleaseSigning {
     New-Item -ItemType Directory -Path $AndroidSigningDir -Force | Out-Null
+
+    # ANLEGEN VERBOTEN - der Riegel fuer die Werkbank.
+    #
+    # Ohne ihn waere ein fehlendes Geheimnis kein Fehler, sondern ein NEUER
+    # Schluessel: jede Fassung traege eine andere Signatur, kein Geraet naehme
+    # die naechste als Aktualisierung an (INSTALL_FAILED_UPDATE_INCOMPATIBLE),
+    # und im Protokoll staende eine Zeile "Angelegt:" und sonst nichts. Ein
+    # gruener Bau, der die App unaktualisierbar macht, ist der teuerste Fehler,
+    # den dieses Projekt haben kann.
+    #
+    # Das Kennwort kommt in diesem Fall aus der UMGEBUNG und nicht von der
+    # Platte: in einer Werkbank hat eine Kennwortdatei nichts zu suchen.
+    if ($env:ARUCO_REQUIRE_EXISTING_KEY -eq '1') {
+        if (-not (Test-Path $AndroidKeystore)) {
+            throw (@(
+                "Kein Release-Schluessel unter $AndroidKeystore.",
+                '     ARUCO_REQUIRE_EXISTING_KEY=1 verbietet, einen neuen anzulegen -',
+                '     ein zweiter Schluessel waere eine zweite App.',
+                '     In der Werkbank heisst das: das Geheimnis fehlt oder wurde nicht ausgepackt.'
+            ) -join [Environment]::NewLine)
+        }
+        if (-not $env:ARUCO_KEYSTORE_PASSWORD) {
+            throw (@(
+                'ARUCO_REQUIRE_EXISTING_KEY=1, aber ARUCO_KEYSTORE_PASSWORD ist leer.',
+                '     Ohne Kennwort kommt Gradle nicht an den Schluessel heran.'
+            ) -join [Environment]::NewLine)
+        }
+        Write-Ok ("Release-Schluessel: {0}" -f $AndroidKeystore)
+        return
+    }
 
     if (-not (Test-Path $AndroidKeyPass)) {
         $bytes = New-Object byte[] 24
