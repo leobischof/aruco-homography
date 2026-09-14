@@ -1,0 +1,142 @@
+name: Android-Werkzeugkette
+description: >
+  JDK, das festgenagelte NDK, das OpenCV-Android-SDK und - wenn ein Geheimnis
+  gereicht wird - den Release-Schluessel herrichten.
+
+inputs:
+  ndk-version:
+    description: Genau diese NDK-Fassung, nicht die hoechste vorhandene
+    required: false
+    default: '27.2.12479018'
+  opencv-version:
+    description: Fassung des OpenCV-Android-SDK
+    required: false
+    default: '5.0.0'
+  keystore-base64:
+    description: Der Release-Schluessel als base64. Leer = nur Debug-Bauten.
+    required: false
+    default: ''
+  keystore-password:
+    description: Kennwort dazu
+    required: false
+    default: ''
+  expected-cert-sha256:
+    description: Fingerabdruck, den das fertige APK tragen muss
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    # ANDROID_SDK_ROOT ausdruecklich in GITHUB_ENV schreiben, bevor es jemand
+    # als ${{ env.ANDROID_SDK_ROOT }} liest.
+    #
+    # Das Laeuferbild setzt die Variable im Prozess, und ob der env-Kontext einer
+    # zusammengesetzten Aktion sie dann schon kennt, ist nirgends zugesagt - ein
+    # leerer Pfad im cache-Schritt sieht danach aus, als haette das
+    # Zwischenlager nicht gegriffen, und laedt das NDK jedes Mal neu. Nach
+    # dieser Zeile ist es zugesagt. ANDROID_HOME ist der aeltere Name derselben
+    # Sache; dev.ps1 liest ANDROID_SDK_ROOT.
+    - name: Das Android-SDK bekanntgeben
+      shell: pwsh
+      run: |
+        $sdk = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { $env:ANDROID_HOME }
+        if (-not $sdk) { throw 'Weder ANDROID_SDK_ROOT noch ANDROID_HOME sind gesetzt.' }
+        if (-not (Test-Path $sdk)) { throw "Das Android-SDK liegt nicht unter $sdk." }
+        "ANDROID_SDK_ROOT=$sdk" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+    # Genau diese NDK-Fassung. Auf dem Laeufer liegen mehrere, und dev.ps1
+    # naehme sonst die hoechste - einen anderen Uebersetzer als den, mit dem auf
+    # dem Entwicklerrechner gebaut wird. Der Unterschied faellt erst auf einem
+    # Telefon auf, also wird er hier gar nicht erst zugelassen.
+    - name: NDK aus dem Zwischenlager
+      id: ndk
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ inputs.ndk-version }}
+        key: ndk-${{ inputs.ndk-version }}
+
+    - name: NDK holen
+      if: steps.ndk.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $sdkmanager = Join-Path $env:ANDROID_SDK_ROOT 'cmdline-tools\latest\bin\sdkmanager.bat'
+        if (-not (Test-Path $sdkmanager)) { throw "sdkmanager nicht gefunden: $sdkmanager" }
+        & $sdkmanager --install "ndk;${{ inputs.ndk-version }}"
+        if ($LASTEXITCODE -ne 0) { throw "sdkmanager failed (exit $LASTEXITCODE)." }
+
+    - name: OpenCV-Android-SDK aus dem Zwischenlager
+      id: opencv
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}\opencv-android
+        key: opencv-android-${{ inputs.opencv-version }}
+
+    # Im Archiv liegt OpenCV-android-sdk/ ganz oben, und genau diese
+    # Verschachtelung erwartet Find-Toolchain (Marker:
+    # OpenCV-android-sdk\sdk\native\jni\OpenCVConfig.cmake). Also in ein
+    # Verzeichnis auspacken, das den Ordner DARIN traegt.
+    - name: OpenCV-Android-SDK holen
+      if: steps.opencv.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $version = '${{ inputs.opencv-version }}'
+        $url = "https://github.com/opencv/opencv/releases/download/$version/opencv-$version-android-sdk.zip"
+        $zip = Join-Path $env:RUNNER_TEMP 'opencv-android.zip'
+        $dir = Join-Path $env:RUNNER_TEMP 'opencv-android'
+        Write-Host "==> $url"
+        Invoke-WebRequest -Uri $url -OutFile $zip
+        Expand-Archive -Path $zip -DestinationPath $dir -Force
+        Remove-Item $zip
+
+    - name: Werkzeugkette bekanntgeben
+      shell: pwsh
+      run: |
+        $opencv = Join-Path $env:RUNNER_TEMP 'opencv-android'
+        $marker = Join-Path $opencv 'OpenCV-android-sdk\sdk\native\jni\OpenCVConfig.cmake'
+        if (-not (Test-Path $marker)) { throw "OpenCV-Android liegt nicht, wo erwartet: $marker" }
+        @(
+          "ARUCO_OPENCV_ANDROID=$opencv"
+          "ARUCO_NDK_VERSION=${{ inputs.ndk-version }}"
+        ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+    # Der Schluessel kommt aus dem Geheimnis in den Arbeitsbereich, und
+    # ARUCO_REQUIRE_EXISTING_KEY verbietet dev.ps1, bei einem Fehlschlag einen
+    # neuen zu erfinden. Ohne diese Zeile waere ein leeres Geheimnis kein
+    # Fehler, sondern eine Fassung mit fremder Signatur.
+    - name: Release-Schluessel auspacken
+      if: inputs.keystore-base64 != ''
+      shell: pwsh
+      env:
+        KEYSTORE_BASE64: ${{ inputs.keystore-base64 }}
+        KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        EXPECTED_CERT: ${{ inputs.expected-cert-sha256 }}
+      run: |
+        if (-not $env:KEYSTORE_PASSWORD) { throw 'keystore-base64 gereicht, aber kein keystore-password.' }
+        # Die Erwartung an den Fingerabdruck MUSS mitkommen. Ein leerer Wert ist
+        # fuer dev.ps1 dasselbe wie gar keiner (PowerShell kennt keine leere
+        # gesetzte Variable), und check-apk-release vergliche dann stillschweigend
+        # nichts. Ein Schluessel wird hier ausgepackt - also wird auch geprueft,
+        # dass hinterher jemand nachsehen kann, ob es der richtige war.
+        if (-not $env:EXPECTED_CERT) {
+          throw 'keystore-base64 gereicht, aber expected-cert-sha256 ist leer (Variable ANDROID_CERT_SHA256 fehlt?).'
+        }
+        $dir = Join-Path $env:RUNNER_TEMP 'aruco-signing'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        [IO.File]::WriteAllBytes(
+          (Join-Path $dir 'aruco-release.p12'),
+          [Convert]::FromBase64String($env:KEYSTORE_BASE64))
+        @(
+          "ARUCO_SIGNING_DIR=$dir"
+          'ARUCO_REQUIRE_EXISTING_KEY=1'
+          "ARUCO_EXPECTED_CERT_SHA256=$env:EXPECTED_CERT"
+        ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+        # Das Kennwort geht NICHT ueber GITHUB_ENV in eine Datei, sondern
+        # ueber den Maskierungsweg in die Umgebung der folgenden Schritte.
+        "::add-mask::$env:KEYSTORE_PASSWORD"
+        "ARUCO_KEYSTORE_PASSWORD=$env:KEYSTORE_PASSWORD" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
