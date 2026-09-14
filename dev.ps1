@@ -548,6 +548,7 @@ function Invoke-BuildCoreAndroid {
 # app/static/ gebraucht.
 function Invoke-BuildWeb {
     Confirm-Deps
+    Confirm-NodeModules   # build_web.py kopiert pdf-lib aus node_modules nach web/vendor/
     Write-Step 'Assembling the browser build'
     Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') --dist @Rest }
     Write-Ok "Fertig: $(Join-Path $RepoRoot 'dist\web')"
