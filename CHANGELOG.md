@@ -47,18 +47,9 @@ abzweigen, bauen oder weitergeben. F-Droid hätte es gar nicht erst ansehen kön
   nichts senden, und das erzwingt Android statt es zu versprechen.
 - **`fastlane/metadata/android/`** — Store-Texte auf Deutsch und Englisch, dort, wo
   F-Droid sie aus dem Repo selbst liest. Bilder fehlen noch.
-- **`./dev.ps1 build-aab` und `check-aab`** — das Android App Bundle, das Google Play für
-  neue Apps verlangt. Immer Release, immer mit dem echten Schlüssel; `check-aab` sagt
-  ausdrücklich, was es *nicht* prüfen kann (zipalign, ABI-Liste, wessen Schlüssel — ein
-  Bundle ist kein installierbares Paket, sondern der Bauplan dafür).
 
 ### Geändert
 
-- **Die Inhaltsliste des Android-Pakets steht nur noch einmal.** `check-apk` trug sie als
-  zwei Arrays im Rumpf; `check-aab` hätte eine zweite Fassung gebraucht, und zwei Listen
-  driften. Sie heißen jetzt `$AndroidPayloadExpected` und `$AndroidPayloadForbidden` und
-  werden von beiden über `Test-AndroidPayload` gelesen — das Bundle legt dieselben Dateien
-  unter `base/` ab, also unterscheidet die beiden nur ein Präfix.
 - **`package.json` sagte `"license": "UNLICENSED"`** — die Vorgabe von `npm init`, und
   seit heute schlicht falsch. Jetzt `GPL-3.0-or-later`.
 

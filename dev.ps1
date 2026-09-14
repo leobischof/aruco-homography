@@ -1034,89 +1034,12 @@ function Invoke-Gradle {
     }
 }
 
-# Wo das fertige Paket liegt - eine Antwort fuer alle Bauarten, damit der Name
+# Wo das fertige APK liegt - eine Antwort fuer beide Bauarten, damit der Name
 # nicht an drei Stellen halb richtig steht.
-#
-# Das AAB gibt es nur als Release: Google Play nimmt nichts anderes an, und ein
-# mit dem Debug-Schluessel signiertes Bundle waere ein Erzeugnis, das nirgends
-# hingehoert.
 function Get-ApkPath {
-    param([switch]$Release, [switch]$Bundle)
-    if ($Bundle) { return Join-Path $AndroidOutDir 'aruco-homographie-release.aab' }
+    param([switch]$Release)
     if ($Release) { return Join-Path $AndroidOutDir 'aruco-homographie-release.apk' }
     return Join-Path $AndroidOutDir 'aruco-homographie-debug.apk'
-}
-
-# Was im Paket liegen MUSS - und was darin nichts zu suchen hat.
-#
-# EINE Liste fuer APK und AAB. Die beiden legen dieselben Dateien ab, nur unter
-# verschiedenen Praefixen (im APK direkt, im AAB unter base/). Deshalb stehen
-# die Namen hier OHNE Praefix und bekommen ihn erst beim Pruefen - eine zweite
-# Liste fuer das Bundle waere genau die Fassung, die beim naechsten Zusatz
-# vergessen wird.
-#
-# Diese Pruefung gibt es, weil genau das einmal fehlschlug: der Assets-Schritt
-# war falsch verdrahtet (android/app/build.gradle.kts), Gradle meldete Erfolg,
-# und im APK lag von app/static/ nichts. Ein leeres APK ist von einem vollen
-# nur an seiner Groesse zu unterscheiden - und die haette hier niemand
-# nachgesehen. Erwartet werden Dateien, die aus vier verschiedenen Quellen
-# stammen: Oberflaeche, PDF-Bau, sprachneutrale Konstanten, Pruefszenen.
-$AndroidPayloadExpected = @(
-    'assets/www/index.html',                 # app/static/
-    'assets/www/js/main.js',
-    'assets/www/i18n/de.json',
-    'assets/www/native/index.html',          # die eigene Seite der Huelle
-    'assets/www/native/bridge-shim.js',
-    'assets/www/web/pdf/markersheet.js',     # web/pdf/
-    'assets/www/web/vision/local.js',        # web/vision/ - die Rechenkette
-    'assets/www/web/vision/pipeline.js',
-    'assets/www/web/vision/core-android.js', # der Kern ueber JNI ...
-    'assets/www/web/constants.js',
-    'assets/www/app/static/i18n/de.json',    # der Pfad, den web/pdf/i18n.js importiert
-    'assets/www/shared/constants.json',      # shared/
-    'assets/www/vendor/pdf-lib.esm.min.js',
-    'assets/fixtures/expected/flat.json',    # shared/fixtures/
-    'assets/fixtures/scenes/flat.png',
-    'lib/arm64-v8a/libaruco_core.so'
-)
-# ... und was NICHT drin sein darf. Der Browser-Kern (web/vision/core.js samt
-# dem 3,6-MB-wasm daneben) hat auf diesem Ziel nichts zu suchen: hier rechnet
-# die native Bibliothek ueber JNI. Ein mitgeliefertes wasm waere ein zweiter
-# Rechenkern, den niemand mitmisst - und er faellt nur an der Groesse auf.
-$AndroidPayloadForbidden = @(
-    'assets/www/web/vision/core.js',
-    'assets/www/web/vision/image.js',
-    'assets/www/web/vendor/core/aruco_core.wasm',
-    'assets/www/web/vendor/core/aruco_core.mjs'
-)
-
-# Den Inhalt eines APK oder AAB gegen die beiden Listen oben halten.
-#
-# $Prefix ist der einzige Unterschied zwischen den Bauarten: '' fuers APK,
-# 'base/' fuers Bundle, weil AAB seine Dateien nach Modulen einsortiert.
-function Test-AndroidPayload {
-    param(
-        [Parameter(Mandatory)][string]$Archive,
-        [string]$Prefix = ''
-    )
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
-    try {
-        $inside = $zip.Entries | ForEach-Object { $_.FullName }
-        $missing = @($AndroidPayloadExpected | Where-Object { $inside -notcontains ($Prefix + $_) })
-        if ($missing.Count -gt 0) {
-            throw ("Im Paket fehlen: {0}" -f ($missing -join ', '))
-        }
-        $smuggled = @($AndroidPayloadForbidden | Where-Object { $inside -contains ($Prefix + $_) })
-        if ($smuggled.Count -gt 0) {
-            throw ("Im Paket liegt, was nicht hineingehoert: {0}" -f ($smuggled -join ', '))
-        }
-        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden, keine der {2} verbotenen" -f
-            $zip.Entries.Count, $AndroidPayloadExpected.Count, $AndroidPayloadForbidden.Count) -ForegroundColor DarkGray
-    } finally {
-        $zip.Dispose()
-    }
 }
 
 # Das APK bauen: .so je ABI, dann Gradle, dann nachmessen.
@@ -1135,11 +1058,7 @@ function Test-AndroidPayload {
 # Release-APK NICHT installieren (andere Signatur, INSTALL_FAILED_UPDATE_
 # INCOMPATIBLE). Erst deinstallieren, dann installieren.
 function Invoke-BuildApk {
-    param([switch]$Release, [switch]$Bundle)
-
-    # Ein Bundle ist immer ein Release - Play nimmt nichts anderes, und mit dem
-    # Debug-Schluessel waere es ein Erzeugnis ohne Verwendung.
-    if ($Bundle) { $Release = $true }
+    param([switch]$Release)
 
     Confirm-NodeModules   # web/pdf/ braucht pdf-lib, und das APK traegt es mit
 
@@ -1154,83 +1073,29 @@ function Invoke-BuildApk {
         # das holt sich Gradle aus der Umgebung, die Enable-ReleaseSigning setzt.
         $arguments += ('-Paruco.keystore={0}' -f $AndroidKeystore)
         $arguments += ('-Paruco.keyAlias={0}' -f $AndroidKeyAlias)
-        $arguments += $(if ($Bundle) { 'bundleRelease' } else { 'assembleRelease' })
+        $arguments += 'assembleRelease'
         $variant = 'release'
     } else {
         $arguments += 'assembleDebug'
         $variant = 'debug'
     }
 
-    $kind = $(if ($Bundle) { 'AAB' } else { 'APK' })
-    Write-Step ("Building the {0} {1} ({2})" -f $variant, $kind, ($abis -join ', '))
+    Write-Step ("Building the {0} APK ({1})" -f $variant, ($abis -join ', '))
     Invoke-Gradle -Arguments $arguments
 
     # Gradle baut neben dem Repo (MAX_PATH, siehe android/gradle.properties) -
     # also das Erzeugnis zurueckholen, damit es dort liegt, wo man es sucht.
     $buildRoot = (Get-Content (Join-Path $AndroidDir 'gradle.properties') |
         Select-String '^aruco\.buildRoot=(.+)$').Matches.Groups[1].Value
-    $built = $(if ($Bundle) {
-        Join-Path $buildRoot 'app\outputs\bundle\release\app-release.aab'
-    } else {
-        Join-Path $buildRoot ("app\outputs\apk\{0}\app-{0}.apk" -f $variant)
-    })
-    if (-not (Test-Path $built)) { throw "Gradle lief durch, aber $built fehlt." }
+    $apk = Join-Path $buildRoot ("app\outputs\apk\{0}\app-{0}.apk" -f $variant)
+    if (-not (Test-Path $apk)) { throw "Gradle lief durch, aber $apk fehlt." }
 
     New-Item -ItemType Directory -Path $AndroidOutDir -Force | Out-Null
-    $target = Get-ApkPath -Release:$Release -Bundle:$Bundle
-    Copy-Item $built $target -Force
+    $target = Get-ApkPath -Release:$Release
+    Copy-Item $apk $target -Force
     Write-Ok ("Fertig: {0}  ({1:N2} MB)" -f $target, ((Get-Item $target).Length / 1MB))
 
-    if ($Bundle) { Invoke-CheckAab } else { Invoke-CheckApk -Release:$Release }
-}
-
-# Das fertige AAB nachmessen - so weit sich ein Bundle ueberhaupt nachmessen
-# laesst.
-#
-# WAS HIER ANDERS IST ALS BEIM APK, und das gehoert in jeden Bericht darueber:
-# ein AAB ist kein installierbares Paket, sondern der Bauplan, aus dem Play je
-# Geraet ein APK schneidet. Deshalb greifen hier drei der APK-Pruefungen NICHT:
-#
-#   * `aapt dump badging` liest kein Bundle (anderes Format, protobuf statt
-#     Binaer-XML).
-#   * `zipalign -c -P 16` ist sinnlos: ausgerichtet wird erst in dem APK, das
-#     Play daraus erzeugt. Die Zusage steckt in build.gradle.kts und im ELF,
-#     und beides ist vorher schon gemessen (check-android-so).
-#   * `apksigner verify` kennt nur APKs. Ein AAB ist per jarsigner signiert.
-#
-# WAS BLEIBT, ist das, was hier am haeufigsten schiefging: liegt die Oberflaeche
-# ueberhaupt drin. Genau dieselbe Liste wie beim APK, nur unter base/.
-function Invoke-CheckAab {
-    $aab = Get-ApkPath -Bundle
-    if (-not (Test-Path $aab)) { throw "Kein AAB: $aab  (./dev.ps1 build-aab)" }
-
-    Write-Step 'Inspecting the AAB'
-    Write-Host ("     {0}  {1:N2} MB" -f $aab, ((Get-Item $aab).Length / 1MB)) -ForegroundColor DarkGray
-
-    Write-Step 'Checking the AAB really carries the interface'
-    Test-AndroidPayload -Archive $aab -Prefix 'base/'
-    Write-Ok 'Die Oberflaeche, web/vision/, web/pdf/, shared/ und die Pruefszenen sind im AAB'
-
-    # Ist es ueberhaupt unterschrieben? Mehr als DASS laesst sich hier ohne
-    # jarsigner nicht sagen - und ein unsigniertes Bundle weist Play ab, bevor
-    # irgendjemand es sieht.
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [IO.Compression.ZipFile]::OpenRead($aab)
-    try {
-        $signature = @($zip.Entries | Where-Object { $_.FullName -match '^META-INF/.*\.(RSA|DSA|EC)$' })
-        if ($signature.Count -eq 0) {
-            throw 'Das AAB traegt keine Signatur (META-INF/*.RSA fehlt) - Play wiese es ab.'
-        }
-        Write-Host ("     Signaturblock: {0}" -f ($signature[0].FullName)) -ForegroundColor DarkGray
-    } finally {
-        $zip.Dispose()
-    }
-    Write-Ok 'Das AAB ist signiert'
-
-    Write-Host ''
-    Write-Host '     Nicht geprueft (kann ein Bundle nicht): zipalign, ABI-Liste je' -ForegroundColor DarkGray
-    Write-Host '     Geraet, und WESSEN Schluessel. Das APK aus check-apk-release ist' -ForegroundColor DarkGray
-    Write-Host '     dafuer weiterhin der Beleg - es kommt aus demselben Gradle-Lauf.' -ForegroundColor DarkGray
+    Invoke-CheckApk -Release:$Release
 }
 
 # Die Android-Rechenkette in einem echten Chromium - so weit sie sich ohne
@@ -1368,11 +1233,60 @@ function Invoke-CheckApk {
         Select-String 'package:|sdkVersion|targetSdkVersion|native-code|uses-permission|application-label:' |
         ForEach-Object { Write-Host ("     {0}" -f $_.ToString().Trim()) -ForegroundColor DarkGray }
 
-    # Ist die Oberflaeche ueberhaupt drin? Die beiden Listen und der Grund, warum
-    # es diese Pruefung gibt, stehen bei $AndroidPayloadExpected weiter oben -
-    # das AAB haelt sich an dieselben.
+    # Ist die Oberflaeche ueberhaupt drin?
+    #
+    # Diese Pruefung gibt es, weil genau das einmal fehlschlug: der Assets-Schritt
+    # war falsch verdrahtet (android/app/build.gradle.kts), Gradle meldete Erfolg,
+    # und im APK lag von app/static/ nichts. Ein leeres APK ist von einem vollen
+    # nur an seiner Groesse zu unterscheiden - und die haette hier niemand
+    # nachgesehen. Erwartet werden Dateien, die aus vier verschiedenen Quellen
+    # stammen: Oberflaeche, PDF-Bau, sprachneutrale Konstanten, Pruefszenen.
     Write-Step 'Checking the APK really carries the interface'
-    Test-AndroidPayload -Archive $apk
+    $expected = @(
+        'assets/www/index.html',                 # app/static/
+        'assets/www/js/main.js',
+        'assets/www/i18n/de.json',
+        'assets/www/native/index.html',          # die eigene Seite der Huelle
+        'assets/www/native/bridge-shim.js',
+        'assets/www/web/pdf/markersheet.js',     # web/pdf/
+        'assets/www/web/vision/local.js',        # web/vision/ - die Rechenkette
+        'assets/www/web/vision/pipeline.js',
+        'assets/www/web/vision/core-android.js', # der Kern ueber JNI ...
+        'assets/www/web/constants.js',
+        'assets/www/app/static/i18n/de.json',    # der Pfad, den web/pdf/i18n.js importiert
+        'assets/www/shared/constants.json',      # shared/
+        'assets/www/vendor/pdf-lib.esm.min.js',
+        'assets/fixtures/expected/flat.json',    # shared/fixtures/
+        'assets/fixtures/scenes/flat.png',
+        'lib/arm64-v8a/libaruco_core.so'
+    )
+    # ... und was NICHT drin sein darf. Der Browser-Kern (web/vision/core.js samt
+    # dem 3,6-MB-wasm daneben) hat auf diesem Ziel nichts zu suchen: hier rechnet
+    # die native Bibliothek ueber JNI. Ein mitgeliefertes wasm waere ein zweiter
+    # Rechenkern, den niemand mitmisst - und er faellt nur an der Groesse auf.
+    $forbidden = @(
+        'assets/www/web/vision/core.js',
+        'assets/www/web/vision/image.js',
+        'assets/www/web/vendor/core/aruco_core.wasm',
+        'assets/www/web/vendor/core/aruco_core.mjs'
+    )
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::OpenRead($apk)
+    try {
+        $inside = $zip.Entries | ForEach-Object { $_.FullName }
+        $missing = @($expected | Where-Object { $inside -notcontains $_ })
+        if ($missing.Count -gt 0) {
+            throw ("Im APK fehlen: {0}" -f ($missing -join ', '))
+        }
+        $smuggled = @($forbidden | Where-Object { $inside -contains $_ })
+        if ($smuggled.Count -gt 0) {
+            throw ("Im APK liegt, was nicht hineingehoert: {0}" -f ($smuggled -join ', '))
+        }
+        Write-Host ("     {0} Eintraege, alle {1} Pflichtdateien vorhanden, keine der {2} verbotenen" -f
+            $zip.Entries.Count, $expected.Count, $forbidden.Count) -ForegroundColor DarkGray
+    } finally {
+        $zip.Dispose()
+    }
     Write-Ok 'Die Oberflaeche, web/vision/, web/pdf/, shared/ und die Pruefszenen sind im APK'
 
     # 16-KB-Ausrichtung der .so IM APK. Das ist eine andere Zusage als die im
@@ -1456,10 +1370,8 @@ function Show-Help {
     Write-Cmd 'check-android-so'  '.so nachmessen: 16-KB-Ausrichtung und jedes JNI-Symbol aus NativeCore.java'
     Write-Cmd 'build-apk'         'Android-APK nach android/out/ bauen (Vorgabe arm64-v8a) und nachmessen'
     Write-Cmd 'build-apk-release' 'Dasselbe APK, aber mit dem echten Schluessel signiert (_toolchain/aruco-signing/)'
-    Write-Cmd 'build-aab'         'Android App Bundle fuer Google Play bauen (immer Release, echter Schluessel)'
     Write-Cmd 'check-apk'         'Fertiges APK nachmessen: ABIs, Rechte, zipalign -P 16, Signatur'
     Write-Cmd 'check-apk-release' 'Dasselbe am Release-APK - und dass es NICHT der Debug-Schluessel ist'
-    Write-Cmd 'check-aab'         'Fertiges AAB nachmessen: Inhalt und Signatur (mehr kann ein Bundle nicht)'
     Write-Cmd 'check-android-ui'  'Die Kette aus dem APK in einem Chromium fahren (Java nachgebaut, Kern als WASM)'
     Write-Cmd 'build-web'         'Browser-Bau zusammenstellen (web/index.html + dist/web/) - laeuft ohne Server'
     Write-Cmd 'start-web'         'Den Browser-Bau ausliefern (reiner Dateiserver, Vorgabeport 8020)'
@@ -1488,10 +1400,8 @@ switch ($Command.ToLowerInvariant()) {
     'check-android-so'  { Invoke-CheckAndroidSo -Abis (Get-AbiArgument) }
     'build-apk'         { Invoke-BuildApk }
     'build-apk-release' { Invoke-BuildApk -Release }
-    'build-aab'         { Invoke-BuildApk -Bundle }
     'check-apk'         { Invoke-CheckApk }
     'check-apk-release' { Invoke-CheckApk -Release }
-    'check-aab'         { Invoke-CheckAab }
     'check-android-ui'  { Invoke-CheckAndroidUi }
     'build-web'         { Invoke-BuildWeb }
     'start-web'         { Invoke-StartWeb }
