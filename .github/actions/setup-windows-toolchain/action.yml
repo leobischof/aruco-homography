@@ -68,8 +68,16 @@ runs:
         $exe = Join-Path $env:RUNNER_TEMP 'opencv-sfx.exe'
         Write-Host "==> $url"
         Invoke-WebRequest -Uri $url -OutFile $exe
-        & $exe -o"$env:RUNNER_TEMP" -y
-        if ($LASTEXITCODE -ne 0) { throw "OpenCV self-extractor failed (exit $LASTEXITCODE)." }
+        # Start-Process -Wait und NICHT `& $exe`: der Entpacker ist eine
+        # GUI-Anwendung (Windows-Subsystem). Darauf wartet PowerShell nicht -
+        # der Aufruf kehrt sofort zurueck, waehrend das Auspacken noch laeuft,
+        # und laesst $LASTEXITCODE unberuehrt. Im ersten Schritt eines Laufs
+        # ist die Variable damit $null, `$null -ne 0` ist wahr, und die
+        # Pruefung darunter meldete einen Fehlschlag, den es nicht gab:
+        # "OpenCV self-extractor failed (exit )." - mit leerer Klammer, weil
+        # nie ein Ruecklaufwert entstanden ist.
+        $sfx = Start-Process -FilePath $exe -ArgumentList "-o$env:RUNNER_TEMP", '-y' -Wait -PassThru
+        if ($sfx.ExitCode -ne 0) { throw "OpenCV self-extractor failed (exit $($sfx.ExitCode))." }
         Remove-Item $exe
 
     - name: OpenCV_DIR bekanntgeben
