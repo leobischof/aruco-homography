@@ -27,6 +27,10 @@ abzweigen, bauen oder weitergeben. F-Droid hätte es gar nicht erst ansehen kön
 - **`docs/licensing/`** — unter welcher Lizenz das Projekt steht, und wessen Code sonst
   noch mitgeliefert wird (`third-party.md`, getrennt nach *wird ausgeliefert* und *läuft
   nur hier*). Alle Lizenzangaben sind aus den Paketmetadaten ausgelesen, nicht zitiert.
+- **`CONTRIBUTING.md`** — Aufsetzen, der Maßstab für eine Änderung („nicht ‚Tests grün',
+  sondern die Zahl"), die vier Fallen, über die hier jeder stolpert, wie ein brauchbarer
+  Fehlerbericht über Millimeter aussieht, und wozu dieses Vorhaben voraussichtlich nein
+  sagt. Auf Englisch wie die `README.md`: die beiden sind die Außenseite.
 - **Der Lizenztext der Schrift liegt jetzt neben der Schrift.** Montserrat steht unter der
   SIL OFL 1.1, und die OFL verlangt genau eine Sache: dass ihr Text mitgeht. Er fehlte.
   Jetzt liegt er als `app/static/brand/fonts/OFL.txt` neben der `.woff2` — und geht damit
