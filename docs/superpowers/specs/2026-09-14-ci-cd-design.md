@@ -119,7 +119,7 @@ sondern daran, dass Android-Benutzer *jetzt* Aktualisierungen bekommen sollen.
     nightly.yml     Zeitplan + von Hand                      rollender Vorabstand
     codeql.yml      PR + Zeitplan                            Python und JavaScript
   actions/
-    setup-windows-toolchain/     venv · npm ci · OpenCV-Windows-SDK · Inno Setup
+    setup-windows-toolchain/     venv · npm · OpenCV-Windows-SDK · Inno Setup
     setup-android-toolchain/     JDK · Android-SDK+NDK · OpenCV-Android-SDK · Schlüssel
   dependabot.yml    pip · npm · gradle · github-actions
 fdroid/
@@ -264,6 +264,36 @@ stehen, damit niemand ihn in einem halben Jahr aus der Historie „wiederherstel
 MAX_PATH). Auf einem Windows-Läufer ist das schreibbar, also bleibt es unverändert. Wer den
 Android-Bau je nach Ubuntu verschiebt, muss hier vorbeikommen — deshalb steht es hier.
 
+**Ungeprüft bis Task 9:** dass `C:/` auf einem Läufer wirklich beschreibbar ist. Der
+Windows-Läufer arbeitet auf `D:`; ob ein Gradle-Bauplatz auf `C:` dort angelegt werden
+darf, sagt erst der erste Android-Lauf.
+
+### 5.5 Die Werkzeugketten-Schalter — und was sie NICHT abdecken
+
+Drei Umgebungsschalter, damit die Werkbank dieselbe Werkzeugkette benutzt wie dieser
+Rechner statt irgendeine:
+
+| Schalter | Wirkung |
+|---|---|
+| `ARUCO_CMAKE` + `ARUCO_NINJA` | Wo `cmake` und `ninja` liegen. **Nur beide zusammen** — ein halb gesetztes Paar bricht ab, weil niemand absichtlich genau eine von zwei zusammengehörenden Variablen setzt. |
+| `ARUCO_NDK_VERSION` | Genau diese NDK-Fassung statt der höchsten vorhandenen. Ein Läufer trägt drei; „die höchste" wäre ein anderer Übersetzer als der, gegen den hier gemessen wird, und das fiele erst auf einem Telefon auf. |
+
+**Die Grenze, und sie ist wichtiger als die Schalter selbst:** `ARUCO_CMAKE` und
+`ARUCO_NINJA` wirken **ausschließlich auf die Kreuzbauten** (`build-core-wasm`,
+`build-core-android`). Sie gehen durch `Get-CMakeAndNinja`, und das ruft allein
+`Invoke-CrossCmake`. Der **Windows-Kernbau** (`build-core`, und damit die Prüfaufgabe
+`test-cpp`) holt sich seine Werkzeuge direkt aus `Find-VcInstall` und sieht die Schalter
+nie.
+
+Für ihn gibt es also **keine Reißleine.** Fehlte einem Läuferbild die CMake-Komponente von
+Visual Studio, bräche `test-cpp` ab, und keine Umgebungsvariable hülfe.
+
+Das ist bewusst so gelassen (14.09.2026): Lauf `34899749517` belegt, dass das Bild
+**Visual Studio 18 Enterprise mit** der Komponente trägt. Eine Verhaltensänderung am
+Kernbau gegen ein Problem, das niemand hat, wäre der schlechtere Handel — aber wer diesen
+Absatz liest, weil `test-cpp` gerade genau so abbricht, weiß jetzt, dass er hier ansetzen
+muss und nicht bei den Variablen.
+
 ---
 
 ## 6 · Die Prüfschranke
@@ -371,7 +401,7 @@ Jeder Schritt ist für sich lauffähig und wird für sich committet
 
 1. **`dev.ps1`:** `ARUCO_SIGNING_DIR` und `ARUCO_REQUIRE_EXISTING_KEY` (gekoppelt, §5.1),
    dann der Fingerabdruck in `check-apk-release` (§5.2), dann die Werkzeugketten-Schalter
-   `ARUCO_CMAKE` · `ARUCO_NINJA` · `ARUCO_NDK_VERSION` (§5.4). Örtlich geprüft.
+   `ARUCO_CMAKE` · `ARUCO_NINJA` · `ARUCO_NDK_VERSION` (§5.5). Örtlich geprüft.
    — *Behebt zuerst die Falle aus §2.1(b).*
 2. **`tools/release_notes.py`:** Fassung und Changelog-Abschnitt lesen, mit Tests.
 3. **`.github/actions/`:** die beiden Werkzeugketten-Aktionen.
