@@ -560,6 +560,7 @@ function Invoke-BuildWeb {
 # damit eine Aenderung an web/vision/ nach einem Neuladen wirkt.
 function Invoke-StartWeb {
     Confirm-Deps
+    Confirm-NodeModules   # build_web.py kopiert pdf-lib unbedingt - auch ohne --dist
     $port = if ($Rest.Count -gt 0) { $Rest[0] } else { 8020 }
 
     Invoke-Native -What 'build-web' -Action { & $VenvPython (Join-Path $RepoRoot 'tools\build_web.py') }
