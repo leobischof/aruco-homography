@@ -350,13 +350,29 @@ function Invoke-RunTestsCpp {
 # VS-Build-Tools, die dieses Repo ohnehin voraussetzt.
 
 function Get-CMakeAndNinja {
+    # Aus der Umgebung zuerst. Die VS-Installation eines Laeufers muss die
+    # CMake-Komponente nicht mitbringen, und dann liegt beides schlicht im Pfad -
+    # ein Abbruch waere hier eine Aussage ueber VS und nicht ueber das Projekt.
+    if ($env:ARUCO_CMAKE -and $env:ARUCO_NINJA) {
+        $fromEnv = [ordered]@{ CMake = $env:ARUCO_CMAKE; Ninja = $env:ARUCO_NINJA }
+        foreach ($tool in $fromEnv.Values) {
+            if (-not (Test-Path $tool)) { throw "Werkzeug aus der Umgebung fehlt: $tool" }
+        }
+        return $fromEnv
+    }
+
     $install = Find-VcInstall
     $tools = [ordered]@{
         CMake = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
         Ninja = Join-Path $install 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
     }
     foreach ($tool in $tools.Values) {
-        if (-not (Test-Path $tool)) { throw "Werkzeug fehlt in $install : $tool" }
+        if (-not (Test-Path $tool)) {
+            throw (@(
+                "Werkzeug fehlt in $install : $tool",
+                '     Liegen cmake und ninja woanders:  $env:ARUCO_CMAKE / $env:ARUCO_NINJA'
+            ) -join [Environment]::NewLine)
+        }
     }
     return $tools
 }
@@ -467,11 +483,24 @@ function Invoke-BuildCoreAndroid {
 
     $sdk = Find-Toolchain -EnvVar 'ANDROID_SDK_ROOT' -RelativePath '_toolchain\android-sdk' `
                           -Marker 'ndk' -What 'Das Android-SDK'
-    # Die NDK-Fassung nicht festschreiben - hier steht sonst in einem halben Jahr
-    # eine Zahl, die es auf keinem Rechner mehr gibt.
-    $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
-        Where-Object { Test-Path (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') } |
-        Sort-Object Name -Descending | Select-Object -First 1
+    # Die NDK-Fassung steht nicht im Code - hier staende sonst in einem halben
+    # Jahr eine Zahl, die es auf keinem Rechner mehr gibt. Wer sie braucht,
+    # nennt sie in der Umgebung: eine Werkbank MUSS sie festnageln, sonst baut
+    # sie mit einem anderen Uebersetzer als der Entwicklerrechner, und der
+    # Unterschied faellt erst auf einem Telefon auf.
+    $ndkDirs = Get-ChildItem (Join-Path $sdk 'ndk') -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') }
+    if ($env:ARUCO_NDK_VERSION) {
+        $ndk = $ndkDirs | Where-Object { $_.Name -eq $env:ARUCO_NDK_VERSION } | Select-Object -First 1
+        if (-not $ndk) {
+            throw (@(
+                "ARUCO_NDK_VERSION verlangt $env:ARUCO_NDK_VERSION, das liegt aber nicht unter $sdk\ndk.",
+                ("     Vorhanden: {0}" -f (($ndkDirs | ForEach-Object { $_.Name }) -join ', '))
+            ) -join [Environment]::NewLine)
+        }
+    } else {
+        $ndk = $ndkDirs | Sort-Object Name -Descending | Select-Object -First 1
+    }
     if (-not $ndk) { throw "Kein NDK mit android.toolchain.cmake unter $sdk\ndk gefunden." }
 
     $opencv = Find-Toolchain -EnvVar 'ARUCO_OPENCV_ANDROID' -RelativePath '_toolchain\opencv-android' `
