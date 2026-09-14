@@ -17,6 +17,7 @@ runs:
   using: composite
   steps:
     - uses: actions/setup-python@v5
+      id: python
       with:
         python-version: '3.13'
 
@@ -27,13 +28,25 @@ runs:
 
     # Das venv ins Zwischenlager. Confirm-Deps in dev.ps1 legt es sonst bei
     # jedem Lauf neu an, und opencv-python-headless allein sind rund 90 MB.
-    # Der Schluessel haengt an requirements.txt: aendert die sich, entsteht ein
-    # neues Lager, und ein veraltetes kann gar nicht benutzt werden.
+    # Der Schluessel traegt die aufgeloeste Python-Fassung
+    # (steps.python.outputs.python-version), nicht bloss 'py313': setup-python
+    # loest '3.13' auf einen konkreten Patch auf, und python -m venv schreibt
+    # dessen absoluten hostedtoolcache-Pfad in venv/pyvenv.cfg. Wandert das
+    # Laeuferbild auf den naechsten 3.13-Patch, zeigt ein wiederhergestelltes
+    # venv auf einen Interpreter, den es dort nicht mehr gibt - dev.ps1 nutzt
+    # venv\Scripts\python.exe fuer alles.
+    # Was der Schluessel weiterhin nicht sieht: requirements.txt ist bis auf
+    # eine Untergrenze unversioniert. Driftet das aufgeloeste Paketset, ohne
+    # dass die Datei sich aendert, bleibt der Hash gleich und das
+    # Zwischenlager greift trotzdem - und dev.ps1s eigene Selbstheilung
+    # (Test-DepsInstalled/Get-RequirementsHash) prueft denselben Hash gegen
+    # einen Stempel im wiederhergestellten venv, installiert also auch dann
+    # nichts nach.
     - name: venv aus dem Zwischenlager
       uses: actions/cache@v4
       with:
         path: venv
-        key: venv-${{ runner.os }}-py313-${{ hashFiles('requirements.txt') }}
+        key: venv-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
 
     - name: OpenCV-SDK aus dem Zwischenlager
       id: opencv
