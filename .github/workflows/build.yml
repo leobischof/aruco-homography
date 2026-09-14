@@ -24,6 +24,10 @@ jobs:
   windows:
     name: build-windows
     runs-on: windows-latest
+    # Belegt sind 3:22 kalt. Die Vorgabe waere 360 Minuten, und auf
+    # windows-latest wird doppelt abgerechnet: haengt der Gradle-Wrapper an
+    # seinen ~130 MB, statt zu scheitern, laeuft der Nachtbau bis zum Morgen.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-windows-toolchain
@@ -57,9 +61,37 @@ jobs:
       # Artefakt den Namen, unter dem die Datei spaeter erscheint.
       - name: Den Browser-Bau packen
         shell: pwsh
+        # Der Wert kommt UEBER env: herein und steht nicht als ${{ }} im
+        # Rumpf. Ein Ausdruck im Rumpf ist Textersetzung VOR dem Start der
+        # Shell: er schreibt den Wert ins Skript hinein, statt ihn zu
+        # uebergeben. Die Fassung stammt aus app/config.py, das jeder mit
+        # Schreibrecht auf den gebauten Zweig aendern kann - ein Einzelquote
+        # darin schloesse den String, und der Rest der Zeile liefe als
+        # Befehl. Als Umgebungsvariable bleibt sie ein Wert.
+        env:
+          ARUCO_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          $version = '${{ steps.version.outputs.value }}'
+          $version = $env:ARUCO_VERSION
           Compress-Archive -Path dist\web\* -DestinationPath "dist\aruco-homographie-web-$version.zip" -Force
+
+          # Jedes Muster EINZELN nachzaehlen. upload-artifact bricht bei
+          # if-no-files-found: error nur ab, wenn die SUMME aller Muster
+          # null Dateien ergibt - trifft eines der beiden nichts, bleibt der
+          # Auftrag gruen. Genau so faellt der Browser-Bau lautlos aus dem
+          # Artefakt (etwa wenn dist/web woanders landet und Compress-Archive
+          # trotzdem eine Datei anlegt), und bemerkt wird es erst von dem,
+          # der auf der Fassungsseite darauf klickt.
+          $erwartet = @(
+            'dist\ArUco-Homographie-Setup-*.exe'
+            'dist\aruco-homographie-web-*.zip'
+          )
+          foreach ($muster in $erwartet) {
+            $treffer = @(Get-ChildItem -Path $muster -File -ErrorAction SilentlyContinue)
+            if ($treffer.Count -ne 1) {
+              throw "Erwartet: genau eine Datei fuer '$muster'. Gefunden: $($treffer.Count). Das Artefakt waere unvollstaendig."
+            }
+            Write-Host "==> $($treffer[0].Name)"
+          }
 
       - uses: actions/upload-artifact@v7
         with:
@@ -72,6 +104,8 @@ jobs:
   android:
     name: build-android
     runs-on: windows-latest
+    # Belegt sind 3:12 kalt - siehe die Begruendung beim Windows-Auftrag.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-windows-toolchain
@@ -90,15 +124,20 @@ jobs:
           if (-not $env:ARUCO_SIGNING_DIR) {
             throw 'sign=true, aber ANDROID_KEYSTORE_P12_BASE64 ist leer oder fehlt.'
           }
-          # UND die Erwartung an den Fingerabdruck.
+          # UND die Erwartung an den Fingerabdruck. Die faengt die Aktion
+          # bereits ab: setup-android-toolchain bricht ab, sobald ein
+          # Schluessel geliefert wird und expected-cert-sha256 leer ist, und
+          # setzt ARUCO_EXPECTED_CERT_SHA256 erst danach - im selben
+          # GITHUB_ENV-Block wie ARUCO_SIGNING_DIR. Beide sind also gesetzt
+          # oder keines; die Zeile darunter kann heute gar nicht zuschlagen.
           #
-          # dev.ps1 kann das nicht selbst: in PowerShell ist eine leere
-          # Zuweisung dasselbe wie keine, und check-apk-release liest die
-          # ungesetzte Erwartung als "nur melden". Ein falsch benanntes oder
-          # leeres Geheimnis ergaebe damit ein GRUENES check-apk-release auf
-          # einem Release-APK, dessen Schluessel nie verglichen wurde - genau
-          # das Ergebnis, gegen das es die Pruefung gibt. Also faengt es der
-          # Aufrufer, und der ist hier.
+          # Sie steht als zweite Reihe trotzdem da. Was sie deckt, ist der
+          # Umbau: sollte ARUCO_SIGNING_DIR je auf einem anderen Weg gesetzt
+          # werden, wird hier geprueft und nicht gehofft. Und was ein Durch-
+          # rutschen kostete, bliebe still: check-apk-release vergleicht
+          # ohne gesetzte Erwartung nichts (dev.ps1 prueft dort auf
+          # $Release -and $env:ARUCO_EXPECTED_CERT_SHA256) und meldete GRUEN
+          # auf einem Release-APK, dessen Schluessel nie verglichen wurde.
           if (-not $env:ARUCO_EXPECTED_CERT_SHA256) {
             throw 'sign=true, aber die Variable ANDROID_CERT_SHA256 ist leer oder fehlt.'
           }
@@ -123,10 +162,17 @@ jobs:
       # genau der Zustand, den das Weglassen des Debug-APK beseitigen soll.
       - name: Nach der Fassung benennen
         shell: pwsh
+        # Wie beim Packen des Browser-Baus: UEBER env: und nicht als ${{ }}
+        # im Rumpf. Ein Ausdruck im Rumpf ist Textersetzung VOR dem Start der
+        # Shell - was da eingesetzt wird, steht danach als Skript da und
+        # nicht als Wert. Nur if:-Bedingungen und with:-Eingaben oben sind
+        # etwas anderes: die liest die Werkbank selbst, keine Shell.
+        env:
+          ARUCO_SIGN: ${{ inputs.sign }}
         run: |
           $version = & python tools\release_notes.py --version
           if ($LASTEXITCODE -ne 0) { throw 'Die Fassung liess sich nicht lesen.' }
-          $signed = '${{ inputs.sign }}' -eq 'true'
+          $signed = $env:ARUCO_SIGN -eq 'true'
           $source = if ($signed) {
             'android\out\aruco-homographie-release.apk'
           } else {
