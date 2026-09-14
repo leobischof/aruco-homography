@@ -1,0 +1,146 @@
+name: Build
+
+# NUR ueber workflow_call. Drei Anlaesse wollen dasselbe bauen (Fassung,
+# Nachtbau, Handstart), und die Bauschritte stehen deshalb EINMAL hier statt
+# dreimal nebeneinander - dieselbe Regel, die im Repo fuer dev.ps1 gilt.
+on:
+  push:
+    branches: [feat/ci-cd]
+  workflow_call:
+    inputs:
+      sign:
+        description: Das APK mit dem echten Schluessel signieren
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      ANDROID_KEYSTORE_P12_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-windows-toolchain
+        with:
+          inno-setup: 'true'
+
+      # Ohne cv2 - deshalb liest release_notes.py mit ast (tools/release_notes.py).
+      - name: Die Fassung lesen
+        id: version
+        shell: pwsh
+        run: |
+          $version = & python tools\release_notes.py --version
+          if ($LASTEXITCODE -ne 0) { throw 'Die Fassung liess sich nicht lesen.' }
+          "value=$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
+          Write-Host "==> $version"
+
+      - name: Die .exe bauen
+        shell: pwsh
+        run: .\dev.ps1 build-exe
+
+      - name: Den Installer bauen
+        shell: pwsh
+        run: .\dev.ps1 build-installer
+
+      - name: Den Browser-Bau zusammenstellen
+        shell: pwsh
+        run: .\dev.ps1 build-web
+
+      # dist/web/ ist ein Baum; eine Fassungsseite haelt eine Datei. Also hier
+      # packen und nicht erst beim Veroeffentlichen - dann traegt schon das
+      # Artefakt den Namen, unter dem die Datei spaeter erscheint.
+      - name: Den Browser-Bau packen
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.value }}'
+          Compress-Archive -Path dist\web\* -DestinationPath "dist\aruco-homographie-web-$version.zip" -Force
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-artifacts
+          if-no-files-found: error
+          path: |
+            dist/ArUco-Homographie-Setup-*.exe
+            dist/aruco-homographie-web-*.zip
+
+  android:
+    name: build-android
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-windows-toolchain
+      - uses: ./.github/actions/setup-android-toolchain
+        with:
+          keystore-base64: ${{ inputs.sign && secrets.ANDROID_KEYSTORE_P12_BASE64 || '' }}
+          keystore-password: ${{ inputs.sign && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          expected-cert-sha256: ${{ vars.ANDROID_CERT_SHA256 }}
+
+      # Ohne Geheimnis darf hier KEIN unsigniertes Erzeugnis entstehen, das
+      # spaeter wie ein Release aussieht. Also frueh und ausdruecklich abbrechen.
+      - name: Nachsehen, dass der Schluessel da ist
+        if: inputs.sign
+        shell: pwsh
+        run: |
+          if (-not $env:ARUCO_SIGNING_DIR) {
+            throw 'sign=true, aber ANDROID_KEYSTORE_P12_BASE64 ist leer oder fehlt.'
+          }
+          # UND die Erwartung an den Fingerabdruck.
+          #
+          # dev.ps1 kann das nicht selbst: in PowerShell ist eine leere
+          # Zuweisung dasselbe wie keine, und check-apk-release liest die
+          # ungesetzte Erwartung als "nur melden". Ein falsch benanntes oder
+          # leeres Geheimnis ergaebe damit ein GRUENES check-apk-release auf
+          # einem Release-APK, dessen Schluessel nie verglichen wurde - genau
+          # das Ergebnis, gegen das es die Pruefung gibt. Also faengt es der
+          # Aufrufer, und der ist hier.
+          if (-not $env:ARUCO_EXPECTED_CERT_SHA256) {
+            throw 'sign=true, aber die Variable ANDROID_CERT_SHA256 ist leer oder fehlt.'
+          }
+
+      - name: Das signierte APK bauen
+        if: inputs.sign
+        shell: pwsh
+        run: .\dev.ps1 build-apk-release
+
+      - name: Das Debug-APK bauen
+        if: ${{ !inputs.sign }}
+        shell: pwsh
+        run: .\dev.ps1 build-apk
+
+      # Unter dem Namen, unter dem die Datei auf der Fassungsseite erscheint -
+      # und in ein EIGENES Verzeichnis.
+      #
+      # Nicht in android/out/ liegen lassen: dort liegt daneben weiter
+      # aruco-homographie-release.apk, und ein Muster wie
+      # "aruco-homographie-*.apk" naehme beide mit. Auf der Fassungsseite
+      # stuenden dann zwei APKs derselben Fassung unter verschiedenen Namen -
+      # genau der Zustand, den das Weglassen des Debug-APK beseitigen soll.
+      - name: Nach der Fassung benennen
+        shell: pwsh
+        run: |
+          $version = & python tools\release_notes.py --version
+          if ($LASTEXITCODE -ne 0) { throw 'Die Fassung liess sich nicht lesen.' }
+          $signed = '${{ inputs.sign }}' -eq 'true'
+          $source = if ($signed) {
+            'android\out\aruco-homographie-release.apk'
+          } else {
+            'android\out\aruco-homographie-debug.apk'
+          }
+          $suffix = if ($signed) { '' } else { '-debug' }
+          New-Item -ItemType Directory -Path 'publish' -Force | Out-Null
+          Copy-Item $source "publish\aruco-homographie-$version$suffix.apk"
+          Get-ChildItem publish | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-artifacts
+          if-no-files-found: error
+          path: publish/*.apk
