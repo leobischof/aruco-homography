@@ -1,0 +1,32 @@
+Fotografieren Sie einen Gegenstand neben einem gedruckten Blatt mit ArUco-Markern. Heraus kommt ein PDF, das Sie 1:1 ausdrucken, auf Holz kleben und aussägen.
+
+Die Marker sind der Maßstab. Ihre gedruckte Größe ist bekannt — Sie messen sie mit dem Messschieber nach, statt sie anzunehmen — und aus ihren Ecken im Foto berechnet die App die Homographie, die die fotografierte Ebene wieder flach und frontal abbildet, in bekanntem Maßstab. Was herauskommt, ist kein hübsches Bild Ihres Gegenstands. Es ist Ihr Gegenstand, in wahrer Größe, auf Papier.
+
+MILLIMETER SIND DAS PRODUKT
+
+Diese App ist um eine Regel herum gebaut: Eine Änderung, die das Bild hübscher macht und dabei eine Kante um einen halben Millimeter verschiebt, ist eine Verschlechterung. Die Regler zur Bildaufbereitung — Graustufen, lokaler Kontrast, Kantenanhebung, Helligkeit — können bewusst keinen einzigen Millimeter verschieben. Sie ändern, was Sie sehen, nie das, was Sie sägen.
+
+ALLES BLEIBT AUF DEM TELEFON
+
+Kein Server, kein Konto, kein Hochladen. Die App hat nicht einmal die Berechtigung, ins Netz zu gehen, und kann deshalb nichts senden — das erzwingt Android, es ist keine Beteuerung des Herstellers. Die ganze Kette, von der Markererkennung bis zum fertigen PDF, läuft in einem nativen Rechenkern auf Ihrem Gerät.
+
+WAS SIE KANN
+
+* Marker im laufenden Kamerabild finden und sagen, wann die Lage gut genug zum Auslösen ist
+* Warnen, statt ein Raster zu zeichnen, dem sie selbst nicht glaubt
+* Die Objektdicke ausgleichen, damit ein Blatt auf einem 12-mm-Brett trotzdem stimmt
+* Den Zuschnitt in Millimetern setzen und einen Umriss zeichnen lassen
+* Die Schablone gekachelt über A4- oder Letter-Seiten ausgeben, mit Überlappung, Klebeplan und beschrifteten Rasterlinien
+* Auf jedes Blatt einen 100-mm-Kontrollmaßstab drucken, mit dem Sie belegen, dass Ihr Drucker nicht skaliert hat
+
+WAS SIE NICHT KANN
+
+Die Objektivverzeichnung wird nicht korrigiert — nehmen Sie das Teleobjektiv und treten Sie zurück. Gewölbte Gegenstände gehen prinzipiell nicht: Eine Homographie beschreibt genau eine Ebene. Und Ihren Drucker kann die App nicht für Sie prüfen; dafür ist der Kontrollmaßstab da.
+
+BEVOR SIE SÄGEN
+
+Messen Sie das fertige Teil nach. Die App ist ehrlich darüber, was belegt ist: Der Weg vom PDF über den Drucker aufs Papier ist mit dem Messschieber nachgeprüft. Der Weg vom Foto über die Marker zu den Millimetern ist noch nicht unabhängig an einem Gegenstand bekannter Länge bestätigt. Behandeln Sie das erste Stück als Versuch.
+
+Sie brauchen das Markerblatt, das die App zum Ausdrucken erzeugt, und einen Messschieber, um es nachzumessen.
+
+Freie Software, GPL-3.0-or-later. Quelltext: https://github.com/leobischof/aruco-homography

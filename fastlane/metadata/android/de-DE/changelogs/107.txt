@@ -1,0 +1,3 @@
+Der Sucher hört auf, eine Ebene zu zeigen, die er nicht glaubt. Ist die Lage unbrauchbar — hoher Restfehler oder Marker auf einer Linie —, zeichnet das Live-Bild kein Raster mehr und nennt den Restfehler statt des Maßstabs. Ein falsches Raster sieht aus wie eine Messung, und das ist schlimmer als keines.
+
+Behoben außerdem: Ein verweigerter Zeigerfang macht den Zuschnittgriff nicht mehr tot, und das Canvas wird an den Ecken nicht mehr beschnitten. Die Griffe sind jetzt für einen Finger gemacht.

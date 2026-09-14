@@ -1,0 +1,32 @@
+Photograph an object next to a printed sheet of ArUco markers. Get back a PDF that you print at 1:1, glue onto wood, and cut out.
+
+The markers are the ruler. Their printed size is known — you measure it with a caliper rather than assume it — so from their corners in the photo the app computes the homography that maps the photographed plane back to a flat, square-on view at a known scale. What comes out is not a nice picture of your object. It is your object, at its true size, on paper.
+
+MILLIMETRES ARE THE PRODUCT
+
+This app is built around one rule: a change that makes the image prettier and moves an edge by half a millimetre is a regression. The image adjustment sliders — greyscale, local contrast, edge lift, brightness — deliberately cannot move a single millimetre. They change what you see, never what you cut.
+
+EVERYTHING HAPPENS ON YOUR PHONE
+
+There is no server, no account and no upload. The app does not even hold the permission to reach the network, so it cannot send anything — that is enforced by Android, not promised by the developer. The whole chain, from marker detection to the finished PDF, runs in a native core on your device.
+
+WHAT IT DOES
+
+* Finds the markers in the live camera image and tells you when the plane is good enough to shoot
+* Warns you instead of drawing a grid it does not believe
+* Corrects for object thickness, so a sheet lying on a 12 mm board still measures right
+* Lets you set the crop in millimetres and trace an outline
+* Exports a tiled template across A4 or Letter pages, with overlap, a glue plan and labelled grid lines
+* Prints a 100 mm control scale on every sheet, so you can prove your printer did not scale
+
+WHAT IT DOES NOT DO
+
+Lens distortion is not corrected — use the telephoto lens and stand back. Curved objects are impossible in principle: a homography describes exactly one plane. And the app cannot check your printer for you, which is why the control scale is there.
+
+BEFORE YOU CUT
+
+Measure the finished piece. The app is honest about what it has proven: the chain from PDF to printer to paper has been verified with a caliper. The chain from photo to markers to millimetres has not yet been independently confirmed against an object of known length. Treat the first piece as a test.
+
+You will need the marker sheet, which the app generates for you to print, and a caliper to measure it with.
+
+Free software, GPL-3.0-or-later. Source: https://github.com/leobischof/aruco-homography

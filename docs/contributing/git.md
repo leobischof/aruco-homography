@@ -3,7 +3,7 @@ title: Git-Regeln
 description: Verbindliche Regeln für Identität, Commits, Pushes und den Aufbau der Commit-Nachricht.
 audience: developer
 status: current
-updated: 2026-09-08
+updated: 2026-09-14
 ---
 
 # Git-Regeln
@@ -45,7 +45,7 @@ Das ist die wichtigste Regel dieser Datei, und sie ist bewusst **asymmetrisch**.
 |---|---|
 | `git commit` | **Ohne Rückfrage.** Fertige Arbeit gehört committet, nicht in einem schmutzigen Arbeitsverzeichnis geparkt. |
 | `git push` (Feature-Branch) | **Nur nach ausdrücklicher Aufforderung.** Jedes Mal neu. |
-| `git push` nach `master` | **Geht nicht mehr.** GitHub weist es ab — siehe Abschnitt 7. |
+| `git push` nach `master` **oder** `develop` | **Geht nicht mehr.** GitHub weist beide ab, auch vom Eigentümer — siehe Abschnitt 7. Der Weg hinein ist ausschließlich der Pull Request. |
 | `git push --force` | Nur nach ausdrücklicher Aufforderung **für genau diesen Push**. Eine frühere Erlaubnis gilt nicht weiter. Auf `master` ohnehin gesperrt. |
 
 Warum die Asymmetrie: ein Commit ist örtlich und umkehrbar — er kostet nichts und rettet
@@ -177,25 +177,46 @@ Commit in der Historie ist eine Falle für den Nächsten, der bisecten muss.
 
 ---
 
-## 6 · Branches
+## 6 · Branches: **niemals auf `master`, niemals auf `develop`**
 
-`master` ist der Stamm, und der Normalfall ist, direkt dort zu arbeiten. Ein
-Branch-und-PR-Verfahren für **jede** Änderung ist bewusst nicht eingeführt — bei einem
-Bearbeiter wäre es Zeremonie ohne Nutzen, und Abschnitt 3 verlangt ohnehin, dass jeder
-einzelne Commit für sich lauffähig ist.
+> **Die Regel, ohne Ausnahme:** Jede Änderung entsteht auf einem **eigenen Branch** und
+> kommt ausschließlich über einen **Pull Request** in den Stamm. Kein Commit wird je
+> direkt auf `master` oder `develop` gesetzt — auch kein einzeiliger, auch keiner, der
+> „nur Dokumentation" ist.
 
-Ein Branch wird dann angelegt, wenn genau diese Regel sonst bricht: wenn ein Vorhaben
-**über mehrere Commits hinweg unfertig** wäre und der Stamm in dieser Zeit nicht mehr
-grün oder nicht mehr benutzbar bliebe. Ein Umbau der Paketierung ist so ein Fall, das
-Hinzufügen eines Reglers nicht.
+```
+feat/…, fix/…, docs/…, chore/…  ──PR──►  develop  ──PR──►  master
+```
 
-Benennung: `feat/…`, `fix/…`, `chore/…`.
+Das gilt für **jede** Änderung, unabhängig von ihrer Größe. Es gibt keine Schwelle, unter
+der sich der Branch nicht lohnt: der Branch kostet zwei Befehle, und die Schwelle wäre das
+Einzige, worüber man jedes Mal neu nachdenken müsste.
+
+**Bis 2026-09-14 stand hier das Gegenteil** — „der Normalfall ist, direkt auf `master` zu
+arbeiten" —, und das war seit dem 08.09.2026 falsch: an diesem Tag bekamen `develop` und
+`master` ihren Schutz (Abschnitt 7), und damit war direktes Arbeiten am Stamm nicht mehr
+vorgesehen. Die beiden Abschnitte haben sich sechs Tage lang widersprochen. Der Satz steht
+hier nicht aus Reue, sondern weil ein Agent genau diesem veralteten Absatz gefolgt ist und
+eine ganze Sitzung auf `master` committet hat.
+
+**Der Branch wird von `develop` abgezweigt, nicht von `master`.** `develop` ist der
+Vorgabezweig des Repositories; `master` trägt nur die Release-Squashes und hat mit
+`develop` keine gemeinsame Commit-Historie, sondern nur denselben Inhalt. Wer versehentlich
+von `master` abzweigt, kommt mit einem Rebase zurück:
+
+```powershell
+git fetch origin
+git rebase --onto origin/develop master <branch>
+```
+
+Benennung: `feat/…`, `fix/…`, `docs/…`, `chore/…`.
 
 **Dazu gehört ein eigenes Arbeitsverzeichnis** (`git worktree`), kein Branch-Wechsel im
 selben Ordner:
 
 ```powershell
-git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname master
+git fetch origin
+git worktree add -b feat/kurzname ../ArUco-Homographie-kurzname origin/develop
 git worktree list
 ```
 
@@ -212,8 +233,19 @@ git worktree remove ../ArUco-Homographie-kurzname
 git branch -d feat/kurzname
 ```
 
-Sobald ein zweiter Mensch mitschreibt, gehört diese Entscheidung neu getroffen und hier
-ersetzt.
+**Was tun, wenn doch einmal auf dem Stamm committet wurde.** Solange nichts gepusht ist,
+kostet es drei Befehle und niemand merkt es — der Zweig bekommt die Commits, der Stamm
+bekommt seinen alten Stand zurück:
+
+```powershell
+git branch docs/kurzname          # die Commits festhalten
+git checkout docs/kurzname
+git branch -f master origin/master   # den Stamm zuruecksetzen
+```
+
+Ist schon gepusht, geht das nicht mehr: `master` und `develop` verbieten Force-Push. Dann
+bleibt nur, den Fehlstand mit einem Revert-PR zu bereinigen — ein weiterer Grund, gar
+nicht erst dort zu committen.
 
 ---
 

@@ -1,0 +1,1 @@
+Aus einem Foto mit ArUco-Markern wird eine maßhaltige Schablone als PDF.
