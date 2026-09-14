@@ -85,7 +85,17 @@ runs:
       run: |
         $dir = Join-Path $env:RUNNER_TEMP 'opencv\build'
         $marker = Join-Path $dir 'OpenCVConfig.cmake'
-        if (-not (Test-Path $marker)) { throw "OpenCV liegt nicht, wo erwartet: $marker" }
+        if (-not (Test-Path $marker)) {
+          # Erst zeigen, was tatsaechlich da liegt, dann abbrechen. Ohne diese
+          # Zeilen sagt die Meldung nur, wo NICHT gesucht werden muss, und die
+          # Antwort auf "wo denn dann?" kostet einen weiteren Laeuferlauf. Nur
+          # Verzeichnisse und nur zwei Ebenen tief: das SDK bringt Tausende
+          # Dateien mit, und die Schachtelung ist die Frage, nicht der Inhalt.
+          Write-Host "Unter $env:RUNNER_TEMP liegt stattdessen:"
+          Get-ChildItem $env:RUNNER_TEMP -Directory -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "     $($_.FullName)" }
+          throw "OpenCV liegt nicht, wo erwartet: $marker"
+        }
         # utf8NoBOM statt utf8: eine Byte-Order-Mark vor dem ersten Namen
         # macht die Variable fuer GITHUB_ENV unlesbar (aus OpenCV_DIR wird
         # <BOM>OpenCV_DIR), spaetere Schritte sehen sie schlicht nicht, und
