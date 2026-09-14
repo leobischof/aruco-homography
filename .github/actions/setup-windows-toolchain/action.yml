@@ -69,6 +69,7 @@ runs:
         Write-Host "==> $url"
         Invoke-WebRequest -Uri $url -OutFile $exe
         & $exe -o"$env:RUNNER_TEMP" -y
+        if ($LASTEXITCODE -ne 0) { throw "OpenCV self-extractor failed (exit $LASTEXITCODE)." }
         Remove-Item $exe
 
     - name: OpenCV_DIR bekanntgeben

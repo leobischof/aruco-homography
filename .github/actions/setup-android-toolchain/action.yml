@@ -72,7 +72,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ env.ANDROID_SDK_ROOT }}/ndk/${{ inputs.ndk-version }}
-        key: ndk-${{ inputs.ndk-version }}
+        key: ndk-${{ runner.os }}-${{ inputs.ndk-version }}
 
     - name: NDK holen
       if: steps.ndk.outputs.cache-hit != 'true'
