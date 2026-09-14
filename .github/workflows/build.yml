@@ -41,6 +41,17 @@ jobs:
         run: |
           $version = & python tools\release_notes.py --version
           if ($LASTEXITCODE -ne 0) { throw 'Die Fassung liess sich nicht lesen.' }
+          # Die Gestalt nachpruefen, bevor die Zahl weiterwandert. GITHUB_OUTPUT
+          # ist zeilenweise: stuende ein Umbruch in der Fassung, definierte die
+          # naechste Zeile eine WEITERE Schrittausgabe. Heute geht das nicht -
+          # aber nur aus Versehen: PowerShell flacht die Array-Ausgabe von
+          # & python beim Einsetzen in "value=$version" mit Leerzeichen ab, ein
+          # Umbruch ueberlebt also nicht. Auf ein Versehen baut man keine
+          # Vertrauensgrenze. Dieselbe Zahl benennt weiter unten die Zip-Datei,
+          # und app/config.py aendert jeder mit Schreibrecht auf den Zweig.
+          if ($version -notmatch '^[0-9A-Za-z][0-9A-Za-z.+-]*$') {
+              throw "APP_VERSION hat eine unerwartete Gestalt: '$version'"
+          }
           "value=$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8NoBOM
           Write-Host "==> $version"
 
@@ -81,16 +92,16 @@ jobs:
           # Artefakt (etwa wenn dist/web woanders landet und Compress-Archive
           # trotzdem eine Datei anlegt), und bemerkt wird es erst von dem,
           # der auf der Fassungsseite darauf klickt.
-          $erwartet = @(
+          $expected = @(
             'dist\ArUco-Homographie-Setup-*.exe'
             'dist\aruco-homographie-web-*.zip'
           )
-          foreach ($muster in $erwartet) {
-            $treffer = @(Get-ChildItem -Path $muster -File -ErrorAction SilentlyContinue)
-            if ($treffer.Count -ne 1) {
-              throw "Erwartet: genau eine Datei fuer '$muster'. Gefunden: $($treffer.Count). Das Artefakt waere unvollstaendig."
+          foreach ($pattern in $expected) {
+            $hits = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
+            if ($hits.Count -ne 1) {
+              throw "Erwartet: genau eine Datei fuer '$pattern'. Gefunden: $($hits.Count). Das Artefakt waere unvollstaendig."
             }
-            Write-Host "==> $($treffer[0].Name)"
+            Write-Host "==> $($hits[0].Name)"
           }
 
       - uses: actions/upload-artifact@v7
