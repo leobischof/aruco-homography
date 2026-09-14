@@ -118,10 +118,16 @@ runs:
           "ARUCO_NDK_VERSION=${{ inputs.ndk-version }}"
         ) | Out-File $env:GITHUB_ENV -Append -Encoding utf8NoBOM
 
-    # Der Schluessel kommt aus dem Geheimnis in den Arbeitsbereich, und
-    # ARUCO_REQUIRE_EXISTING_KEY verbietet dev.ps1, bei einem Fehlschlag einen
-    # neuen zu erfinden. Ohne diese Zeile waere ein leeres Geheimnis kein
-    # Fehler, sondern eine Fassung mit fremder Signatur.
+    # Der Schluessel kommt aus dem Geheimnis nach RUNNER_TEMP, und
+    # ARUCO_REQUIRE_EXISTING_KEY deckt den Fall, in dem ein Schluessel
+    # geliefert wurde und danach trotzdem etwas schiefgeht: es verbietet
+    # dev.ps1, sich dann einen neuen zu erfinden statt mit einer Fassung
+    # fremder Signatur weiterzubauen. Ein LEERES Geheimnis ist absichtlich
+    # nicht die Sache dieser Aktion - sie bedient auch Debug-Bauten, die gar
+    # keinen Schluessel brauchen, und kann "Debug-Bau gewollt" nicht von
+    # "Release-Bau, Geheimnisname vertippt" unterscheiden. Wer das schliesst,
+    # ist der Aufrufer: build.yml weigert sich weiterzubauen, wenn
+    # Schluessel oder erwarteter Fingerabdruck leer sind.
     - name: Release-Schluessel auspacken
       if: inputs.keystore-base64 != ''
       shell: pwsh
