@@ -1,0 +1,1 @@
+Photograph an object next to ArUco markers, get a true-to-scale printable PDF.

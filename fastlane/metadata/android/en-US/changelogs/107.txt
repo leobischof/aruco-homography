@@ -1,0 +1,3 @@
+The viewfinder stops showing a plane it does not believe. When the solved plane is unusable — high residual error or collinear markers — the live image no longer draws a grid, and the status line shows the residual instead of the scale. A wrong grid looks like a measurement; that is worse than no grid.
+
+Also fixed: a refused pointer capture no longer kills the crop handle, and the crop canvas is no longer clipped at its corners. Handles are now sized for a finger rather than a mouse.

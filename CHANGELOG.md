@@ -35,6 +35,18 @@ abzweigen, bauen oder weitergeben. F-Droid hätte es gar nicht erst ansehen kön
   SIL OFL 1.1, und die OFL verlangt genau eine Sache: dass ihr Text mitgeht. Er fehlte.
   Jetzt liegt er als `app/static/brand/fonts/OFL.txt` neben der `.woff2` — und geht damit
   auch ins APK, weil der Gradle-Bau den ganzen Ordner mitnimmt.
+- **`docs/publishing/`** — der Weg zu F-Droid und Google Play, mit den beiden Sperren
+  zuerst und ohne Schönfärberei: für F-Droid das heruntergeladene OpenCV-SDK, für Play ein
+  `targetSdk 35`, wo seit dem 31.08.2026 **36** verlangt wird. Für F-Droid sind beide
+  Auswege durchgerechnet — OpenCV aus Maven Central (`org.opencv:opencv:5.0.0.1`, im
+  AAR nachgesehen: **ein** prefab-Modul, `libopencv_java5.so` mit 33,38 MB je ABI, also
+  aus 9,9 MB geschätzt rund 38 MB) gegen einen Quellbau im F-Droid-Bauserver, der die
+  9,9 MB und die schon gemessene Bitgleichheit erhält.
+- **Die Datenschutzerklärung**, zweisprachig, in `docs/publishing/privacy-policy.md`. Sie
+  ist kurz, weil sie kurz sein darf: ohne `android.permission.INTERNET` kann die App
+  nichts senden, und das erzwingt Android statt es zu versprechen.
+- **`fastlane/metadata/android/`** — Store-Texte auf Deutsch und Englisch, dort, wo
+  F-Droid sie aus dem Repo selbst liest. Bilder fehlen noch.
 
 ### Geändert
 
